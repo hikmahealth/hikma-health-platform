@@ -22,7 +22,7 @@
     "@electric-sql/pglite": "^0.4.2",
     "@hikmahealth/js-utils": "workspace:*",
     "@hono/node-server": "^1.19.13",
-    "hono": "^4.12.12",
+    "hono": "^4.12.21",
     "prqlc": "^0.13.11",
     "rescript": "12.2.0",
     "zod": "^4.3.6"
