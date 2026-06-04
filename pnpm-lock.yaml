@@ -1029,6 +1029,24 @@ importers:
         specifier: ^3.0.5
         version: 3.2.7(@types/node@24.13.3)(jiti@2.7.0)(jsdom@30.0.1(@noble/hashes@2.4.0))(lightningcss@1.33.0)(terser@5.51.2)(tsx@4.23.12)(yaml@2.9.0)
 
+  packages/storage:
+    devDependencies:
+      '@hikmahealth/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+
+  packages/storage-server:
+    devDependencies:
+      '@hikmahealth/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@types/node':
+        specifier: ^22.19.17
+        version: 22.20.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/typescript-config: {}
 
   packages/ui:
