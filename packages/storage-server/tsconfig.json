@@ -1,0 +1,21 @@
+{
+  "extends": "@hikmahealth/typescript-config/base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "lib": ["ESNext", "DOM"],
+    "target": "ES2015",
+    "typeRoots": ["./types"],
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
+    "declarationMap": true,
+    "strict": true,
+  },
+  "include": ["./src", "./types"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "./src/**/*.test.ts",
+    "./src/**/*.spec.ts",
+  ],
+}
