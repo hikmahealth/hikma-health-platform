@@ -2,17 +2,37 @@
   "name": "@hikmahealth/storage-server",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc -p ."
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "exports": {
+    ".": {
+      "default": "./dist/core/index.js",
+      "require": "./dist/core/index.js",
+      "import": "./dist/core/index.js",
+      "types": "./dist/core/index.d.ts"
+    },
+    "./serve/*": {
+      "default": "./dist/serve/*/index.js",
+      "types": "./dist/serve/*/index.d.ts",
+      "import": "./dist/serve/*/index.d.js",
+      "require": "./dist/serve/*/index.js"
+    },
+    "./options": {
+      "default": "./dist/options/index.js",
+      "types": "./dist/options/index.d.js",
+      "import": "./dist/options/index.d.js",
+      "require": "./dist/options/index.js"
+    }
+  },
   "devDependencies": {
     "@hikmahealth/typescript-config": "workspace:*",
-    "@types/node": "^22.19.17",
+    "@types/node": "22.*",
     "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.14",
+    "hono": "^4.12.14"
   }
 }

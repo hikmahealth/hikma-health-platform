@@ -3,19 +3,14 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "lib": ["ESNext", "DOM"],
+    "lib": ["ESNext", "ES2015"],
     "target": "ES2015",
-    "typeRoots": ["./types"],
     "module": "NodeNext",
     "moduleResolution": "nodenext",
     "declarationMap": true,
     "strict": true,
+    "types": ["node"],
   },
-  "include": ["./src", "./types"],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "./src/**/*.test.ts",
-    "./src/**/*.spec.ts",
-  ],
+  "include": ["./src"],
+  "exclude": ["node_modules", "dist", "./src/**/*.spec.ts"],
 }

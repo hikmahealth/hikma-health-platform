@@ -40,6 +40,7 @@
     "@hikmahealth/database": "workspace:*",
     "@hikmahealth/forms": "workspace:*",
     "@hikmahealth/js-utils": "workspace:*",
+    "@hikmahealth/storage-server": "workspace:*",
     "@hikmahealth/ui": "workspace:*",
     "@hookform/resolvers": "^5.1.1",
     "@nd/jsonlogic": "workspace:*",

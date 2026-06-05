@@ -566,6 +566,9 @@ importers:
       '@hikmahealth/js-utils':
         specifier: workspace:*
         version: link:../../packages/utils/js
+      '@hikmahealth/storage-server':
+        specifier: workspace:*
+        version: link:../../packages/storage-server
       '@hikmahealth/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -1036,12 +1039,19 @@ importers:
         version: link:../typescript-config
 
   packages/storage-server:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^1.19.14
+        version: 1.19.17(hono@4.13.5)
+      hono:
+        specifier: ^4.12.14
+        version: 4.13.5
     devDependencies:
       '@hikmahealth/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config
       '@types/node':
-        specifier: ^22.19.17
+        specifier: 22.*
         version: 22.20.1
       typescript:
         specifier: ^6.0.3
