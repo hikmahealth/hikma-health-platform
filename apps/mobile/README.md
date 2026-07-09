@@ -4,7 +4,7 @@ The Hikma Health platform is a mobile electronic health record system designed f
 
 The platform is designed to be intuitive and allow for efficient patient workflows for patient registration, data entry, and data download. You can see a user demo here: https://drive.google.com/file/d/1ssBdEPShWCu3ZXNCXnoodbwWgqlTncJb/view?usp=drive_link
 
-This repository contains the client-side code for Hikma Health's mobile application. The corresponding server-side code is located at https://github.com/hikmahealth/hikma-health-backend. Please feel free to file feature requests and bugs at either location.
+This workspace contains the client-side code for Hikma Health's mobile application. The corresponding server-side code lives in [`../server`](../server). Please feel free to file feature requests and bugs in this repository.
 
 This app is built using React Native with Expo and can be compiled for either iOS or Android, although we do most of our testing on Android.
 
@@ -30,15 +30,15 @@ First, make sure you have set up react-native and Expo development environment b
 Clone this project
 
 ```bash
-  git clone git@github.com:hikmahealth/hikma-health-mobile.git
+  git clone git@github.com:hikmahealth/hikma-health-platform.git
 ```
 
-Set up the backend either locally or remotely by following the instructions on the backend repository: https://github.com/hikmahealth/hikma-health-backend
+Set up the backend either locally or remotely by following the instructions in [`../server/README.md`](../server/README.md).
 
 Go to the project directory
 
 ```bash
-  cd hikma-health-mobile
+  cd hikma-health-platform/apps/mobile
 ```
 
 Install the dependencies using pnpm - depending on your internet connection, this could take a few minutes.
