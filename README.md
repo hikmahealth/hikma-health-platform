@@ -50,7 +50,7 @@ You almost certainly clicked the **Deploy to Render** button at some point — t
 
 #### 1. Decide whether to keep using a fork
 
-- **No fork (deployed straight from this repo, or you don't need custom changes):** skip ahead to step 2. You'll point Render directly at `hikmahealth/hikma-health-server@v3`.
+- **No fork (deployed straight from this repo, or you don't need custom changes):** skip ahead to step 2. You'll point Render directly at `hikmahealth/hikma-health-platform@v3`.
 - **You have a fork with custom changes on `main`:** sync your fork's default branch from upstream's `v3`, then either rebase your customizations on top of `v3` or recreate them as a `v3`-based branch on your fork. Note that the codebase has reorganized into a monorepo, so any patches against `apps/server/` paths will need to be re-applied at `apps/server/...` instead of the old top-level `src/`.
 - **Forks of `hikma-health-mobile`, `hikma-health-ai-proxy`, or `hikma-health-local-hub`:** archive them. Going forward, contribute and pull from this monorepo. Those standalone repos are frozen.
 
@@ -92,7 +92,7 @@ Open a GitHub issue with your deploy logs (redact any secrets), or email `ally[a
 ## Repository layout
 
 ```
-hikma-health-server/
+hikma-health-platform/
 ├── apps/
 │   ├── server/        # TanStack Start full-stack server + admin web app
 │   ├── mobile/        # Expo / React Native app (iOS + Android)
@@ -147,8 +147,8 @@ App-specific documentation:
 ## Getting started
 
 ```bash
-git clone git@github.com:hikmahealth/hikma-health-server.git
-cd hikma-health-server
+git clone git@github.com:hikmahealth/hikma-health-platform.git
+cd hikma-health-platform
 pnpm install
 ```
 
