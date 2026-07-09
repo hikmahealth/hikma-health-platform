@@ -25,7 +25,7 @@ network as the mobile devices.
 Getting a hub running in a clinic — no build or source checkout required:
 
 1. **Download** the installer for the machine's OS from the
-   [Releases page](https://github.com/hikmahealth/hikma-health-server/releases): `.dmg`/`.app`
+   [Releases page](https://github.com/hikmahealth/hikma-health-platform/releases): `.dmg`/`.app`
    (macOS), `.msi`/`.exe` (Windows), or `.deb`/`.rpm`/`.AppImage` (Linux).
 2. **Install and launch.** On first launch, get past the OS gatekeeper — macOS: right-click →
    **Open**; Windows: **More info → Run anyway** (bundles aren't code-signed yet).
@@ -193,7 +193,7 @@ The hub checks for new versions using Tauri's updater plugin:
 
 - On the `Server` screen, `UpdateBanner` calls `check()` on launch and **every 30 minutes**.
 - `check()` fetches the updater manifest from
-  `https://github.com/hikmahealth/hikma-health-server/releases/latest/download/latest.json` and
+  `https://github.com/hikmahealth/hikma-health-platform/releases/latest/download/latest.json` and
   compares its version to the running app's compiled CalVer.
 - If newer, a banner offers **Install & Restart**: the platform artifact is downloaded, its **minisign
   signature is verified** against the `pubkey` in `tauri.conf.json`, installed, and the app relaunches.

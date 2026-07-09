@@ -25,7 +25,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDczODRDMTgwNDA3QTlCNkUKUldSdW0zcEFnTUdFYzUyQ213UWpPTzJhaEpkM2s5TmJReXp4VDN6UzE1Qlg1Z213amtpSUJPWGwK",
       "endpoints": [
-        "https://github.com/hikmahealth/hikma-health-server/releases/latest/download/latest.json"
+        "https://github.com/hikmahealth/hikma-health-platform/releases/latest/download/latest.json"
       ]
     }
   },
