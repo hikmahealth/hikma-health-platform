@@ -351,7 +351,7 @@ Features on the roadmap represent the vision for the mobile app over the coming 
 
 ## Contributing
 
-Please see the [CONTRIBUTING.md](CONTRIBUTING.md) file for more information.
+Please see the root README's [Contributing](../../README.md#contributing) section for more information.
 
 ## Credits
 
