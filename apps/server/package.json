@@ -100,7 +100,7 @@
     "exceljs": "^4.4.0",
     "immer": "^11.1.4",
     "isomorphic-dompurify": "^3.6.0",
-    "kysely": "^0.28.2",
+    "kysely": "^0.28.17",
     "lodash": "^4.17.21",
     "lucide-react": "^1.7.0",
     "minisearch": "^7.1.2",

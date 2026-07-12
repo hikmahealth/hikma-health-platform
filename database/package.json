@@ -25,7 +25,7 @@
     "migrate-down": "DB_SSL=true DB_MIGRATION=true npx kysely migrate down; pnpm run dev"
   },
   "dependencies": {
-    "kysely": "^0.28.16",
+    "kysely": "^0.28.17",
     "kysely-ctl": "^0.20.0",
     "pg": "^8.16.3"
   },
