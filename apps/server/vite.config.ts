@@ -34,7 +34,7 @@ export default defineConfig({
       rolldownConfig: {
         // rollupConfig: {
         external: [
-          /^@sentry\//,
+          // /^@sentry\//,
           "exceljs",
           /^echarts/,
           "zrender",
