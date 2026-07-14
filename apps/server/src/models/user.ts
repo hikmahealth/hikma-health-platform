@@ -310,12 +310,53 @@ namespace User {
    * @param {number} validHours - The number of hours the token is valid for
    * @returns {Promise<{ user: User.EncodedT; token: string }>} - The user if authentication is successful, null otherwise
    */
-  export const signIn = createServerOnlyFn(
+  // export const signIn = createServerOnlyFn(
+  //   async (
+  //     email: string,
+  //     password: string,
+  //     validHours: number = 2,
+  //   ): Promise<{ user: User.EncodedT; token: string }> => {
+  //     const user = await db
+  //       .selectFrom(Table.name)
+  //       .where("email", "=", email)
+  //       .where("is_deleted", "=", false)
+  //       .selectAll()
+  //       .executeTakeFirst();
+
+  //     if (!user) {
+  //       throw new Error("User not found");
+  //     }
+
+  //     const hashedPassword = user.hashed_password;
+  //     if (!(await bcrypt.compare(password, hashedPassword))) {
+  //       throw new Error("Invalid password");
+  //     }
+
+  //     const userEntry = User.fromDbEntry(user);
+  //     if (Either.isLeft(userEntry)) {
+  //       throw new Error("Failed to parse user data");
+  //     }
+
+  //     const token = await Token.create(
+  //       user.id,
+  //       new Date(Date.now() + validHours * 60 * 60 * 1000),
+  //     );
+
+  //     return {
+  //       user: Schema.encodeSync(UserSchema)(userEntry.right),
+  //       token,
+  //     };
+  //   },
+  // );
+export const signIn = createServerOnlyFn(
     async (
       email: string,
       password: string,
       validHours: number = 2,
     ): Promise<{ user: User.EncodedT; token: string }> => {
+      
+      console.log("[SIGN IN DEBUG] 1. Searching for email:", email);
+      
       const user = await db
         .selectFrom(Table.name)
         .where("email", "=", email)
@@ -324,19 +365,28 @@ namespace User {
         .executeTakeFirst();
 
       if (!user) {
+        console.log("[SIGN IN DEBUG] 2. FAILED: User not found in DB.");
         throw new Error("User not found");
       }
 
+      console.log("[SIGN IN DEBUG] 3. User found. Checking password...");
       const hashedPassword = user.hashed_password;
-      if (!(await bcrypt.compare(password, hashedPassword))) {
+      const isPasswordValid = await bcrypt.compare(password, hashedPassword);
+      
+      if (!isPasswordValid) {
+        console.log(`[SIGN IN DEBUG] 4. FAILED: Password mismatch.`);
         throw new Error("Invalid password");
       }
 
+      console.log("[SIGN IN DEBUG] 5. Password valid. Validating against UserSchema...");
       const userEntry = User.fromDbEntry(user);
+      
       if (Either.isLeft(userEntry)) {
+        console.log("[SIGN IN DEBUG] 6. FAILED: Schema parsing rejected the DB data!", userEntry.left);
         throw new Error("Failed to parse user data");
       }
 
+      console.log("[SIGN IN DEBUG] 7. SUCCESS! Generating token...");
       const token = await Token.create(
         user.id,
         new Date(Date.now() + validHours * 60 * 60 * 1000),
@@ -348,7 +398,7 @@ namespace User {
       };
     },
   );
-
+  
   /**
    * Signs a user out and invalidates their token
    * @param {string} token - The user's token
