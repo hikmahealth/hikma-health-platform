@@ -10,7 +10,12 @@ import {
 import { getPatientPrescriptions } from "@/lib/server-functions/prescriptions";
 import { getPatientProblems } from "@/lib/server-functions/patient-problems";
 import { Result } from "@/lib/result";
-import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  redirect,
+  useRouter,
+} from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   Card,
@@ -390,11 +395,14 @@ function RouteComponent() {
                 </div>
               </div>
             </div>
-            {/*TODO: add patient actions*/}
-            {/*<div className="flex gap-2">
-              <Button variant="outline">Edit Patient</Button>
-              <Button>New Visit</Button>
-            </div>*/}
+            {/*TODO: add "New Visit" patient action*/}
+            <div className="flex gap-2">
+              <Button variant="outline" asChild>
+                <Link to={`/app/patients/edit/${patient.id}`}>
+                  Edit Patient
+                </Link>
+              </Button>
+            </div>
           </div>
         </CardHeader>
       </Card>

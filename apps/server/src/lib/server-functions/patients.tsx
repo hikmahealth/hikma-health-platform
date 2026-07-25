@@ -8,6 +8,7 @@ import { permissionsMiddleware } from "@/middleware/auth";
 import db from "@/db";
 import { sql } from "kysely";
 import PatientAdditionalAttribute from "@/models/patient-additional-attribute";
+import UserClinicPermissions from "@/models/user-clinic-permissions";
 import {
   type CreatePatientInput,
   type UpdatePatientInput,
@@ -350,6 +351,40 @@ export const updatePatient = createServerFn({ method: "POST" })
 
       return Sentry.startSpan({ name: "updatePatient" }, async () => {
         try {
+          const existing = await db
+            .selectFrom(Patient.Table.name)
+            .select(["primary_clinic_id", "is_deleted"])
+            .where("id", "=", data.id)
+            .executeTakeFirst();
+
+          if (!existing || existing.is_deleted) {
+            return {
+              success: false as const,
+              error: "Patient not found",
+            };
+          }
+
+          // Clinic-scoped authorization, mirroring the `can_view_history`
+          // scoping `Patient.API.getById` already applies for reads:
+          // patients with no clinic assigned (legacy records) are editable
+          // by anyone with `can_edit_records` in at least one clinic, patients
+          // with a clinic require that specific clinic's permission.
+          const editableClinicIds =
+            await UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+              "can_edit_records",
+            );
+          const authorized =
+            existing.primary_clinic_id === null
+              ? editableClinicIds.length > 0
+              : editableClinicIds.includes(existing.primary_clinic_id);
+
+          if (!authorized) {
+            return {
+              success: false as const,
+              error: "Unauthorized: insufficient clinic permissions",
+            };
+          }
+
           const updateSet: Record<string, any> = {};
           const { fields } = data;
 
@@ -387,18 +422,68 @@ export const updatePatient = createServerFn({ method: "POST" })
           updateSet.last_modified = sql`now()::timestamp with time zone`;
           updateSet.last_modified_by = context.userId;
 
-          await db
-            .updateTable(Patient.Table.name)
-            .set(updateSet)
-            .where("id", "=", data.id)
-            .where("is_deleted", "=", false)
-            .execute();
+          const attrs = data.additionalAttributes ?? [];
+          const attrValues = buildPatientAttributeInsertValues(
+            data.id,
+            attrs,
+          );
+
+          // Same table + transaction, so a failed attribute write rolls
+          // back the patient field update too — an edit is one operation
+          // from the clinician's point of view, it shouldn't be able to
+          // half-apply.
+          await db.transaction().execute(async (trx) => {
+            await trx
+              .updateTable(Patient.Table.name)
+              .set(updateSet)
+              .where("id", "=", data.id)
+              .where("is_deleted", "=", false)
+              .execute();
+
+            for (const attr of attrValues) {
+              await trx
+                .insertInto(PatientAdditionalAttribute.Table.name)
+                .values({
+                  id: attr.id,
+                  patient_id: attr.patient_id,
+                  attribute_id: attr.attribute_id,
+                  attribute: attr.attribute,
+                  number_value: attr.number_value,
+                  string_value: attr.string_value,
+                  date_value: attr.date_value
+                    ? sql`${attr.date_value}::timestamp with time zone`
+                    : null,
+                  boolean_value: attr.boolean_value,
+                  metadata: sql`${JSON.stringify(attr.metadata)}::jsonb`,
+                  is_deleted: false,
+                  created_at: sql`now()::timestamp with time zone`,
+                  updated_at: sql`now()::timestamp with time zone`,
+                  last_modified: sql`now()::timestamp with time zone`,
+                  server_created_at: sql`now()::timestamp with time zone`,
+                  deleted_at: null,
+                })
+                .onConflict((oc) =>
+                  oc.columns(["patient_id", "attribute_id"]).doUpdateSet({
+                    attribute: (eb) => eb.ref("excluded.attribute"),
+                    number_value: (eb) => eb.ref("excluded.number_value"),
+                    string_value: (eb) => eb.ref("excluded.string_value"),
+                    date_value: (eb) => eb.ref("excluded.date_value"),
+                    boolean_value: (eb) => eb.ref("excluded.boolean_value"),
+                    metadata: (eb) => eb.ref("excluded.metadata"),
+                    is_deleted: false,
+                    updated_at: sql`now()::timestamp with time zone`,
+                    last_modified: sql`now()::timestamp with time zone`,
+                  }),
+                )
+                .executeTakeFirst();
+            }
+          });
 
           await logAuditEvent({
             actionType: "UPDATE",
             tableName: "patients",
             rowId: data.id,
-            changes: data.fields,
+            changes: { ...data.fields, additionalAttributes: attrs },
             userId: context.userId,
           });
 
