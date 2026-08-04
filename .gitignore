@@ -157,5 +157,6 @@ packages/**/.bsb.lock
 
 *.tsbuildinfo
 
+# docker related files
 .docker
 scripts/load-test.js
