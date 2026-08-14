@@ -1128,13 +1128,27 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                       const isMulti = Option.isOption(field.multi)
                         ? Option.getOrElse(field.multi, () => false)
                         : field.multi || false
+                      const label = resolved?.fieldNames[field.id] ?? field.name
                       return (
                         <View style={{}}>
-                          <Text
-                            text={resolved?.fieldNames[field.id] ?? field.name}
-                            preset="formLabel"
-                            withAsterisk={field.required}
-                          />
+                          <View
+                            direction="row"
+                            alignItems="center"
+                            justifyContent="space-between"
+                            gap={8}
+                          >
+                            <Text text={label} preset="formLabel" withAsterisk={field.required} />
+                            {hasSelectValue(value) ? (
+                              <Pressable
+                                onPress={() => onChange("")}
+                                hitSlop={12}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Clear ${label}`}
+                              >
+                                <Text text="Clear" size="xs" color={colors.palette.primary500} />
+                              </Pressable>
+                            ) : null}
+                          </View>
                           {getFieldDescription(field) ? (
                             <Text
                               text={getFieldDescription(field)}
@@ -1148,7 +1162,7 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                             searchable
                             closeAfterSelecting
                             style={$dropDownStyle}
-                            modalTitle={resolved?.fieldNames[field.id] ?? field.name}
+                            modalTitle={label}
                             multiple={isMulti}
                             modalContentContainerStyle={[
                               $modalContentContainerStyle,
@@ -1164,13 +1178,6 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                             items={sortBy(getTranslatedItems(field), ["label"])}
                             setOpen={openDialogue(field.id)}
                             listMode="MODAL"
-                            // setValue={(callback) => {
-                            //   const pickerValue = multiPickerValue(value, isMulti)
-                            //   const result = callback(pickerValue || "")
-                            //   const newValue =
-                            //     isMulti && Array.isArray(result) ? result.join("; ") : result
-                            //   onChange(newValue)
-                            // }}
                             setValue={(callback) => {
                               const pickerValue = multiPickerValue(
                                 getValues(sanitizeFieldName(field.name)) as any,
@@ -1617,6 +1624,15 @@ function multiPickerValue(
     return formValue.split(delim)
   }
   return []
+}
+
+/**
+Whether a select field currently holds a selection. Single-select stores a plain string and
+multi-select a joined one, so an empty string is the cleared state for both.
+*/
+function hasSelectValue(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length > 0
+  return typeof value === "string" && value.trim().length > 0
 }
 
 const $root: ViewStyle = {

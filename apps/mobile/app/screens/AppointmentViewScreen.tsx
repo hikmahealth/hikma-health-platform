@@ -6,17 +6,15 @@ import { Picker } from "@react-native-picker/picker"
 import { NativeStackScreenProps } from "@react-navigation/native-stack"
 import { format } from "date-fns"
 import { upperFirst } from "es-toolkit/compat"
-import { LucideCheck, LucideChevronRight, LucideEdit, LucideRefreshCw } from "lucide-react-native"
+import { LucideCheck, LucideChevronRight, LucideEdit } from "lucide-react-native"
 import DatePicker from "react-native-date-picker"
 import Toast from "react-native-root-toast"
 
-import { Button } from "@/components/Button"
 import { If } from "@/components/If"
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { View } from "@/components/View"
 import { useAppointment } from "@/hooks/useDBAppointment"
-import { useDBVisitEvents } from "@/hooks/useDBVisitEvents"
 import { translate } from "@/i18n/translate"
 import Appointment from "@/models/Appointment"
 import Clinic from "@/models/Clinic"
@@ -31,7 +29,6 @@ import { providerStore } from "@/store/provider"
 import { useFocusEffect } from "@react-navigation/native"
 import { usePermissionGuard } from "@/hooks/usePermissionGuard"
 import { Logger } from "@hikmahealth/js-utils"
-// import { useNavigation } from "@react-navigation/native"
 
 interface AppointmentViewScreenProps extends NativeStackScreenProps<
   PatientNavigatorParamList,
@@ -47,7 +44,6 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
   const { can } = usePermissionGuard()
   const { appointment, patient, clinic, isLoading } = useAppointment(appointmentId)
 
-  const visitEvents = useDBVisitEvents(appointment?.fulfilledVisitId, patient?.id)
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false)
   const [isEditStatusOpen, setIsEditStatusOpen] = useState(false)
 
@@ -94,7 +90,6 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
       })
       return
     }
-    // Confirm with the user that the want to reschedule to another date
     Alert.alert(
       "Reschedule Appointment",
       "Are you sure you want to reschedule this appointment to " +
@@ -145,7 +140,6 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
       return
     }
     try {
-      // Check if metadata is a valid object, if not, create a new object
       updatedMetadata =
         typeof appointment.metadata === "object" && appointment.metadata !== null
           ? { ...appointment.metadata, colorTag: color }
@@ -165,7 +159,6 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
             marginBottom: 100,
           },
         })
-        // refreshAppointment()
       })
       .catch((err) => {
         Toast.show("❌ Error updating appointment color", {
@@ -226,7 +219,6 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
             marginBottom: 100,
           },
         })
-        // refreshAppointment()
       })
       .catch((err) => {
         Toast.show("Error checking in patient", {
@@ -322,8 +314,7 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
   }
 
   const handleDepartmentStatusChange =
-    (appointmentId: string) =>
-    (departmentId: string, status: "checked_in" | "in_progress" | "completed" | "cancelled") => {
+    (appointmentId: string) => (departmentId: string, status: DepartmentStatus) => {
       if (!appointmentId || !departmentId) {
         Toast.show("Appointment or department not found", {
           position: Toast.positions.BOTTOM,
@@ -478,12 +469,6 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
 
       <View style={$separator} my={20} />
 
-      {/*<If condition={appointment.status === "pending"}>
-        <View py={spacing.sm}>
-          <Button text="Check-in" onPress={checkinPatient} preset="defaultPrimary" />
-        </View>
-      </If>*/}
-
       <Text text="Departments" size="lg" />
       <View gap={10}>
         {appointment.departments.map((department) => (
@@ -495,60 +480,6 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
           />
         ))}
       </View>
-
-      {/*<View>
-        <If condition={appointment.status === "checked_in"}>
-          <View py={spacing.sm}>
-            <Button
-              tx="appointmentView:startNewVisit"
-              onPress={startNewVisit}
-              preset="defaultPrimary"
-            />
-          </View>
-
-          <View py={spacing.sm}>
-            <Button tx="appointmentView:markComplete" onPress={markAppointmentComplete} />
-          </View>
-        </If>
-
-        <If condition={appointment.status === "pending"}>
-          <View direction="row" justifyContent="center" gap={spacing.md} pt={spacing.lg}>
-            <Pressable style={{ alignSelf: "center" }} onPress={rescheduleAppointment}>
-              <View direction="row" gap={spacing.md} alignItems="center">
-                <LucideRefreshCw color={colors.palette.primary500} size={20} />
-                <Text tx="common:reschedule" />
-              </View>
-            </Pressable>
-          </View>
-        </If>
-
-        <If condition={visitEvents.length > 0}>
-          <View mt={spacing.lg}>
-            <Text size="lg" text="Submitted Forms" />
-            <View gap={spacing.md}>
-              {visitEvents.map((event) => (
-                <AppointmentEvent
-                  key={event.id}
-                  event={event}
-                  appointment={appointment}
-                  navigation={navigation}
-                  patient={patient}
-                  onPress={(visitId: string, checkInTimestamp: number) => {
-                    navigation.navigate("EventForm", {
-                      patientId: patient.id,
-                      visitId: visitId,
-                      visitDate: new Date(checkInTimestamp).getTime(),
-                      formId: event.formId,
-                      eventId: event.id,
-                      appointmentId: appointment.id,
-                    })
-                  }}
-                />
-              ))}
-            </View>
-          </View>
-        </If>
-      </View>*/}
 
       <View height={100} />
 
@@ -565,16 +496,18 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
   )
 }
 
-const departmentStatuses = [
+type DepartmentStatus = "checked_in" | "in_progress" | "completed" | "cancelled"
+
+const departmentStatuses: { label: string; value: DepartmentStatus }[] = [
   { label: "Checked In", value: "checked_in" },
   { label: "In Progress", value: "in_progress" },
   { label: "Completed", value: "completed" },
-  // { label: "Cancelled", value: "cancelled" },
+  { label: "Cancelled", value: "cancelled" },
 ]
 
 type AppointmentDepartmentItemProps = {
   department: Appointment.EncodedDepartmentT
-  handleStatusChange: (departmentId: string, status: string) => void
+  handleStatusChange: (departmentId: string, status: DepartmentStatus) => void
   handleOpen: (departmentId: string) => void
 }
 
@@ -583,19 +516,22 @@ const AppointmentDepartmentItem = ({
   handleStatusChange,
   handleOpen,
 }: AppointmentDepartmentItemProps) => {
+  const isCancelled = department.status === "cancelled"
+  const openColor = isCancelled ? colors.palette.neutral400 : colors.palette.primary500
+
   return (
     <View style={$deptContainer} pb={14}>
       <View direction="row" justifyContent="space-between">
         <Text text={department.name} />
 
-        <Pressable onPress={() => handleOpen(department.id)}>
+        <Pressable disabled={isCancelled} onPress={() => handleOpen(department.id)}>
           <View direction="row" alignItems="center" gap={4}>
-            <Text text="Open" color={colors.palette.primary500} />
-            <LucideChevronRight size={16} color={colors.palette.primary500} />
+            <Text text="Open" color={openColor} />
+            <LucideChevronRight size={16} color={openColor} />
           </View>
         </Pressable>
       </View>
-      <View direction="row" pt={14} gap={10}>
+      <View direction="row" flexWrap="wrap" pt={14} gap={10}>
         {departmentStatuses.map((status) => (
           <Pressable
             key={status.value}
@@ -629,7 +565,7 @@ const $statusBtn = (isSelected: boolean): ViewStyle => ({
 })
 
 const enhanceAppointmentEvent = withObservables(["event"], ({ event }) => ({
-  event, // shortcut syntax for `event: event.observe()`
+  event,
   visit: event.visit ? event.visit.observe().pipe(catchError(() => of$(null))) : of$(null),
 }))
 
@@ -637,7 +573,6 @@ type AppointmentEventProps = {
   appointment: Appointment.DBAppointment
   event: Event.DBEvent
   visit: Visit.DBVisit | null
-  // navigation: AppStackScreenProps<"AppointmentView">["navigation"]
   patient: Patient.DBPatient
   onPress: (visitId: string, checkInTimestamp: number) => void
 }

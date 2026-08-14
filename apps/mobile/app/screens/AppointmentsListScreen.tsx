@@ -26,7 +26,6 @@ import { FilterPanel } from "@/components/FilterPanel"
 import { If } from "@/components/If"
 import { Text } from "@/components/Text"
 import { TextField } from "@/components/TextField"
-import { Checkbox } from "@/components/Toggle/Checkbox"
 import { View } from "@/components/View"
 import db from "@/db"
 import ClinicDepartmentModel from "@/db/model/ClinicDepartment"
@@ -58,11 +57,10 @@ export const AppointmentsListScreen: FC<AppointmentsListScreenProps> = ({ naviga
     name: providerName,
   } = useSelector(providerStore, (state) => state.context)
   const propsClinicId = Option.getOrElse(clinic_id, () => "")
-  // const clinicName = Option.getOrElse(clinic_name, () => "")
 
   const { clinics: clinicsList, isLoading: isLoadingClinics } = useDBClinicsList()
 
-  const { appointments, clearFilters, filters, handleFiltersChange, loadMore } =
+  const { appointments, clearFilters, filters, handleFiltersChange, loadMore, summary } =
     useDBAppointmentsFilter(propsClinicId, clinicsList)
 
   const activeClinic = clinicsList.find((clinic) => clinic.id === filters.clinicId)
@@ -93,12 +91,10 @@ export const AppointmentsListScreen: FC<AppointmentsListScreenProps> = ({ naviga
           clearFilters={clearFilters}
           filters={filters}
           onFiltersChange={handleFiltersChange}
+          summary={summary}
         />
       }
-      // ItemSeparatorComponent={ItemSeparatorComponent}
       data={appointments}
-      // data={[]}
-      // renderItem={({ item }) => <AppointmentItem appointment={item} />}
       renderItem={({ item }) => {
         return (
           <View px={10}>
@@ -119,7 +115,6 @@ export const AppointmentsListScreen: FC<AppointmentsListScreenProps> = ({ naviga
       onEndReached={loadMore}
       onEndReachedThreshold={0.5}
       extraData={`${filters.status}_${filters.clinicId}_${filters.country}_${filters.city}_${filters.searchQuery}__${filters.date.toDateString()}__${filters.departmentIds}`}
-      // extraData={appointmentsCount * loadedAppointmentsCount}
     />
   )
 }
@@ -132,9 +127,10 @@ interface AppointmentListHeaderProps {
   filters: AppointmentsFilters
   clearFilters: () => void
   onFiltersChange: (filters: Partial<AppointmentsFilters>) => void
+  /** Counts across every status, so it stays informative while a status filter is applied. */
+  summary: Appointment.StatusSummary | null
 }
 
-// Add patient, clinic, and provider to the appointment
 const enhanceHeader = withObservables(["clinic"], ({ clinic }: { clinic?: Clinic.DBClinic }) => ({
   clinic: clinic ? clinic.observe().pipe(catchError(() => of$(null))) : of$(null),
   departmentList: clinic
@@ -156,6 +152,7 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
     departmentList = [],
     clinicsList,
     defaultClinicId,
+    summary,
   }: {
     filters: AppointmentsFilters
     clearFilters: () => void
@@ -163,6 +160,7 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
     departmentList: ClinicDepartmentModel[]
     clinicsList: Clinic.DBClinic[]
     defaultClinicId: string
+    summary: Appointment.StatusSummary | null
   }) => {
     const { themed } = useAppTheme()
     const [openDropdown, setOpenDropdown] = useState<
@@ -218,7 +216,6 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
 
     return (
       <View style={themed($headerContainer)}>
-        {/* Search Bar */}
         <TextField
           placeholder="Search appointments..."
           value={filters.searchQuery}
@@ -353,10 +350,6 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
                 const data = items.map((item) => item.value).filter(Boolean)
                 onFiltersChange({ departmentIds: data })
               }}
-              // setValue={(cb) => {
-              //   const data = cb(filters.departmentIds)
-              //   onFiltersChange({ departmentIds: data })
-              // }}
             />
           </View>
 
@@ -385,42 +378,19 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
               ))}
             </View>
           </View>
-
-          {/*<View mt={10}>
-          <Text preset="formLabel" text="Status" />
-
-          <DropDownPicker
-            open={openDropdown === "status"}
-            setOpen={(open) => {
-              if (open as unknown as boolean) setOpenDropdown("status")
-              else setOpenDropdown(null)
-            }}
-            modalTitle="Appointment Status"
-            style={$dropDownPickerStyle}
-            zIndex={990000}
-            zIndexInverse={990000}
-            listMode="MODAL"
-            items={stringsListToOptions(Appointment.statusList, true)}
-            value={filters.status || ""}
-            setValue={(cb) => {
-              const data = cb(filters.status)
-              onFiltersChange({ status: data })
-            }}
-          />
-        </View>*/}
-
-          {/*<View mt={10}>
-          <Checkbox
-            label="Include in department visits"
-            labelStyle={{
-              fontSize: 14,
-            }}
-          />
-        </View>*/}
         </FilterPanel>
         <View>
           <AgendaDateSetter date={filters.date} setDate={(date) => onFiltersChange({ date })} />
         </View>
+        {summary ? (
+          <View pt={6}>
+            <Text
+              size="xxs"
+              style={themed($summaryText)}
+              text={`${summary.total} total · ${summary.open} open · ${summary.checkedIn} checked in · ${summary.completed} completed`}
+            />
+          </View>
+        ) : null}
       </View>
     )
   },
@@ -520,7 +490,6 @@ const AppointmentItem = enhance(
           </If>
           <Text text={`Time: ${format(appointment.timestamp, "h:mm a")}`} size="xs" />
           <Text text={`Created at ${format(appointment.createdAt, "MMM dd, h:mm a")}`} size="xs" />
-          {/* Status */}
           <If condition={appointment?.departments?.length > 0}>
             <View pt={4}>
               <Text text="Departments:" size="xs" textDecorationLine="underline" />
@@ -603,7 +572,6 @@ export const ItemSeparatorComponent = () => {
   return <View style={themed($separator)} />
 }
 
-// Styles
 const $root: ViewStyle = {
   flex: 1,
 }
@@ -643,6 +611,10 @@ const $separator: ThemedStyle<ViewStyle> = ({ colors }) => ({
 const $emptySubtext: ThemedStyle<TextStyle> = ({ colors }) => ({
   color: colors.textDim,
   marginTop: 8,
+})
+
+const $summaryText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.textDim,
 })
 
 const $modalContentContainerStyle: ViewStyle = {

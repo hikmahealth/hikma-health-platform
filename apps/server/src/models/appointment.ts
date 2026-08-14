@@ -131,7 +131,12 @@ namespace Appointment {
           name: string;
           seen_at: string | null;
           seen_by: string | null;
-          status: "pending" | "in_progress" | "completed" | "checked_in";
+          status:
+            | "pending"
+            | "in_progress"
+            | "completed"
+            | "checked_in"
+            | "cancelled";
         }>
       >;
       is_walk_in: boolean;
@@ -200,14 +205,6 @@ namespace Appointment {
         ORDER BY appointments.timestamp DESC
       `.compile(db),
         );
-
-        // const res = await db
-        //   .selectFrom(Appointment.Table.name)
-        //   .where("patient_id", "=", patientId)
-        //   .where("is_deleted", "=", false)
-        //   .selectAll()
-        //   .orderBy("appointments.timestamp", "asc")
-        //   .execute();
 
         return res.rows || [];
       },
@@ -296,7 +293,6 @@ namespace Appointment {
               isValidUUID(appointment.current_visit_id)
                 ? appointment.current_visit_id
                 : uuidV1();
-            // If there is no visit Id, create a new visit
             if (!isValidUUID(appointment.current_visit_id)) {
               const visit = await trx
                 .insertInto(Visit.Table.name)
@@ -390,7 +386,6 @@ namespace Appointment {
                       reason: appointment.reason,
                       notes: appointment.notes,
                       status: appointment.status,
-                      //
                       fulfilled_visit_id:
                         appointment.fulfilled_visit_id &&
                         isValidUUID(appointment.fulfilled_visit_id)

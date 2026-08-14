@@ -28,6 +28,17 @@ const initialFilters: AppointmentsFilters = {
 
 const PAGE_SIZE = 150
 
+/**
+ * The department filter can't be expressed as a query condition, so both the list and the
+ * counter narrow their results with this. Shared so the two can't drift apart.
+ */
+const inSelectedDepartments = (
+  appointment: { departments: readonly { id: string }[] },
+  departmentIds: string[],
+): boolean =>
+  departmentIds.length === 0 ||
+  appointment.departments.some((department) => departmentIds.includes(department.id))
+
 type ISOStringDate = string
 
 export function useDBAppointmentsFilter(
@@ -39,6 +50,8 @@ export function useDBAppointmentsFilter(
   handleFiltersChange: (newFilters: Partial<AppointmentsFilters>) => void
   clearFilters: () => void
   appointments: Appointment.T[]
+  /** `null` until the first count for the current filters has been read. */
+  summary: Appointment.StatusSummary | null
   loadMore: () => Promise<void>
   isLoading: boolean
 } {
@@ -53,6 +66,7 @@ export function useDBAppointmentsFilter(
   })
   const [loading, setLoading] = useState(true)
   const [appointmentResults, setAppointmentResults] = useState<Appointment.T[]>([])
+  const [summary, setSummary] = useState<Appointment.StatusSummary | null>(null)
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useDebounceValue(filters.searchQuery, 500)
   useEffect(() => {
     setDebouncedSearchQuery(filters.searchQuery)
@@ -79,7 +93,6 @@ export function useDBAppointmentsFilter(
     // Q.oneOf(["all"]) and match nothing.
     const statusFilter = status === "all" ? [] : [status]
 
-    // build the conditions
     const conditions = Appointment.DB.createSearchQueryConditions(
       searchQuery,
       clinicIds,
@@ -88,22 +101,14 @@ export function useDBAppointmentsFilter(
       pagination,
     )
 
-    // Execute query subscription
     const sub = database
       .get<Appointment.DBAppointment>("appointments")
       .query(...conditions)
       .observe()
       .subscribe((appointments) => {
-        const results = (() => {
-          const mappedAppointments = appointments.map(Appointment.DB.rawToT)
-          // Filter by department IDs if provided (client-side filtering)
-          if (departmentIds.length > 0) {
-            return mappedAppointments.filter((appointment) =>
-              appointment.departments.some((dept) => departmentIds.includes(dept.id)),
-            )
-          }
-          return mappedAppointments
-        })()
+        const results = appointments
+          .map(Appointment.DB.rawToT)
+          .filter((appointment) => inSelectedDepartments(appointment, departmentIds))
         setAppointmentResults(results)
         setLoading(false)
       })
@@ -119,6 +124,39 @@ export function useDBAppointmentsFilter(
     filters.status,
     pagination.limit,
   ])
+
+  useEffect(() => {
+    const { date, searchQuery, departmentIds } = filters
+    // Clear rather than keep the last counts: stale numbers under new filters read as real,
+    // where an absent line reads as "still counting".
+    setSummary(null)
+
+    // The summary reports one count per status, so it drops the status filter — otherwise
+    // every bucket but the selected one would always read zero. It is unpaginated too: it
+    // describes the whole day, not the page the list has scrolled to so far.
+    const conditions = Appointment.DB.createSearchQueryConditions(
+      searchQuery,
+      clinicIds,
+      [],
+      date,
+      { offset: 0, limit: 0 },
+    )
+
+    const sub = database
+      .get<Appointment.DBAppointment>("appointments")
+      .query(...conditions)
+      .observe()
+      .subscribe((appointments) => {
+        const statuses = appointments
+          .filter((appointment) => inSelectedDepartments(appointment, departmentIds))
+          .map((appointment) => appointment.status)
+        setSummary(Appointment.summarizeStatuses(statuses))
+      })
+
+    return () => {
+      sub.unsubscribe()
+    }
+  }, [clinicIdsKey, filters.date.toISOString(), debouncedSearchQuery, filters.departmentIds])
 
   const handleFiltersChange = (newFilters: Partial<AppointmentsFilters>) => {
     // Prune only on a location change. On every change it would clear a clinic
@@ -165,6 +203,7 @@ export function useDBAppointmentsFilter(
     handleFiltersChange,
     clearFilters,
     appointments: appointmentResults,
+    summary,
     isLoading: loading,
     loadMore,
   }

@@ -47,6 +47,51 @@ namespace Appointment {
 
   export const statusList = Object.values(Status)
 
+  export type StatusSummary = {
+    total: number
+    open: number
+    checkedIn: number
+    completed: number
+  }
+
+  /**
+   * Tally a set of appointment statuses into the buckets the appointments list summarises.
+   *
+   * `open` is every status where the patient has not arrived yet. Cancelled appointments land
+   * in no bucket, so the three buckets deliberately do not add up to `total`.
+   * @param {readonly string[]} statuses one entry per appointment
+   * @returns {StatusSummary}
+   */
+  export const summarizeStatuses = (statuses: readonly string[]): StatusSummary => {
+    const summary: StatusSummary = {
+      total: statuses.length,
+      open: 0,
+      checkedIn: 0,
+      completed: 0,
+    }
+
+    for (const status of statuses) {
+      switch (status) {
+        case "pending":
+        case "scheduled":
+        case "confirmed":
+          summary.open += 1
+          break
+        case "checked_in":
+        case "in_progress":
+          summary.checkedIn += 1
+          break
+        case "completed":
+          summary.completed += 1
+          break
+        default:
+          break
+      }
+    }
+
+    return summary
+  }
+
   export type T = {
     id: string
     providerId: Option.Option<string>
@@ -197,7 +242,6 @@ namespace Appointment {
       }
 
       return await database.write(async () => {
-        // If there is no currentVisitId, we need to create a new visit
         let visit: VisitModel | null = null
         let appointmentVisitId: string | null = appointment.currentVisitId
         if (!appointment.currentVisitId) {
@@ -233,8 +277,8 @@ namespace Appointment {
             newAppointment.isDeleted = false
           })
 
-        // Update the patient metadata with lastAppointmentTimestamp value
-        // This makes sure the patient is always synced with the server when an appointment is created
+        // Touching the patient metadata is what keeps the patient synced to the server
+        // alongside the appointment.
         const patient = await database.get<PatientModel>("patients").find(appointment.patientId)
         let patientUpdate: PatientModel | undefined = undefined
         if (patient) {
@@ -246,7 +290,6 @@ namespace Appointment {
           })
         }
 
-        // batch create both of them
         await database.batch([visit, appointmentQuery, patientUpdate].filter(Boolean) as Model[])
 
         return {
@@ -287,11 +330,7 @@ namespace Appointment {
       await database.write(async () => {
         const appointment = await database.get<AppointmentModel>("appointments").find(appointmentId)
         await appointment.update((appointment) => {
-          if (options?.preserveStatus) {
-            // appointment.status = appointment.status;
-            // Do nothing
-          } else {
-            // Can change the status to completed
+          if (!options?.preserveStatus) {
             appointment.status = "completed"
           }
           appointment.fulfilledVisitId = visitId || null
@@ -349,16 +388,13 @@ namespace Appointment {
       await database.write(async () => {
         const appointment = await database.get<AppointmentModel>("appointments").find(appointmentId)
 
-        // Check if the department exists in the appointment
         const departmentIndex = appointment.departments.findIndex(
           (dept) => dept.id === departmentId,
         )
 
         let departmentName: string | undefined
 
-        // If the department does not exist, fetch it to get the name
         if (departmentIndex === -1) {
-          // Fetch the department from the clinic_departments table to get the name
           const clinicDepartment = await database
             .get<ClinicDepartmentModel>("clinic_departments")
             .find(departmentId)
@@ -366,7 +402,6 @@ namespace Appointment {
           departmentName = clinicDepartment.name
         }
 
-        // If trying to set status to "in_progress", check if any other department is already in progress
         if (status === "in_progress") {
           const hasOtherInProgress = appointment.departments.some(
             (dept) => dept.id !== departmentId && dept.status === "in_progress",
@@ -379,12 +414,10 @@ namespace Appointment {
           }
         }
 
-        // Update the appointment with the new department status
         await appointment.update((appt) => {
           const updatedDepartments = [...appt.departments]
 
           if (departmentIndex === -1) {
-            // Create and add new department entry if it doesn't exist
             const newDepartment: EncodedDepartmentT = {
               id: departmentId,
               name: departmentName!,
@@ -394,18 +427,15 @@ namespace Appointment {
             }
             updatedDepartments.push(newDepartment)
           } else {
-            // Update existing department
             const departmentToUpdate = {
               ...updatedDepartments[departmentIndex],
               status: status,
             }
 
-            // Set seen_at when status is "in_progress"
             if (status === "in_progress") {
               departmentToUpdate.seen_at = new Date().toISOString()
             }
 
-            // Set seen_by when status is "completed"
             if (status === "completed") {
               departmentToUpdate.seen_by = userId
             }
@@ -430,7 +460,6 @@ namespace Appointment {
       // filters, so no appointments should show.
       const conditions = [Q.where("clinic_id", Q.oneOf(clinicIds)), Q.where("is_deleted", false)]
 
-      // Add date filter - filter by day
       const startOfDay = new Date(date)
       startOfDay.setHours(0, 0, 0, 0)
       const endOfDay = new Date(date)
@@ -441,12 +470,10 @@ namespace Appointment {
         Q.where("timestamp", Q.lte(endOfDay.getTime())),
       )
 
-      // Add status filter if provided
       if (status.length > 0) {
         conditions.push(Q.where("status", Q.oneOf(status)))
       }
 
-      // Add patient name search if search query is provided
       const nameTokens = tokenizeForSearch(searchQuery)
       if (nameTokens.length > 0) {
         conditions.push(
@@ -460,7 +487,8 @@ namespace Appointment {
         )
       }
 
-      // Add pagination
+      // A zero limit is "no cap" — callers that need every match, such as the
+      // counts behind the appointments list, pass it deliberately.
       const { offset = 0, limit = 25 } = options
       if (offset > 0) {
         conditions.push(Q.skip(offset))
@@ -490,7 +518,6 @@ namespace Appointment {
       options: { offset?: number; limit?: number } = { offset: 0, limit: 50 },
     ): Promise<Appointment.T[]> => {
       try {
-        // build the conditions
         const conditions = createSearchQueryConditions(
           searchQuery,
           [clinicId],
@@ -499,16 +526,14 @@ namespace Appointment {
           options,
         )
 
-        // Execute query
         const appointments = await database
           .get<AppointmentModel>("appointments")
           .query(...conditions)
           .fetch()
 
-        // Convert to Appointment.T format
         const results: Appointment.T[] = appointments.map(rawToT)
 
-        // Filter by department IDs if provided (client-side filtering)
+        // The department filter can't be expressed as a query condition.
         if (departmentIds.length > 0) {
           return results.filter((appointment) =>
             appointment.departments.some((dept) => departmentIds.includes(dept.id)),
