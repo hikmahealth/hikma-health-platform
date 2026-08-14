@@ -1,4 +1,4 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { v1 as uuidV1 } from "uuid";
 import { toast } from "sonner";
@@ -22,7 +22,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SelectInput } from "@/components/select-input";
 import { upperFirst } from "es-toolkit/compat";
-import { getDrugById, saveDrug } from "@/lib/server-functions/drugs";
+import {
+  getDrugById,
+  saveDrug,
+  updateDrug,
+} from "@/lib/server-functions/drugs";
 import { currencyCodesOptions } from "@/data/currencies";
 import { Logger } from "@hikmahealth/js-utils";
 
@@ -73,11 +77,10 @@ export const Route = createFileRoute("/app/inventory/drug-catalogue/edit/$")({
 
 function RouteComponent() {
   const { drug, currentUser } = Route.useLoaderData();
-  const router = useRouter();
   const navigate = Route.useNavigate();
-  const params = Route.useParams();
-  const drugId = params._splat;
-  const isEditing = !!drugId && drugId !== "new";
+  // Keyed off the loaded row, not the url: an id matching nothing leaves the
+  // form on its defaults, so it is an add whatever the path said.
+  const isEditing = drug !== null;
 
   const form = useForm<Partial<DrugCatalogue.ApiDrug>>({
     defaultValues: drug || DEFAULT_FORM_VALUES,
@@ -90,19 +93,22 @@ function RouteComponent() {
     }
 
     try {
-      const drugData: Partial<DrugCatalogue.ApiDrug> = {
-        ...values,
-        id: isEditing ? drug?.id : uuidV1(),
-        recorded_by_user_id: currentUser.id,
-      };
-
-      await saveDrug({
-        data: {
-          drug: drugData,
-          isEdit: isEditing,
-        },
-      });
-      // router.invalidate({ sync: true });
+      if (drug) {
+        // recorded_by_user_id rides along untouched: it names whoever entered
+        // the drug, and the table has no separate last-edited-by column.
+        await updateDrug({ data: { id: drug.id, drug: values } });
+      } else {
+        await saveDrug({
+          data: {
+            drug: {
+              ...values,
+              id: uuidV1(),
+              recorded_by_user_id: currentUser.id,
+            },
+            isEdit: false,
+          },
+        });
+      }
 
       toast.success(
         isEditing ? "Drug updated successfully" : "Drug created successfully",

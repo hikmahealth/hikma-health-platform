@@ -23,6 +23,56 @@ export const saveDrug = createServerFn({ method: "POST" })
     });
   });
 
+export const updateDrug = createServerFn({ method: "POST" })
+  .inputValidator(
+    (data: { id: string; drug: Partial<DrugCatalogue.ApiDrug> }) => data,
+  )
+  .middleware([superAdminMiddleware])
+  .handler(async ({ data }) => {
+    return Sentry.startSpan({ name: "Update drug in catalogue" }, async () => {
+      const result = await Effect.runPromise(
+        DrugCatalogue.API.update(data.id, data.drug).pipe(
+          Effect.catchTag("NotFoundError", (error) =>
+            Effect.fail({ status: 404, message: error.message }),
+          ),
+          Effect.catchAll((error) => {
+            Sentry.captureException(error);
+            return Effect.fail({
+              status: 500,
+              message: "Failed to update drug",
+            });
+          }),
+        ),
+      );
+      return result;
+    });
+  });
+
+export const deleteDrug = createServerFn({ method: "POST" })
+  .inputValidator((data: { id: string }) => data)
+  .middleware([superAdminMiddleware])
+  .handler(async ({ data }) => {
+    return Sentry.startSpan(
+      { name: "Soft delete drug from catalogue" },
+      async () => {
+        await Effect.runPromise(
+          DrugCatalogue.API.softDelete(data.id).pipe(
+            Effect.catchTag("NotFoundError", (error) =>
+              Effect.fail({ status: 404, message: error.message }),
+            ),
+            Effect.catchAll((error) => {
+              Sentry.captureException(error);
+              return Effect.fail({
+                status: 500,
+                message: "Failed to delete drug",
+              });
+            }),
+          ),
+        );
+      },
+    );
+  });
+
 export const getDrugById = createServerFn({ method: "GET" })
   .inputValidator((data: { id: string }) => data)
   .middleware([adminMiddleware])

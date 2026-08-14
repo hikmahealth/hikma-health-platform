@@ -161,8 +161,10 @@ namespace DrugCatalogue {
       dosage_quantity: ColumnType<number, string | number, string | number>;
       dosage_units: string;
       manufacturer: string | null;
-      sale_price: Generated<
-        ColumnType<number, string | number, string | number>
+      sale_price: ColumnType<
+        number,
+        string | number | undefined,
+        string | number
       >;
       sale_currency: string | null;
       min_stock_level: Generated<number | null>;
@@ -174,12 +176,14 @@ namespace DrugCatalogue {
       recorded_by_user_id: string | null;
       metadata: JSONColumnType<Record<string, any>>;
       is_deleted: Generated<boolean>;
-      created_at: Generated<ColumnType<Date, string | undefined, never>>;
-      updated_at: Generated<
-        ColumnType<Date, string | undefined, string | undefined>
-      >;
-      last_modified: Generated<ColumnType<Date, string | undefined, never>>;
-      server_created_at: Generated<ColumnType<Date, string | undefined, never>>;
+      // Bare ColumnType, not Generated<ColumnType<…>>: the wrapper nests a
+      // second time, leaving select as a ColumnType object and update as a
+      // type no write can satisfy. The middle slot already covers insert.
+      created_at: ColumnType<Date, string | undefined, never>;
+      updated_at: ColumnType<Date, string | undefined, string | undefined>;
+      // Writable, unlike created_at: sync keys its delta off this column.
+      last_modified: ColumnType<Date, string | undefined, string | undefined>;
+      server_created_at: ColumnType<Date, string | undefined, never>;
       deleted_at: ColumnType<
         Date | null,
         string | null | undefined,
@@ -191,6 +195,60 @@ namespace DrugCatalogue {
     export type NewDrugCatalogue = Insertable<T>;
     export type DrugCatalogueUpdate = Updateable<T>;
   }
+
+  /**
+   * Columns an administrator may write when editing a catalogue entry. Identity,
+   * soft-delete state and the sync timestamps are server-owned and deliberately
+   * absent. `metadata` is editable too, but applied separately: it needs JSON
+   * serialization before it can reach a jsonb column.
+   */
+  const EDITABLE_COLUMNS = [
+    "barcode",
+    "generic_name",
+    "brand_name",
+    "form",
+    "route",
+    "dosage_quantity",
+    "dosage_units",
+    "manufacturer",
+    "sale_price",
+    "sale_currency",
+    "min_stock_level",
+    "max_stock_level",
+    "is_controlled",
+    "requires_refrigeration",
+    "is_active",
+    "notes",
+    "recorded_by_user_id",
+  ] as const satisfies readonly (keyof ApiDrug &
+    keyof Table.DrugCatalogueUpdate)[];
+
+  export type DrugUpdatePatch = Pick<
+    Table.DrugCatalogueUpdate,
+    (typeof EDITABLE_COLUMNS)[number] | "metadata"
+  >;
+
+  /**
+   * Narrow a caller's payload to the columns an edit may write.
+   *
+   * An absent key leaves the stored value alone, unlike `buildUpsertValues`,
+   * which substitutes a default for every missing column and so blanks anything
+   * a partial payload omits. An explicit `null` is a value here — clearing a
+   * barcode or a note is a legitimate edit.
+   */
+  export const buildUpdateValues = (
+    drug: Partial<ApiDrug>,
+  ): DrugUpdatePatch => {
+    const patch: DrugUpdatePatch = {};
+    for (const column of EDITABLE_COLUMNS) {
+      if (drug[column] === undefined) continue;
+      (patch as Record<string, unknown>)[column] = drug[column];
+    }
+    if (drug.metadata !== undefined) {
+      patch.metadata = JSON.stringify(drug.metadata);
+    }
+    return patch;
+  };
 
   // ============ QUERY BUILDERS ============
 
@@ -448,6 +506,60 @@ namespace DrugCatalogue {
     export const DANGEROUS_SYNC_ONLY_upsert = createServerOnlyFn(
       (drug: Partial<ApiDrug>): Effect.Effect<{ id: string }, DomainError> =>
         withTransaction((trx) => executeCoreUpsert(drug, trx)),
+    );
+
+    /**
+     * Apply an administrator's edit to an existing catalogue entry.
+     *
+     * Separate from `upsert` rather than another caller of it: that path absorbs
+     * records arriving from sync, so it resets every column the payload omits
+     * and — through the `excluded.updated_at >` conflict guard — silently drops
+     * any write not newer than the stored row, which is exactly what an edit
+     * replaying the row it just loaded is.
+     *
+     * Fails with NotFoundError when no live row has this id; a soft-deleted
+     * entry is not editable until it is restored.
+     */
+    export const update = createServerOnlyFn(
+      (
+        id: string,
+        drug: Partial<ApiDrug>,
+      ): Effect.Effect<{ id: string }, DomainError> =>
+        pipe(
+          checkInventoryPermission,
+          Effect.flatMap(() => validateDrugId(id)),
+          Effect.flatMap((validId) =>
+            Effect.map(
+              drug.metadata === undefined
+                ? Effect.succeed({})
+                : validateMetadata(drug.metadata),
+              () => validId,
+            ),
+          ),
+          Effect.flatMap((validId) => {
+            const { metadata, ...columns } = buildUpdateValues(drug);
+            return executeQueryTakeFirst(
+              db
+                .updateTable(Table.name)
+                .set({
+                  ...columns,
+                  ...(metadata === undefined
+                    ? {}
+                    : { metadata: sql<string>`${metadata}::jsonb` }),
+                  updated_at: sql`now()::timestamp with time zone`,
+                  last_modified: sql`now()::timestamp with time zone`,
+                })
+                .where("id", "=", validId)
+                .where("is_deleted", "=", false)
+                .returning("id"),
+            );
+          }),
+          Effect.flatMap((result) =>
+            result
+              ? Effect.succeed(result as { id: string })
+              : Effect.fail(new NotFoundError(`Drug with ID ${id} not found`)),
+          ),
+        ),
     );
 
     const executeCoreSoftDelete = (

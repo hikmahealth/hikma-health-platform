@@ -30,9 +30,10 @@ export const emptyVitalsState: VitalsState = {
   bpPosition: "",
   pulseRate: "",
   temperature: "",
-  // setting to empty to show it was not interacted with
-  // @ts-ignore
-  temperatureUnit: "",
+  // Temperature is stored in celsius, so the form starts there rather than
+  // unset: a definite unit is what lets the range check reject a Fahrenheit
+  // reading instead of recording it as an absurd celsius one.
+  temperatureUnit: "celsius",
   oxygenSaturation: "",
   respiratoryRate: "",
   painLevel: "",

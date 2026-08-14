@@ -133,6 +133,29 @@ export const classifyUpsertResult = (result: unknown): boolean => {
   return true;
 };
 
+/**
+ * The SQLSTATE classes that describe ONE record rather than the request: 22xxx
+ * data exceptions (numeric overflow, string too long, bad input syntax) and
+ * 23xxx integrity violations (foreign key, check, unique). Returns the code, so
+ * the caller can log which rule fired.
+ *
+ * Everything else — a dropped connection, an exhausted pool, an admin shutdown
+ * — is about the batch and must keep failing the whole push, or an outage would
+ * report as "every record rejected" with a 200.
+ */
+export const recordLevelErrorCode = (error: unknown): string | null => {
+  // pg errors arrive bare from the model layer today; the cause walk covers a
+  // model that wraps its failures, bounded so a self-referential cause cannot
+  // spin.
+  let current: unknown = error;
+  for (let depth = 0; current && depth < 5; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (typeof code === "string" && /^2[23]/.test(code)) return code;
+    current = (current as { cause?: unknown }).cause;
+  }
+  return null;
+};
+
 namespace Sync {
   const pushTableNameModelMap = ENTITIES_TO_PULL_FROM_MOBILE.reduce(
     (acc, entity) => {
@@ -605,17 +628,53 @@ namespace Sync {
           continue;
         }
 
-        const upsertResult = await tableModelMap[tableName].Sync.upsertFromDelta(
-          cleaned as any,
-          caller,
-        );
+        let upsertResult: unknown;
+        try {
+          upsertResult = await tableModelMap[tableName].Sync.upsertFromDelta(
+            cleaned as any,
+            caller,
+          );
+        } catch (error) {
+          const code = recordLevelErrorCode(error);
+          // Skipping is only safe when the client will be told, since it then
+          // keeps the record pending. On a table whose rejections it never sees,
+          // dropping the record here would lose it outright.
+          if (code === null || !reportable) throw error;
+          Logger.error({
+            msg:
+              `[sync] Postgres rejected ${tableName} record ${cleaned.id} (${code}) — ` +
+              `skipping it so the rest of the push can land`,
+            error,
+          });
+          note(mobileName, String(cleaned.id), false);
+          continue;
+        }
         if (reportable) {
-          note(mobileName, String(cleaned.id), classifyUpsertResult(upsertResult));
+          note(
+            mobileName,
+            String(cleaned.id),
+            classifyUpsertResult(upsertResult),
+          );
         }
       }
 
       for (const id of deltaData.deleted) {
-        await tableModelMap[tableName].Sync.deleteFromDelta(id);
+        try {
+          await tableModelMap[tableName].Sync.deleteFromDelta(id);
+        } catch (error) {
+          const code = recordLevelErrorCode(error);
+          // Same rule as the upsert above. Reporting the id keeps the client's
+          // tombstone alive: WatermelonDB's `destroyDeletedRecords` filters the
+          // deleted bucket by `rejectedIds`, so the deletion is retried.
+          if (code === null || !reportable) throw error;
+          Logger.error({
+            msg:
+              `[sync] Postgres rejected the deletion of ${tableName} ${id} (${code}) — ` +
+              `skipping it so the rest of the push can land`,
+            error,
+          });
+          note(mobileName, id, false);
+        }
       }
     }
 

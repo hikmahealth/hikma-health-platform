@@ -1,5 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { createServerFn } from "@tanstack/react-start";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import * as React from "react";
 import { useState, useEffect } from "react";
 import DrugCatalogue from "@/models/drug-catalogue";
@@ -25,10 +24,12 @@ import {
 import { toast } from "sonner";
 import { LucideEdit, LucideTrash } from "lucide-react";
 import {
+  deleteDrug,
   getAllDrugs,
   getDrugStats,
   searchDrugs,
 } from "@/lib/server-functions/drugs";
+import { currentUserHasRole } from "@/lib/server-functions/users";
 import { Logger } from "@hikmahealth/js-utils";
 
 const ITEMS_PER_PAGE = 100;
@@ -36,21 +37,26 @@ const ITEMS_PER_PAGE = 100;
 export const Route = createFileRoute("/app/inventory/drug-catalogue/")({
   component: RouteComponent,
   loader: async () => {
-    const [drugs, stats] = await Promise.all([
+    const [drugs, stats, isSuperAdmin] = await Promise.all([
       getAllDrugs({ data: { limit: ITEMS_PER_PAGE, offset: 0 } }),
       getDrugStats(),
+      // Reading the catalogue only needs admin, but every write behind these
+      // controls is super-admin only.
+      currentUserHasRole({ data: { role: "super_admin" } }),
     ]);
 
     return {
       initialDrugs: drugs,
       stats,
+      isSuperAdmin,
     };
   },
 });
 
 function RouteComponent() {
-  const { initialDrugs, stats } = Route.useLoaderData();
+  const { initialDrugs, stats, isSuperAdmin } = Route.useLoaderData();
   const navigate = Route.useNavigate();
+  const router = useRouter();
   const [drugs, setDrugs] = useState<DrugCatalogue.ApiDrug[]>(initialDrugs);
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -59,7 +65,6 @@ function RouteComponent() {
   );
   const [loading, setLoading] = useState(false);
 
-  // Update total pages when searching
   useEffect(() => {
     if (searchQuery) {
       // When searching, we don't know the exact total, so we check if we got a full page
@@ -113,19 +118,31 @@ function RouteComponent() {
     navigate({ to: `/app/inventory/drug-catalogue/edit/${id}` });
   };
 
-  const handleDelete = (id: string) => {
-    // toast.promise(
-    //   api.drug.delete({ id }),
-    //   {
-    //     loading: "Deleting...",
-    //     success: "Drug deleted successfully",
-    //     error: "Failed to delete drug",
-    //   },
-    //   { duration: 3000 },
-    // ).then(() => handleSearch(currentPage));
+  const handleDelete = async (drug: DrugCatalogue.ApiDrug) => {
+    const name = drug.brand_name
+      ? `${drug.generic_name} (${drug.brand_name})`
+      : drug.generic_name;
+    const confirmed = window.confirm(
+      `Delete ${name} from the catalogue? It will stop syncing to devices, ` +
+        `though existing prescriptions and stock records keep referring to it. ` +
+        `To stop it being prescribed without removing it, edit the drug and ` +
+        `uncheck "Active" instead.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      await deleteDrug({ data: { id: drug.id } });
+      toast.success("Drug deleted successfully");
+      // The rows live in local state and the total lives in loader data, so
+      // neither refreshes the other.
+      await handleSearch(currentPage);
+      router.invalidate();
+    } catch (error) {
+      Logger.error({ msg: "Error deleting drug:", error });
+      toast.error("Failed to delete drug");
+    }
   };
 
-  // Generate page numbers to display
   const getPageNumbers = () => {
     const firstPage = 1;
     const lastPage = totalPages;
@@ -134,13 +151,11 @@ function RouteComponent() {
       return Array.from({ length: totalPages }, (_, i) => i + 1);
     }
 
-    // Include pages around current page
     const nearbyPages = Array.from(
       { length: 3 },
       (_, i) => Math.max(2, currentPage - 1) + i,
     ).filter((page) => page > firstPage && page < lastPage);
 
-    // Combine and sort pages
     return Array.from(new Set([firstPage, ...nearbyPages, lastPage])).sort(
       (a, b) => a - b,
     );
@@ -168,14 +183,16 @@ function RouteComponent() {
             Total: {stats?.totalDrugs ?? 0} drugs
           </div>
         </div>
-        <Link
-          to="/app/inventory/drug-catalogue/edit/$"
-          params={{
-            _splat: "new",
-          }}
-        >
-          <Button>Add Drug</Button>
-        </Link>
+        {isSuperAdmin && (
+          <Link
+            to="/app/inventory/drug-catalogue/edit/$"
+            params={{
+              _splat: "new",
+            }}
+          >
+            <Button>Add Drug</Button>
+          </Link>
+        )}
       </div>
 
       {/* Search Section */}
@@ -217,7 +234,7 @@ function RouteComponent() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Actions</TableHead>
+              {isSuperAdmin && <TableHead>Actions</TableHead>}
               <TableHead>Generic Name</TableHead>
               <TableHead>Brand Name</TableHead>
               <TableHead>Form</TableHead>
@@ -233,23 +250,25 @@ function RouteComponent() {
           <TableBody>
             {drugs.map((drug) => (
               <TableRow key={drug.id}>
-                <TableCell className="space-x-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => handleEdit(drug.id)}
-                  >
-                    <LucideEdit />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    color="red"
-                    onClick={() => handleDelete(drug.id)}
-                  >
-                    <LucideTrash color="red" />
-                  </Button>
-                </TableCell>
+                {isSuperAdmin && (
+                  <TableCell className="space-x-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleEdit(drug.id)}
+                    >
+                      <LucideEdit />
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      color="red"
+                      onClick={() => handleDelete(drug)}
+                    >
+                      <LucideTrash color="red" />
+                    </Button>
+                  </TableCell>
+                )}
                 <TableCell className="font-medium">
                   {drug.generic_name}
                   {drug.is_controlled && (
@@ -288,7 +307,10 @@ function RouteComponent() {
             ))}
             {drugs.length === 0 && (
               <TableRow>
-                <TableCell colSpan={11} className="text-center py-4">
+                <TableCell
+                  colSpan={isSuperAdmin ? 11 : 10}
+                  className="text-center py-4"
+                >
                   {searchQuery
                     ? "No drugs found matching your search"
                     : "No drugs found"}

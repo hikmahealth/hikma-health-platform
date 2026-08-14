@@ -108,7 +108,9 @@ export const VitalFormScreen: FC<VitalFormScreenProps> = ({ route, navigation })
       }
     }
 
-    // Temperature validation
+    // Temperature validation. Each scale is checked against its own range, which
+    // is what catches a Fahrenheit reading typed against the Celsius default —
+    // `toMeasurements` would otherwise store the raw number as Celsius.
     if (vitals.temperature) {
       const temp = parseFloat(vitals.temperature)
       if (vitals.temperatureUnit === "celsius") {
@@ -401,9 +403,22 @@ export const VitalFormScreen: FC<VitalFormScreenProps> = ({ route, navigation })
 
           {/* BMI Display */}
           {bmi && (
-            <View style={$bmiDisplay}>
-              <Text text="BMI:" preset="formLabel" />
-              <Text text={` ${bmi} kg/m²`} preset="bold" />
+            <View mb={spacing.md}>
+              <View style={$bmiDisplay}>
+                <Text text="BMI:" preset="formLabel" />
+                <Text text={` ${bmi} kg/m²`} preset="bold" />
+              </View>
+              {/* Height and weight are each range-checked on their own, so a
+                  transposed or mistyped pair can still produce a BMI no patient
+                  has. Advisory only: the value is saved either way, since the
+                  extremes this flags are occasionally real. */}
+              {parseFloat(bmi) > 100 && (
+                <Text
+                  text="BMI over 100 — check the height and weight are in cm and kg."
+                  size="xs"
+                  style={$warningText}
+                />
+              )}
             </View>
           )}
 
@@ -490,6 +505,11 @@ const $errorText: TextStyle = {
   marginTop: spacing.xs,
 }
 
+const $warningText: TextStyle = {
+  color: "#B26A00",
+  marginTop: spacing.xs,
+}
+
 const $bmiDisplay: ViewStyle = {
   flexDirection: "row",
   alignItems: "center",
@@ -497,7 +517,6 @@ const $bmiDisplay: ViewStyle = {
   paddingHorizontal: spacing.md,
   backgroundColor: "#E3F2FD",
   borderRadius: 8,
-  marginBottom: spacing.md,
 }
 
 const $buttonContainer: ViewStyle = {

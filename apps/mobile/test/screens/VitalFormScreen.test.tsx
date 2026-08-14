@@ -206,3 +206,96 @@ describe("VitalFormScreen recording a new entry", () => {
     expect(mockCan).toHaveBeenCalledWith("vitals:create")
   })
 })
+
+/**
+ * A reading is stored in celsius whatever the toggle says, so the scale the form
+ * starts on decides how a bare number is read. The range check is what makes the
+ * celsius default safe: without it a Fahrenheit reading became an absurd celsius
+ * one, and past the numeric(4,2) ceiling on the server a 22003 that failed the
+ * whole push.
+ */
+describe("VitalFormScreen temperature units", () => {
+  it("starts on celsius, so a bare reading is never stored in an ambiguous scale", () => {
+    const { getByText, queryByText } = renderScreen({ patientId: "patient-1" })
+
+    expect(getByText("Temperature (°C)")).toBeTruthy()
+    expect(queryByText("Temperature (°F)")).toBeNull()
+  })
+
+  it("rejects a Fahrenheit reading left on the celsius default", async () => {
+    const { getByText, getByPlaceholderText } = renderScreen({ patientId: "patient-1" })
+
+    fireEvent.changeText(getByPlaceholderText("Enter temperature"), "100.4")
+    fireEvent.press(getByText("Save"))
+    await Promise.resolve()
+
+    expect(mockCreateMutate).not.toHaveBeenCalled()
+    expect(getByText("Temperature should be between 30-45°C")).toBeTruthy()
+  })
+
+  it("converts a Fahrenheit reading rather than storing the number as celsius", async () => {
+    const { getByText, getByPlaceholderText } = renderScreen({ patientId: "patient-1" })
+
+    fireEvent.changeText(getByPlaceholderText("Enter temperature"), "100.4")
+    fireEvent.press(getByText("Fahrenheit"))
+    fireEvent.press(getByText("Save"))
+    await Promise.resolve()
+
+    const [vitalData] = mockCreateMutate.mock.calls[0] as unknown as [
+      { temperatureCelsius: Option.Option<number> },
+    ]
+    expect(Option.getOrNull(vitalData.temperatureCelsius)).toBeCloseTo(38, 5)
+  })
+
+  it("stores a celsius reading unchanged", async () => {
+    const { getByText, getByPlaceholderText } = renderScreen({ patientId: "patient-1" })
+
+    fireEvent.changeText(getByPlaceholderText("Enter temperature"), "37.5")
+    fireEvent.press(getByText("Celsius"))
+    fireEvent.press(getByText("Save"))
+    await Promise.resolve()
+
+    const [vitalData] = mockCreateMutate.mock.calls[0] as unknown as [
+      { temperatureCelsius: Option.Option<number> },
+    ]
+    expect(Option.getOrNull(vitalData.temperatureCelsius)).toBe(37.5)
+  })
+})
+
+const BMI_WARNING = "BMI over 100 — check the height and weight are in cm and kg."
+
+/**
+ * Height and weight are range-checked separately, so a transposed pair sitting
+ * inside both ranges still computes a BMI no patient has. Advisory only: the
+ * column admits these values and the extremes it flags are occasionally real.
+ */
+describe("VitalFormScreen BMI plausibility", () => {
+  it("warns when height and weight are each in range but their BMI is not", () => {
+    const { getByText, getByPlaceholderText } = renderScreen({ patientId: "patient-1" })
+
+    fireEvent.changeText(getByPlaceholderText("Enter height"), "50")
+    fireEvent.changeText(getByPlaceholderText("Enter weight"), "300")
+
+    expect(getByText(BMI_WARNING)).toBeTruthy()
+  })
+
+  it("stays quiet for an ordinary BMI", () => {
+    const { queryByText, getByPlaceholderText } = renderScreen({ patientId: "patient-1" })
+
+    fireEvent.changeText(getByPlaceholderText("Enter height"), "170")
+    fireEvent.changeText(getByPlaceholderText("Enter weight"), "70")
+
+    expect(queryByText(BMI_WARNING)).toBeNull()
+  })
+
+  it("still saves, since the warning does not block", async () => {
+    const { getByText, getByPlaceholderText } = renderScreen({ patientId: "patient-1" })
+
+    fireEvent.changeText(getByPlaceholderText("Enter height"), "50")
+    fireEvent.changeText(getByPlaceholderText("Enter weight"), "300")
+    fireEvent.press(getByText("Save"))
+    await Promise.resolve()
+
+    expect(mockCreateMutate).toHaveBeenCalled()
+  })
+})

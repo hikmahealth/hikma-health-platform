@@ -55,7 +55,7 @@ onFlowStart:
 - inputText: "72"
 - hideKeyboard
 
-# Temperature
+# Temperature. Celsius is the default, so 37 needs no unit tap.
 - tapOn:
     text: "Enter temperature"
     optional: true
