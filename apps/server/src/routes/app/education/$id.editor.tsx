@@ -18,8 +18,15 @@ import {
 import CreatableSelect from "react-select/creatable";
 import db from "@/db";
 import { sql } from "kysely";
-import { createDiskAdapter } from "@/storage/adapters/disk";
-import { EDUCATION_RESOURCE_PATH_PREFIX } from "@/storage/types";
+import { getConfiguredAdapter } from "@/storage/factory";
+import { putVerified } from "@/storage/integrity";
+import {
+  EDUCATION_RESOURCE_PATH_PREFIX,
+  UPLOAD_SIZE_LIMIT_BYTES,
+  isAllowedMimetype,
+  sanitizeFilename,
+} from "@/storage/types";
+import { sha256Hex } from "@/lib/form-resources";
 import { v7 as uuidV7 } from "uuid";
 import { TipTapEditor } from "@/components/education/tiptap-editor";
 import { getCurrentUserId } from "@/lib/server-functions/auth";
@@ -128,7 +135,6 @@ const uploadFile = createServerFn({ method: "POST" })
   .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<{ id: string }> => {
     // Validate mimetype server-side before storing — client-supplied values are untrusted
-    const { isAllowedMimetype } = await import("@/storage/types");
     if (!isAllowedMimetype(data.mimetype)) {
       throw new Error(`File type not allowed: ${data.mimetype}`);
     }
@@ -136,20 +142,34 @@ const uploadFile = createServerFn({ method: "POST" })
     const bytes = Uint8Array.from(atob(data.fileBase64), (c) =>
       c.charCodeAt(0),
     );
-    const adapter = await createDiskAdapter();
-    const destination = `${EDUCATION_RESOURCE_PATH_PREFIX}/${uuidV7()}_${data.fileName}`;
-    const result = await adapter.put(bytes, destination, data.mimetype);
+    if (bytes.byteLength === 0) {
+      throw new Error("File is empty");
+    }
+    if (bytes.byteLength > UPLOAD_SIZE_LIMIT_BYTES) {
+      throw new Error("File exceeds the upload size limit");
+    }
+
+    const adapter = await getConfiguredAdapter();
+    const destination = `${EDUCATION_RESOURCE_PATH_PREFIX}/${uuidV7()}_${sanitizeFilename(data.fileName)}`;
+    const result = await putVerified(
+      adapter,
+      bytes,
+      destination,
+      data.mimetype,
+    );
 
     const row = await db
       .insertInto("resources")
       .values({
         id: uuidV7(),
-        store: "disk",
+        store: adapter.name,
         store_version: adapter.version,
         uri: result.uri,
-        hash: result.hash[1],
+        // Server-computed, matching the event-form path: a provider ETag is
+        // not comparable across backends.
+        hash: sha256Hex(bytes),
         mimetype: data.mimetype,
-        description: data.fileName,
+        description: data.fileName.slice(0, 255),
       })
       .returningAll()
       .executeTakeFirstOrThrow();

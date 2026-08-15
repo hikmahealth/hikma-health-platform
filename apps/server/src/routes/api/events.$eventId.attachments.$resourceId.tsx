@@ -9,7 +9,9 @@ import {
 import Resource from "@/models/resource";
 import Event from "@/models/event";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
-import { getConfiguredAdapter } from "@/storage/factory";
+import { getAdapterForStore } from "@/storage/factory";
+import { ResourceStoreUnavailableError } from "@/storage/errors";
+import { isStoreType } from "@/storage/types";
 import AccessGrant from "@/models/access-grant";
 import {
   authenticateCaller,
@@ -120,11 +122,18 @@ export const Route = createFileRoute(
             return json({ error: "Service unavailable" }, 503);
           }
 
-          const adapter = await getConfiguredAdapter();
-          if (resource.store !== adapter.name) {
-            return json({ error: "Unsupported storage backend" }, 501);
+          // Read from the backend the resource was written to, not the active
+          // one, so switching backends never orphans older attachments.
+          if (!isStoreType(resource.store)) {
+            Logger.error({
+              msg: "[events.attachments] resource names an unknown storage backend",
+              resourceId: resource.id,
+              store: resource.store,
+            });
+            return json({ error: "Internal server error" }, 500);
           }
 
+          const adapter = await getAdapterForStore(resource.store);
           const bytes = await adapter.downloadAsBytes(resource.uri);
 
           return new Response(bytes as unknown as BodyInit, {
@@ -136,6 +145,14 @@ export const Route = createFileRoute(
             },
           });
         } catch (error) {
+          if (error instanceof ResourceStoreUnavailableError) {
+            Logger.error({
+              msg: "[events.attachments] storage backend unavailable",
+              store: error.store,
+              error,
+            });
+            return json({ error: "Storage backend unavailable" }, 503);
+          }
           Logger.error({ msg: "[events.attachments] download failed", error });
           return json({ error: "Internal server error" }, 500);
         }

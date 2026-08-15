@@ -1,7 +1,7 @@
 import { mkdir, writeFile, readFile, rm } from "node:fs/promises";
-import { join, resolve, normalize } from "node:path";
+import { resolve } from "node:path";
 import { createHash } from "node:crypto";
-import type { StorageAdapter, AdapterConfigDefinition } from "./base.ts";
+import type { StorageAdapter } from "./base.ts";
 import { validatePut } from "./base.ts";
 import type { ConfigField, PutOutput } from "../types.ts";
 
@@ -10,6 +10,10 @@ const DEFAULT_BASE_PATH = "./data/resources";
 export const diskConfigFields: readonly ConfigField[] = [
   {
     key: "disk_storage_path",
+    label: "Storage directory",
+    description:
+      "Filesystem path on the server where uploaded files are written. Relative paths are resolved against the server's working directory.",
+    placeholder: DEFAULT_BASE_PATH,
     required: false,
     secret: false,
     valueType: "string",
@@ -17,24 +21,23 @@ export const diskConfigFields: readonly ConfigField[] = [
   },
 ] as const;
 
-export const diskConfigDefinition: AdapterConfigDefinition = {
-  fields: diskConfigFields,
-};
-
 /**
  * Resolve a destination within the base path, rejecting path traversal.
  * Throws if the resolved path escapes the base directory.
  */
-export const resolveSafePath = (basePath: string, destination: string): string => {
+export const resolveSafePath = (
+  basePath: string,
+  destination: string,
+): string => {
   const resolvedBase = resolve(basePath);
   // resolve() against base collapses any ../ segments into an absolute path
   const full = resolve(resolvedBase, destination);
 
-  // The resolved path must start with base + separator (or equal base exactly)
-  // to prevent escaping. We append "/" to avoid prefix false-positives like
-  // "/base-other" matching "/base".
-  if (!full.startsWith(resolvedBase + "/") && full !== resolvedBase) {
-    throw new Error(`Path traversal detected: "${destination}" escapes base directory`);
+  // Compare against base + separator so "/base-other" does not match "/base".
+  if (!full.startsWith(`${resolvedBase}/`) && full !== resolvedBase) {
+    throw new Error(
+      `Path traversal detected: "${destination}" escapes base directory`,
+    );
   }
   return full;
 };
@@ -46,16 +49,22 @@ export const createDiskAdapter = async (
   basePath: string = DEFAULT_BASE_PATH,
 ): Promise<StorageAdapter> => {
   const resolvedBase = resolve(basePath);
-  await mkdir(resolvedBase, { recursive: true });
 
   return {
     name: "disk",
     version: "disk.202603.01",
 
-    async put(data: Uint8Array, destination: string, mimetype?: string): Promise<PutOutput> {
+    async ensureContainer(): Promise<void> {
+      await mkdir(resolvedBase, { recursive: true });
+    },
+
+    async put(
+      data: Uint8Array,
+      destination: string,
+      mimetype?: string,
+    ): Promise<PutOutput> {
       validatePut(data, mimetype);
       const fullPath = resolveSafePath(resolvedBase, destination);
-      // Ensure parent directory exists
       const parentDir = fullPath.substring(0, fullPath.lastIndexOf("/"));
       if (parentDir) {
         await mkdir(parentDir, { recursive: true });

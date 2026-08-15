@@ -24,6 +24,14 @@ namespace ServerVariable {
     AWS_REGION: "aws_region",
     AWS_ENDPOINT_URL_S3: "aws_endpoint_url_s3",
     S3_BUCKET_NAME: "s3_bucket_name",
+    // Tigris keeps its own keys rather than reusing the AWS ones, so the two
+    // S3-compatible backends can be configured at the same time and files
+    // written under either stay readable. See storage/adapters/s3.ts.
+    TIGRIS_ACCESS_KEY_ID: "tigris_access_key_id",
+    TIGRIS_SECRET_ACCESS_KEY: "tigris_secret_access_key",
+    TIGRIS_REGION: "tigris_region",
+    TIGRIS_BUCKET_NAME: "tigris_bucket_name",
+    TIGRIS_ENDPOINT_URL: "tigris_endpoint_url",
     GCP_SERVICE_ACCOUNT: "gcp_service_account",
     GCP_BUCKET_NAME: "gcp_bucket_name",
     AZURE_STORAGE_CONNECTION_STRING: "azure_storage_connection_string",
@@ -204,6 +212,49 @@ namespace ServerVariable {
       const row = await get(normalizeKey(key));
       if (!row?.value_data) return null;
       return new TextDecoder().decode(row.value_data);
+    },
+  );
+
+  /**
+   * Fetch several server variables in one query, decoded as strings. Keys with
+   * no row, or a row with no value, map to null.
+   */
+  export const getManyAsStrings = createServerOnlyFn(
+    async (
+      keys: readonly string[],
+    ): Promise<Record<string, string | null>> => {
+      const normalized = keys.map(normalizeKey);
+      const values: Record<string, string | null> = {};
+      for (const key of normalized) {
+        values[key] = null;
+      }
+      if (normalized.length === 0) return values;
+
+      const rows = await db
+        .selectFrom(Table.name)
+        .select(["key", "value_data"])
+        .where("key", "in", normalized)
+        .execute();
+
+      const decoder = new TextDecoder();
+      for (const row of rows) {
+        values[row.key] = row.value_data ? decoder.decode(row.value_data) : null;
+      }
+      return values;
+    },
+  );
+
+  /**
+   * Clear a variable's value without removing the row, so a rotated-out
+   * credential can be revoked rather than only overwritten.
+   */
+  export const clearValue = createServerOnlyFn(
+    async (key: string): Promise<void> => {
+      await db
+        .updateTable(Table.name)
+        .set({ value_data: null, value_hash: null, updated_at: sql`now()` })
+        .where("key", "=", normalizeKey(key))
+        .execute();
     },
   );
 

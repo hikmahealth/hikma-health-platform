@@ -10,6 +10,7 @@ import Resource from "@/models/resource";
 import Patient from "@/models/patient";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 import { getConfiguredAdapter } from "@/storage/factory";
+import { putVerified } from "@/storage/integrity";
 import { RESOURCE_PATH_PREFIX, UPLOAD_SIZE_LIMIT_BYTES } from "@/storage/types";
 import {
   authenticateCaller,
@@ -145,7 +146,7 @@ export const Route = createFileRoute("/api/forms/resources")({
 
           const adapter = await getConfiguredAdapter();
           const destination = `${RESOURCE_PATH_PREFIX}/${id}`;
-          await adapter.put(bytes, destination, mimetype);
+          await putVerified(adapter, bytes, destination, mimetype);
 
           const description = file.name ? file.name.slice(0, 255) : null;
 

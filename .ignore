@@ -54,7 +54,7 @@ postserver
 *.local.txt
 *.local
 # *.local.md
-*.local.json
+# *.local.json
 
 # Rust/Cargo
 target/

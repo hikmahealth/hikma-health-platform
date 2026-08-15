@@ -2,6 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { SelectInput } from "@/components/select-input";
+import { StorageSettingsSection } from "@/components/settings/storage-settings-section";
+import { getStorageSettings } from "@/lib/server-functions/storage-settings";
 import {
   Dialog,
   DialogContent,
@@ -98,6 +100,7 @@ export const Route = createFileRoute("/app/settings/configurations/")({
       geminiKeyVar,
       aiUrlVariable,
       aiProxyKeyVar,
+      storage,
     ] = await Promise.all([
       getAllConfigurations(),
       getServerVariable({
@@ -115,6 +118,7 @@ export const Route = createFileRoute("/app/settings/configurations/")({
       getServerVariable({
         data: { key: ServerVariable.Keys.AI_PROXY_SERVICE_API_KEY },
       }),
+      getStorageSettings(),
     ]);
     const toBytes = (data: unknown): Uint8Array | null => {
       if (data == null) return null;
@@ -144,6 +148,7 @@ export const Route = createFileRoute("/app/settings/configurations/")({
       geminiKeyIsSet: hasValue(geminiKeyVar),
       aiProxyKeyIsSet: hasValue(aiProxyKeyVar),
       aiServiceUrl,
+      storage,
       currentUser: await getCurrentUser(),
     };
   },
@@ -160,6 +165,7 @@ function RouteComponent() {
     geminiKeyIsSet,
     aiProxyKeyIsSet,
     aiServiceUrl,
+    storage,
     currentUser,
   } = Route.useLoaderData();
   const router = useRouter();
@@ -471,6 +477,11 @@ function RouteComponent() {
             </Button>
           </div>
         </div>
+
+        <StorageSettingsSection
+          settings={storage}
+          onSaved={() => router.invalidate({ sync: true })}
+        />
 
         <div className="flex flex-col gap-4 pt-4 border-t">
           <h2 className="text-lg font-semibold">AI</h2>

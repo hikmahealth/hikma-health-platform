@@ -21,6 +21,22 @@ export class ResourceStoreTypeMismatchError extends Error {
   }
 }
 
+/**
+ * The backend a resource lives in cannot be reached: config missing, or the
+ * SDK failed to initialise. The row is fine; the server is not.
+ */
+export class ResourceStoreUnavailableError extends Error {
+  readonly store: string;
+
+  constructor(store: string, cause?: unknown) {
+    const detail = cause instanceof Error ? `: ${cause.message}` : "";
+    super(`Storage backend "${store}" is unavailable${detail}`);
+    this.name = "ResourceStoreUnavailableError";
+    this.store = store;
+    this.cause = cause;
+  }
+}
+
 export class ResourceOperationError extends Error {
   constructor(operation: string, cause?: unknown) {
     const detail = cause instanceof Error ? `: ${cause.message}` : "";
