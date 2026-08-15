@@ -66,6 +66,17 @@ export type UpdatePatientInput = {
     photo_url: string | null;
     primary_clinic_id: string | null;
   }>;
+  // Custom registration-form fields (non-baseField). Upserted by
+  // `attribute_id`, same shape as `CreatePatientInput.additionalAttributes`.
+  additionalAttributes?: Array<{
+    attribute_id: string;
+    attribute: string;
+    number_value?: number | null;
+    string_value?: string | null;
+    date_value?: string | null;
+    boolean_value?: boolean | null;
+    metadata?: Record<string, any>;
+  }>;
 };
 
 /**

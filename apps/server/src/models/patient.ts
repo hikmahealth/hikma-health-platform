@@ -528,7 +528,7 @@ namespace Patient {
     FROM patients p
     LEFT JOIN patient_additional_attributes pa ON p.id = pa.patient_id
     WHERE p.is_deleted = false
-    AND (p.primary_clinic_id IN (${sql.join(clinicIds)}) OR p.primary_clinic_id IS NULL)
+    AND (${clinicIds.length > 0 ? sql`p.primary_clinic_id IN (${sql.join(clinicIds)}) OR p.primary_clinic_id IS NULL` : sql`p.primary_clinic_id IS NULL`})
     AND p.id IN (${sql.join(patientIds)})
     GROUP BY p.id
   `;

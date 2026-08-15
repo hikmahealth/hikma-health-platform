@@ -48,6 +48,7 @@ import { Route as AppEducationIdEditorRouteImport } from './routes/app/education
 import { Route as AppEventFormsEditSplatRouteImport } from './routes/app/event-forms.edit.$'
 import { Route as AppInventoryClinicInventoryIndexRouteImport } from './routes/app/inventory/clinic-inventory.index'
 import { Route as AppInventoryDrugCatalogueIndexRouteImport } from './routes/app/inventory/drug-catalogue.index'
+import { Route as AppPatientsEditSplatRouteImport } from './routes/app/patients.edit.$'
 import { Route as AppPrescriptionsEditSplatRouteImport } from './routes/app/prescriptions.edit.$'
 import { Route as AppReportsIdIndexRouteImport } from './routes/app/reports/$id.index'
 import { Route as AppReportsIdEditRouteImport } from './routes/app/reports/$id.edit'
@@ -261,6 +262,11 @@ const AppInventoryDrugCatalogueIndexRoute =
     path: '/inventory/drug-catalogue/',
     getParentRoute: () => AppRoute,
   } as any)
+const AppPatientsEditSplatRoute = AppPatientsEditSplatRouteImport.update({
+  id: '/patients/edit/$',
+  path: '/patients/edit/$',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPrescriptionsEditSplatRoute =
   AppPrescriptionsEditSplatRouteImport.update({
     id: '/prescriptions/edit/$',
@@ -367,6 +373,7 @@ export interface FileRoutesByFullPath {
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
   '/app/event-forms/edit/$': typeof AppEventFormsEditSplatRoute
+  '/app/patients/edit/$': typeof AppPatientsEditSplatRoute
   '/app/prescriptions/edit/$': typeof AppPrescriptionsEditSplatRoute
   '/app/reports/$id/edit': typeof AppReportsIdEditRoute
   '/app/settings/configurations/patient-view-actions': typeof AppSettingsConfigurationsPatientViewActionsRoute
@@ -418,6 +425,7 @@ export interface FileRoutesByTo {
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
   '/app/event-forms/edit/$': typeof AppEventFormsEditSplatRoute
+  '/app/patients/edit/$': typeof AppPatientsEditSplatRoute
   '/app/prescriptions/edit/$': typeof AppPrescriptionsEditSplatRoute
   '/app/reports/$id/edit': typeof AppReportsIdEditRoute
   '/app/settings/configurations/patient-view-actions': typeof AppSettingsConfigurationsPatientViewActionsRoute
@@ -472,6 +480,7 @@ export interface FileRoutesById {
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
   '/app/event-forms/edit/$': typeof AppEventFormsEditSplatRoute
+  '/app/patients/edit/$': typeof AppPatientsEditSplatRoute
   '/app/prescriptions/edit/$': typeof AppPrescriptionsEditSplatRoute
   '/app/reports/$id/edit': typeof AppReportsIdEditRoute
   '/app/settings/configurations/patient-view-actions': typeof AppSettingsConfigurationsPatientViewActionsRoute
@@ -527,6 +536,7 @@ export interface FileRouteTypes {
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
     | '/app/event-forms/edit/$'
+    | '/app/patients/edit/$'
     | '/app/prescriptions/edit/$'
     | '/app/reports/$id/edit'
     | '/app/settings/configurations/patient-view-actions'
@@ -578,6 +588,7 @@ export interface FileRouteTypes {
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
     | '/app/event-forms/edit/$'
+    | '/app/patients/edit/$'
     | '/app/prescriptions/edit/$'
     | '/app/reports/$id/edit'
     | '/app/settings/configurations/patient-view-actions'
@@ -631,6 +642,7 @@ export interface FileRouteTypes {
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
     | '/app/event-forms/edit/$'
+    | '/app/patients/edit/$'
     | '/app/prescriptions/edit/$'
     | '/app/reports/$id/edit'
     | '/app/settings/configurations/patient-view-actions'
@@ -942,6 +954,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInventoryDrugCatalogueIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/patients/edit/$': {
+      id: '/app/patients/edit/$'
+      path: '/patients/edit/$'
+      fullPath: '/app/patients/edit/$'
+      preLoaderRoute: typeof AppPatientsEditSplatRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/prescriptions/edit/$': {
       id: '/app/prescriptions/edit/$'
       path: '/prescriptions/edit/$'
@@ -1049,6 +1068,7 @@ interface AppRouteChildren {
   AppClinicsEditSplatRoute: typeof AppClinicsEditSplatRoute
   AppEducationIdEditorRoute: typeof AppEducationIdEditorRoute
   AppEventFormsEditSplatRoute: typeof AppEventFormsEditSplatRoute
+  AppPatientsEditSplatRoute: typeof AppPatientsEditSplatRoute
   AppPrescriptionsEditSplatRoute: typeof AppPrescriptionsEditSplatRoute
   AppReportsIdEditRoute: typeof AppReportsIdEditRoute
   AppSettingsConfigurationsPatientViewActionsRoute: typeof AppSettingsConfigurationsPatientViewActionsRoute
@@ -1086,6 +1106,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppClinicsEditSplatRoute: AppClinicsEditSplatRoute,
   AppEducationIdEditorRoute: AppEducationIdEditorRoute,
   AppEventFormsEditSplatRoute: AppEventFormsEditSplatRoute,
+  AppPatientsEditSplatRoute: AppPatientsEditSplatRoute,
   AppPrescriptionsEditSplatRoute: AppPrescriptionsEditSplatRoute,
   AppReportsIdEditRoute: AppReportsIdEditRoute,
   AppSettingsConfigurationsPatientViewActionsRoute:
