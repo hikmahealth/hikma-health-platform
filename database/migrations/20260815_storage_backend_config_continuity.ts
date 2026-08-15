@@ -1,5 +1,6 @@
 import { type Kysely, sql } from "kysely";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
+import { v7 as uuidV7 } from "uuid";
 
 /**
  * Migration: storage_backend_config_continuity
@@ -7,35 +8,26 @@ import { createHash, randomUUID } from "node:crypto";
  * Description: Keep already-stored files readable across the storage rework.
  * Depends on: 20250313_create_server_variables_table
  *
- * Two changes to `apps/server/src/storage` need existing `server_variables`
- * rows moved or filled in, or reads of files uploaded before the rework start
- * returning 503:
+ * Two storage changes leave existing `server_variables` rows pointing at the
+ * wrong place, so reads of files uploaded beforehand start returning 503:
  *
- * 1. Tigris no longer reuses the `aws_*` / `s3_bucket_name` keys. It reads
- *    `tigris_*` instead, so both S3-compatible backends can be configured at
- *    once and neither overwrites the other. A deployment already on Tigris has
- *    its credentials under the old names, so they are copied across. The old
- *    rows are then cleared: they hold Tigris credentials, and leaving them
- *    would let the native-S3 adapter sign them to `s3.amazonaws.com`,
- *    disclosing a live key to a third party. Nothing outside the storage
- *    module reads these keys — verified by grep before writing this.
+ * 1. Tigris reads `tigris_*` instead of reusing `aws_*` / `s3_bucket_name`, so
+ *    both S3-compatible backends can be configured at once. Credentials are
+ *    copied across and the old rows cleared — left in place, the native-S3
+ *    adapter would sign them to `s3.amazonaws.com` and every request would
+ *    fail as a confusing 403.
  *
  * 2. `s3_bucket_name` and `gcp_bucket_name` lost their hardcoded defaults
- *    (`hikmahealth-s3` / `hikmahealthdata.appspot.com`) and became required.
- *    A deployment that relied on either default has no row to fall back on, so
- *    the old default is written out explicitly. This restores prior behaviour
- *    exactly, including for self-hosted installs: those deployments are
- *    already reading and writing that bucket today, and the row grants no
- *    access the stored credential did not already imply. It is a record of
- *    where their files actually are, not a new grant.
+ *    (`hikmahealth-s3` / `hikmahealthdata.appspot.com`) and became required,
+ *    so a deployment that relied on either gets the old default written out.
  *
- * Both steps are conditional on there being a credential to preserve, so a
- * deployment on disk storage — the default — is untouched.
+ * Both steps need a credential to already be present, so a deployment on disk
+ * storage is untouched.
  *
- * ORDERING: run this with the matching code release, not ahead of it. The
- * clearing step in (1) removes the only keys a pre-release instance knows how
- * to read for Tigris, so any old instance still serving traffic afterwards
- * returns 503 on attachment downloads until it is replaced.
+ * ORDERING: run this with the matching code release, not ahead of it. Step 1
+ * clears the only keys a pre-release instance knows how to read for Tigris.
+ * A fork still running its own code against `aws_*` recovers with `down()`,
+ * which is the only place those values survive — `up()` nulls them.
  */
 
 const TIGRIS_KEY_MOVES = [
@@ -51,9 +43,8 @@ const LEGACY_GCP_BUCKET = "hikmahealthdata.appspot.com";
 
 /**
  * Tigris shared the S3 field set, so a deployment that never chose a region
- * signed with `us-east-1`. `tigris_region` now defaults to `auto`, which
- * changes the SigV4 credential scope — Tigris accepts either, but a migration
- * is not the place to find out. Pin the old value explicitly.
+ * signed with `us-east-1`. `tigris_region` defaults to `auto`, which changes
+ * the SigV4 credential scope, so pin the old value explicitly.
  */
 const LEGACY_TIGRIS_REGION = "us-east-1";
 
@@ -97,7 +88,7 @@ const upsertVariable = async (
   await db
     .insertInto("server_variables")
     .values({
-      id: randomUUID(),
+      id: uuidV7(),
       key: variable.key,
       description: variable.description,
       value_type: variable.value_type,
@@ -173,11 +164,9 @@ export async function up(db: Kysely<any>): Promise<void> {
   const storeTypeRow = variables.get("hh_store_type");
   const storeType = hasValue(storeTypeRow) ? decode(storeTypeRow) : "disk";
 
-  // Before the rework, only the Tigris field set carried an endpoint, so a
-  // stored endpoint is the one reliable marker that these credentials belong
-  // to Tigris. A deployment explicitly on native S3 is excluded: the old code
-  // ignored the endpoint there, so the credentials are genuinely AWS ones and
-  // any endpoint row is leftover junk.
+  // Only the Tigris field set carried an endpoint, so a stored endpoint marks
+  // these credentials as Tigris's. A deployment explicitly on native S3 is
+  // excluded — there the old code ignored the endpoint, so the row is junk.
   const endpointRow = variables.get("aws_endpoint_url_s3");
   const isTigrisConfig = hasValue(endpointRow) && storeType !== "s3";
 
@@ -186,10 +175,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     for (const [fromKey, toKey] of TIGRIS_KEY_MOVES) {
       const source = variables.get(fromKey);
       if (!hasValue(source)) continue;
-      // Never clobber a value already written under the new name — an admin
-      // who configured Tigris through the settings screen before this ran has
-      // the better value. Either way the old row still holds a Tigris
-      // credential, so it is cleared below whether or not it was copied.
+      // Keep a value already written under the new name, but clear the old
+      // row either way — it still holds a Tigris credential.
       if (!hasValue(variables.get(toKey))) {
         await copyVariable(db, source, toKey, `Tigris storage: ${toKey}`);
       }
@@ -209,10 +196,8 @@ export async function up(db: Kysely<any>): Promise<void> {
     }
   }
 
-  // Skipped when the block above already claimed the AWS keys for Tigris —
-  // there is no native-S3 configuration left to complete. GCS is independent
-  // of both and is handled either way, since a deployment can carry a stale
-  // configuration for a backend it no longer writes to but still reads from.
+  // Skipped when the block above claimed the AWS keys for Tigris. GCS is
+  // independent of both and is handled either way.
   const s3KeyRow = variables.get("aws_access_key_id");
   if (
     !isTigrisConfig &&
@@ -245,11 +230,9 @@ export async function down(db: Kysely<any>): Promise<void> {
   ]);
 
   // Move Tigris credentials back onto the shared AWS keys the old code read.
-  // Namespacing means both backends can now be configured at once, and the old
-  // schema has nowhere to put the second one — so a populated AWS key wins and
-  // the Tigris value is left where it is rather than overwriting a live
-  // credential. Rolling back with both configured is therefore lossy for
-  // Tigris; that is inherent to the shape being rolled back to.
+  // The old schema has nowhere to put a second S3-compatible config, so a
+  // populated AWS key wins and the Tigris value is left where it is. Rolling
+  // back with both configured is therefore lossy for Tigris.
   const restored: string[] = [];
   for (const [fromKey, toKey] of TIGRIS_KEY_MOVES) {
     const source = variables.get(toKey);
@@ -261,9 +244,9 @@ export async function down(db: Kysely<any>): Promise<void> {
     await clearVariables(db, restored);
   }
 
-  // Drop the bucket names only while they still hold the value this migration
-  // wrote — an admin who has since set their own keeps it. `s3_bucket_name` is
-  // skipped when the restore above just wrote a Tigris bucket into it.
+  // Drop the bucket names only while they still hold what this migration
+  // wrote. Skip `s3_bucket_name` when the restore above put a Tigris bucket
+  // there.
   const candidates = (
     [
       ["s3_bucket_name", LEGACY_S3_BUCKET],

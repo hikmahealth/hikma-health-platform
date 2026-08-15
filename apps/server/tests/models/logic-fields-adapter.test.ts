@@ -70,6 +70,57 @@ describe("EventForm.toLogicFields — option fields", () => {
     expect(lf.options).toBeUndefined();
     expect(lf.multiValue).toBeUndefined();
   });
+
+  // Legacy forms store options as bare strings — a shape `ensureOptionIds`
+  // and the editor's save path both preserve, so it survives re-saves.
+  // Reading `.value` off those produced `{}` entries, which the rule editor
+  // rendered as blank, unpickable rows.
+  it("normalises bare-string options into value/label pairs", () => {
+    const [lf] = EventForm.toLogicFields([
+      {
+        id: "sev",
+        name: "Severity",
+        fieldType: "options",
+        multi: false,
+        options: ["Low", " High "] as never,
+      },
+    ]);
+    expect(lf.options).toEqual([
+      { value: "Low", label: "Low" },
+      { value: "High", label: "High" },
+    ]);
+  });
+
+  it("drops options with no usable token rather than emitting blank rows", () => {
+    const [lf] = EventForm.toLogicFields([
+      {
+        id: "sev",
+        name: "Severity",
+        fieldType: "options",
+        multi: false,
+        options: [
+          { label: "Low", value: "low" },
+          { label: "Broken" } as never,
+          { label: "Empty", value: "" },
+          "" as never,
+        ],
+      },
+    ]);
+    expect(lf.options).toEqual([{ value: "low", label: "Low" }]);
+  });
+
+  it("falls back to the token as the label when a label is missing", () => {
+    const [lf] = EventForm.toLogicFields([
+      {
+        id: "sev",
+        name: "Severity",
+        fieldType: "options",
+        multi: false,
+        options: [{ value: "low" } as never],
+      },
+    ]);
+    expect(lf.options).toEqual([{ value: "low", label: "low" }]);
+  });
 });
 
 describe("EventForm.toLogicFields — freeText flag", () => {

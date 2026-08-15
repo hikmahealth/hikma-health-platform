@@ -25,6 +25,7 @@ import { assertFieldRulesValid } from "@/models/form-rules";
 import type {
   LogicField,
   LogicFieldKind,
+  LogicOption,
   LogicPrimitiveKind,
 } from "@/lib/form-rule-templates";
 
@@ -937,20 +938,36 @@ namespace EventForm {
     fieldType: string;
     inputType?: string;
     multi?: boolean;
-    options?: FieldOption[];
+    // Legacy forms store options as bare strings; both shapes reach here.
+    options?: (FieldOption | string)[];
   };
 
   // Option fields expose their choices to the panel's value picker. Event
   // options carry a stable `value`, so rules key on it directly. `multiValue`
   // is set only for multi-select fields, gating the includes/excludes kinds.
+  //
+  // Legacy forms store options as bare strings (the shape `ensureOptionIds`
+  // and the editor's save path both deliberately preserve). Reading `.value`
+  // off those yielded `{value: undefined, label: undefined}` entries, which
+  // render as blank, unpickable rows in the rule editor's option list — the
+  // author sees a select field with choices that can't be chosen. Normalise
+  // them to the object shape, and drop anything still lacking a usable
+  // token: an option with no value can't appear in a rule, and a Radix
+  // `SelectItem` with an empty value throws.
   const optionFields = (
     field: LogicAdaptableField,
   ): Partial<Pick<LogicField, "multiValue" | "options">> => {
     if (field.fieldType !== "options" || !field.options) return {};
-    const options = field.options.map((o) => ({
-      value: o.value,
-      label: o.label,
-    }));
+    const options = field.options.flatMap(
+      (o: FieldOption | string): LogicOption[] => {
+        if (typeof o === "string") {
+          const value = o.trim();
+          return value === "" ? [] : [{ value, label: value }];
+        }
+        if (typeof o?.value !== "string" || o.value === "") return [];
+        return [{ value: o.value, label: o.label ?? o.value }];
+      },
+    );
     return field.multi === true ? { multiValue: true, options } : { options };
   };
 

@@ -68,8 +68,16 @@ export function SimpleRuleInput({
   const setConnector = (next: Connector) =>
     onTemplateChange(templateFromConditions(conditions, next, allowAlways));
 
+  // Single-condition surfaces render a row synthesised by
+  // `defaultConditionFor` when the list is empty (see below), so the first
+  // edit to that row targets an index the list doesn't have yet. Append
+  // rather than map, otherwise `[].map` silently discards the edit.
   const updateCondition = (index: number, c: VisibilityCondition) =>
-    emit(conditions.map((existing, i) => (i === index ? c : existing)));
+    emit(
+      index >= conditions.length
+        ? [...conditions, c]
+        : conditions.map((existing, i) => (i === index ? c : existing)),
+    );
 
   // Single-condition surfaces (validators) render exactly one row with no
   // add/remove affordances. The condition always exists via defaultTemplateFor.

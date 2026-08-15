@@ -772,7 +772,7 @@ importers:
         version: 0.4.6(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       nitro:
         specifier: npm:nitro-nightly@latest
-        version: nitro-nightly@3.0.1-20260731-205209-52abde8a(@azure/storage-blob@12.33.0)(@electric-sql/pglite@0.4.6)(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.0)(jiti@2.7.0)(lru-cache@11.5.2)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))
+        version: nitro-nightly@3.0.1-20260810-113911-16ff2809(@azure/storage-blob@12.33.0)(@electric-sql/pglite@0.4.6)(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.0)(jiti@2.7.0)(lru-cache@11.5.2)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0))
       pg:
         specifier: ^8.16.3
         version: 8.22.0
@@ -927,6 +927,9 @@ importers:
       pg:
         specifier: ^8.16.3
         version: 8.22.0
+      uuid:
+        specifier: ^13.0.0
+        version: 13.0.2
     devDependencies:
       '@swc/cli':
         specifier: ^0.7.9
@@ -10384,8 +10387,8 @@ packages:
   nf3@0.3.22:
     resolution: {integrity: sha512-NOcqlHu22X1rUakd0SrqllP8kb3LWFmSAi1svTxaKxz+yB604xlaOmUfI3oO+RkODvaocKDDy8bgthnZL8hrkw==}
 
-  nitro-nightly@3.0.1-20260731-205209-52abde8a:
-    resolution: {integrity: sha512-KI1rwOJPgD0U57mE+1AefoEPjd+aJPJ4GCTLym0cXyfBBi8JtVsHmtB/4D3g1RaDwntjoz8H5nWnWGg7agYnuA==}
+  nitro-nightly@3.0.1-20260810-113911-16ff2809:
+    resolution: {integrity: sha512-CD/oRD6udCLWDMOHRRulls448wD1bUzQ6GYfzlUKXTSERDGML9orZhp0dfXTDMZ0A4EtUkRogFH/vHAj9P42ow==}
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
     peerDependencies:
@@ -24377,7 +24380,7 @@ snapshots:
 
   nf3@0.3.22: {}
 
-  nitro-nightly@3.0.1-20260731-205209-52abde8a(@azure/storage-blob@12.33.0)(@electric-sql/pglite@0.4.6)(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.0)(jiti@2.7.0)(lru-cache@11.5.2)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0)):
+  nitro-nightly@3.0.1-20260810-113911-16ff2809(@azure/storage-blob@12.33.0)(@electric-sql/pglite@0.4.6)(chokidar@5.0.0)(dotenv@17.4.2)(giget@3.3.0)(jiti@2.7.0)(lru-cache@11.5.2)(rollup@4.62.2)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.49.0)(tsx@4.23.1)(yaml@2.9.0)):
     dependencies:
       consola: 3.4.2
       crossws: 0.4.10(srvx@0.11.22)

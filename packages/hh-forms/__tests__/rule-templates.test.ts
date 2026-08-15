@@ -6,6 +6,7 @@ import {
   compileVisibilityTemplate,
   decompileVisibilityTemplate,
   ruleReferencesField,
+  remapFormFieldRefs,
   type simpleVisibilityTemplate,
   type visibilityCondition,
   type comparisonOp,
@@ -763,3 +764,76 @@ describe("membership on a single-valued option field — evaluation semantics", 
     expect(evalVisible(anyOf, "dar es salaam")).toBe(false);
   });
 })
+
+describe("remapFormFieldRefs", () => {
+  const map = { age: "AGE2", consent: "CONSENT2" };
+
+  it("rewrites a direct reference and leaves unmapped ids alone", () => {
+    expect(remapFormFieldRefs({ var: "form.age" }, map)).toEqual({
+      var: "form.AGE2",
+    });
+    expect(remapFormFieldRefs({ var: "form.weight" }, map)).toEqual({
+      var: "form.weight",
+    });
+  });
+
+  it("preserves subpaths and non-form scopes", () => {
+    expect(remapFormFieldRefs({ var: "form.age.value" }, map)).toEqual({
+      var: "form.AGE2.value",
+    });
+    expect(remapFormFieldRefs({ var: "ctx.now" }, map)).toEqual({
+      var: "ctx.now",
+    });
+  });
+
+  it("doesn't rewrite id prefixes (age ≠ age_2)", () => {
+    expect(remapFormFieldRefs({ var: "form.age_2" }, map)).toEqual({
+      var: "form.age_2",
+    });
+  });
+
+  it("rewrites the path of the array form, keeping the default", () => {
+    expect(remapFormFieldRefs({ var: ["form.age", ""] }, map)).toEqual({
+      var: ["form.AGE2", ""],
+    });
+  });
+
+  it("rewrites every reference in a nested tree", () => {
+    const rule = {
+      and: [
+        { "==": [{ var: "form.consent" }, true] },
+        { ">": [{ length: [{ var: ["form.age", ""] }] }, 2] },
+        { in: ["opt1", { var: "form.age" }] },
+      ],
+    };
+    expect(remapFormFieldRefs(rule, map)).toEqual({
+      and: [
+        { "==": [{ var: "form.CONSENT2" }, true] },
+        { ">": [{ length: [{ var: ["form.AGE2", ""] }] }, 2] },
+        { in: ["opt1", { var: "form.AGE2" }] },
+      ],
+    });
+  });
+
+  it("does not mutate the input", () => {
+    const rule = { "==": [{ var: "form.age" }, 3] };
+    remapFormFieldRefs(rule, map);
+    expect(rule).toEqual({ "==": [{ var: "form.age" }, 3] });
+  });
+
+  it("copies primitives, null and computed var paths through unchanged", () => {
+    expect(remapFormFieldRefs(null, map)).toBe(null);
+    expect(remapFormFieldRefs(42, map)).toBe(42);
+    expect(remapFormFieldRefs({ ">": [3, 2] }, map)).toEqual({ ">": [3, 2] });
+    const computed = { var: { cat: ["form.", { var: "key" }] } };
+    expect(remapFormFieldRefs(computed, map)).toEqual(computed);
+  });
+
+  it("returns undefined rather than a half-rewritten tree when the walk is too large", () => {
+    let deep: unknown = { var: "form.age" };
+    for (let i = 0; i < 60_000; i += 1) {
+      deep = { "!": [deep] };
+    }
+    expect(remapFormFieldRefs(deep, map)).toBeUndefined();
+  });
+});

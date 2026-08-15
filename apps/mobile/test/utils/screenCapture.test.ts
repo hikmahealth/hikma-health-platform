@@ -13,6 +13,7 @@ jest.mock("expo-screen-capture", () => ({
   preventScreenCaptureAsync: jest.fn(async () => undefined),
   allowScreenCaptureAsync: jest.fn(async () => undefined),
   enableAppSwitcherProtectionAsync: jest.fn(async () => undefined),
+  disableAppSwitcherProtectionAsync: jest.fn(async () => undefined),
 }))
 
 import * as ScreenCapture from "expo-screen-capture"
@@ -34,6 +35,8 @@ function loadModule(): ScreenCaptureModule {
 const prevent = ScreenCapture.preventScreenCaptureAsync as jest.Mock
 const allow = ScreenCapture.allowScreenCaptureAsync as jest.Mock
 const isAvailable = ScreenCapture.isAvailableAsync as jest.Mock
+const enableSwitcher = ScreenCapture.enableAppSwitcherProtectionAsync as jest.Mock
+const disableSwitcher = ScreenCapture.disableAppSwitcherProtectionAsync as jest.Mock
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -150,5 +153,60 @@ describe("applyScreenCapturePolicy", () => {
 
     await expect(applyScreenCapturePolicy("Patients")).resolves.toBeUndefined()
     expect(prevent).not.toHaveBeenCalled()
+  })
+})
+
+describe("setScreenCaptureAllowance", () => {
+  it("protects a clinical route until the setting arrives, as on a fresh install", async () => {
+    await loadModule().applyScreenCapturePolicy("Patients")
+
+    expect(prevent).toHaveBeenCalledTimes(1)
+    expect(allow).not.toHaveBeenCalled()
+  })
+
+  it("permits capture on the current clinical route as soon as the admin allows it", async () => {
+    const { applyScreenCapturePolicy, setScreenCaptureAllowance } = loadModule()
+
+    await applyScreenCapturePolicy("PatientVisitsList")
+    expect(prevent).toHaveBeenCalledTimes(1)
+
+    await setScreenCaptureAllowance(true)
+    expect(allow).toHaveBeenCalledTimes(1)
+  })
+
+  it("re-protects without a navigation when the admin revokes it", async () => {
+    const { applyScreenCapturePolicy, setScreenCaptureAllowance } = loadModule()
+
+    await applyScreenCapturePolicy("Patients")
+    await setScreenCaptureAllowance(true)
+    expect(allow).toHaveBeenCalledTimes(1)
+
+    await setScreenCaptureAllowance(false)
+    expect(prevent).toHaveBeenCalledTimes(2)
+  })
+
+  it("stays permitted across navigation, without re-toggling the native bridge", async () => {
+    const { applyScreenCapturePolicy, setScreenCaptureAllowance } = loadModule()
+
+    await setScreenCaptureAllowance(true)
+    await applyScreenCapturePolicy("Patients")
+    await applyScreenCapturePolicy("Settings")
+    await applyScreenCapturePolicy("EventForm")
+
+    expect(allow).toHaveBeenCalledTimes(1)
+    expect(prevent).not.toHaveBeenCalled()
+  })
+
+  it("lifts the iOS app switcher blur, and restores it when revoked", async () => {
+    const { initScreenCaptureProtection, setScreenCaptureAllowance } = loadModule()
+
+    await initScreenCaptureProtection()
+    expect(enableSwitcher).toHaveBeenCalledTimes(1)
+
+    await setScreenCaptureAllowance(true)
+    expect(disableSwitcher).toHaveBeenCalledTimes(1)
+
+    await setScreenCaptureAllowance(false)
+    expect(enableSwitcher).toHaveBeenCalledTimes(2)
   })
 })

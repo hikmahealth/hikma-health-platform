@@ -3,6 +3,8 @@
 // simple/advanced editor state machine. UI components in this
 // directory render this model; they don't own logic of their own.
 
+import { Logger } from "@hikmahealth/js-utils";
+
 import {
   type JsonLogicRule,
   type RuleValidationError,
@@ -145,15 +147,39 @@ export const conditionsOf = (
   t: SimpleVisibilityTemplate,
 ): VisibilityCondition[] => (t === "Always" ? [] : t.conditions);
 
+// A well-formed leaf: the ReScript variant representation is an object
+// carrying a string `TAG`. Anything else in a condition list is a bug —
+// `RuleTemplates.compileCondition` reads `.TAG` unguarded, so a malformed
+// entry reaching it throws inside ReScript and takes the whole editor
+// (and the route it sits on) down with it.
+const isCondition = (c: unknown): c is VisibilityCondition =>
+  typeof c === "object" &&
+  c !== null &&
+  typeof (c as { TAG?: unknown }).TAG === "string";
+
 // Build a template from a connector + condition list, collapsing an empty
 // list to "Always" when the section permits a no-rule state.
+//
+// Malformed entries are dropped here rather than carried into editor
+// state: this is the single funnel every simple-mode edit passes through,
+// so it's the one place that can guarantee the template handed to
+// ReScript — and to `ConditionRow`, which also reads `.TAG` — is
+// well-formed. Dropping is logged; it always indicates a defect upstream.
 export function templateFromConditions(
   conditions: VisibilityCondition[],
   connector: Connector,
   allowAlways: boolean,
 ): SimpleVisibilityTemplate {
-  if (conditions.length === 0 && allowAlways) return "Always";
-  return { TAG: "Conditions", connector, conditions };
+  const clean = conditions.filter(isCondition);
+  if (clean.length !== conditions.length) {
+    Logger.error({
+      msg: "[rule-model] dropped malformed condition(s) from template",
+      dropped: conditions.length - clean.length,
+      conditions,
+    });
+  }
+  if (clean.length === 0 && allowAlways) return "Always";
+  return { TAG: "Conditions", connector, conditions: clean };
 }
 
 // A fresh condition of the given kind for the given field. Single-value kinds
@@ -194,6 +220,22 @@ export function defaultConditionForKind(
         : { TAG: "IncludesAny", fieldId, values: [] };
     case "IncludesAll":
       return { TAG: "IncludesAll", fieldId, values: [] };
+    default: {
+      // The switch is exhaustive over `ConditionKind` at compile time, but
+      // `kind` crosses runtime boundaries the type system doesn't police —
+      // a Radix `onValueChange` payload, a persisted rule, a stale bundle.
+      // Falling through used to return `undefined`, which travels three
+      // layers (emit → reducer → render) before ReScript's
+      // `compileCondition` dereferences its `.TAG` and kills the route.
+      // Return a usable leaf instead, and make the bad value visible.
+      const unexpected: never = kind;
+      Logger.error({
+        msg: "[rule-model] unexpected condition kind; falling back to Comparison",
+        kind: unexpected,
+        fieldId,
+      });
+      return { TAG: "Comparison", fieldId, op: "==", value: "" };
+    }
   }
 }
 

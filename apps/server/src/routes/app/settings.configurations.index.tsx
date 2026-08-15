@@ -199,6 +199,13 @@ function RouteComponent() {
       "operation_mode",
     ) || "user_choice";
 
+  const isScreenCaptureAllowed =
+    AppConfig.Utils.getValue<boolean>(
+      config,
+      AppConfig.Namespaces.SYSTEM,
+      "allow-mobile-screen-capture",
+    ) || false;
+
   const [anthropicApiKey, setAnthropicApiKey] = useState("");
   const [openaiApiKey, setOpenaiApiKey] = useState("");
   const [geminiApiKey, setGeminiApiKey] = useState("");
@@ -311,6 +318,36 @@ function RouteComponent() {
       })
       .catch((error) => {
         toast.error(`Failed to update operation mode: ${error.message}`);
+      })
+      .finally(() => {
+        router.invalidate({ sync: true });
+      });
+  };
+
+  const handleToggleScreenCapture = (checked: boolean) => {
+    if (!currentUser) return;
+
+    saveConfiguration({
+      data: {
+        namespace: AppConfig.Namespaces.SYSTEM,
+        key: "allow-mobile-screen-capture",
+        displayName: "Allow Mobile Screenshots & Screen Recording",
+        value: checked,
+        dataType: "boolean",
+        updatedBy: currentUser.id,
+      },
+    })
+      .then(() => {
+        toast.success(
+          checked
+            ? "Screenshots and screen recording allowed on mobile"
+            : "Screenshots and screen recording blocked on mobile",
+        );
+      })
+      .catch((error) => {
+        toast.error(
+          `Failed to update screen capture setting: ${error.message}`,
+        );
       })
       .finally(() => {
         router.invalidate({ sync: true });
@@ -458,6 +495,14 @@ function RouteComponent() {
               { value: "offline", label: "Offline" },
               { value: "user_choice", label: "User Choice" },
             ]}
+          />
+
+          <Checkbox
+            label="Allow Screenshots & Screen Recording"
+            description="Off by default. When on, clinicians can screenshot, record, and cast patient records from the mobile app. Devices apply the change on their next sync."
+            color="destructive"
+            checked={isScreenCaptureAllowed}
+            onCheckedChange={handleToggleScreenCapture}
           />
         </div>
 

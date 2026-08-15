@@ -20,6 +20,7 @@ import {
   decompileVisibilityTemplate,
   type LogicField,
   type SimpleVisibilityTemplate,
+  type VisibilityCondition,
 } from "@/lib/form-rule-templates";
 import type { JsonLogicRule } from "@/models/form-rules";
 
@@ -853,5 +854,137 @@ describe("conditionValid — LengthCompare", () => {
         all,
       ),
     ).toBe(false);
+  });
+});
+
+/**
+ * Boundary invariants between the TS editor model and the ReScript
+ * compiler. `RuleTemplates.compileCondition` reads `.TAG` unguarded, so
+ * an `undefined` (or otherwise malformed) entry in a condition list
+ * throws inside ReScript, three layers away from wherever it was
+ * introduced, and the root catch boundary tears down the whole route.
+ * These pin the two funnels that make that unreachable.
+ */
+describe("condition construction can never yield undefined", () => {
+  const shapes: (LogicField | undefined)[] = [undefined];
+  for (const multiValue of [undefined, false, true]) {
+    for (const options of [
+      undefined,
+      [],
+      [{ value: "a", label: "A" }],
+      [{ value: "", label: "blank" }],
+    ]) {
+      for (const freeText of [undefined, false, true]) {
+        shapes.push({
+          id: "x",
+          displayName: "X",
+          kind: "primitive",
+          primitiveKind: "string",
+          ...(multiValue === undefined ? {} : { multiValue }),
+          ...(options === undefined ? {} : { options }),
+          ...(freeText === undefined ? {} : { freeText }),
+        } as LogicField);
+      }
+    }
+  }
+
+  const leaves: VisibilityCondition[] = [
+    { TAG: "Comparison", fieldId: "x", op: "==", value: "a" },
+    { TAG: "Comparison", fieldId: "x", op: "!=", value: "a" },
+    { TAG: "Comparison", fieldId: "x", op: ">", value: 1 },
+    { TAG: "LengthCompare", fieldId: "x", op: ">", value: 1 },
+    { TAG: "Truthy", fieldId: "x" },
+    { TAG: "Falsy", fieldId: "x" },
+    { TAG: "IncludesOption", fieldId: "x", value: "a" },
+    { TAG: "ExcludesOption", fieldId: "x", value: "a" },
+    { TAG: "IncludesAny", fieldId: "x", values: ["a", "b"] },
+    { TAG: "IncludesAll", fieldId: "x", values: ["a", "b"] },
+    { TAG: "EqualsAny", fieldId: "x", values: ["a", "b"] },
+  ];
+
+  it("conditionKindsFor always offers at least one kind", () => {
+    for (const f of shapes) {
+      expect(conditionKindsFor(f).length).toBeGreaterThan(0);
+      for (const c of leaves) {
+        expect(conditionKindsFor(f, c).length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("every offered kind builds a compilable condition on every field shape", () => {
+    for (const f of shapes) {
+      const kindSets = [
+        conditionKindsFor(f),
+        ...leaves.map((c) => conditionKindsFor(f, c)),
+      ];
+      for (const kinds of kindSets) {
+        for (const k of kinds) {
+          const built = defaultConditionForKind(k, f);
+          expect(built).toBeDefined();
+          expect(() =>
+            compileVisibilityTemplate({
+              TAG: "Conditions",
+              connector: "and",
+              conditions: [built],
+            }),
+          ).not.toThrow();
+        }
+      }
+    }
+  });
+
+  it("every kind a stored leaf displays as is one the model can rebuild", () => {
+    for (const f of shapes) {
+      for (const c of leaves) {
+        expect(defaultConditionForKind(displayKindOf(c, f), f)).toBeDefined();
+      }
+    }
+  });
+
+  it("falls back to a comparison instead of undefined for an out-of-contract kind", () => {
+    // `kind` crosses runtime boundaries the type system doesn't police
+    // (Radix payloads, persisted rules, a stale bundle). Returning
+    // undefined here was what reached ReScript and killed the route.
+    const built = defaultConditionForKind(
+      "NotAKind" as never,
+      { id: "x", displayName: "X", kind: "primitive" } as LogicField,
+    );
+    expect(built).toEqual({
+      TAG: "Comparison",
+      fieldId: "x",
+      op: "==",
+      value: "",
+    });
+  });
+});
+
+describe("templateFromConditions guards the ReScript boundary", () => {
+  it("drops malformed entries rather than handing them to the compiler", () => {
+    const good: VisibilityCondition = {
+      TAG: "Truthy",
+      fieldId: "age",
+    };
+    const t = templateFromConditions(
+      [undefined as never, good, null as never],
+      "and",
+      false,
+    );
+    expect(t).toEqual({
+      TAG: "Conditions",
+      connector: "and",
+      conditions: [good],
+    });
+    expect(() => compileVisibilityTemplate(t)).not.toThrow();
+  });
+
+  it("collapses to Always when only malformed entries remain", () => {
+    expect(templateFromConditions([undefined as never], "and", true)).toBe(
+      "Always",
+    );
+  });
+
+  it("a lone malformed entry compiles to no rule, never a crash", () => {
+    const t = templateFromConditions([undefined as never], "and", false);
+    expect(compileVisibilityTemplate(t)).toBeUndefined();
   });
 });

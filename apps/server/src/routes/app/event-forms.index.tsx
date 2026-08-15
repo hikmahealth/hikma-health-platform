@@ -3,6 +3,7 @@ import {
   getRouteApi,
   useRouter,
 } from "@tanstack/react-router";
+import { useState } from "react";
 import { createServerFn } from "@tanstack/react-start";
 import {
   Table,
@@ -24,12 +25,57 @@ import { getAllClinics } from "@/lib/server-functions/clinics";
 import { Result } from "@/lib/result";
 import { Logger } from "@hikmahealth/js-utils";
 import { superAdminMiddleware } from "@/middleware/auth";
+import {
+  COPY_NAME_SUFFIX,
+  duplicateFormContent,
+} from "@/lib/duplicate-event-form";
+import { safeJSONParse } from "@/lib/utils";
 
 const deleteForm = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
   .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return EventForm.API.softDelete(data.id);
+  });
+
+const duplicateForm = createServerFn({ method: "POST" })
+  .inputValidator((d: { id: string }) => d)
+  .middleware([superAdminMiddleware])
+  .handler(async ({ data }) => {
+    const source = await EventForm.API.getById(data.id);
+    if (!source) {
+      throw new Error("Form not found");
+    }
+
+    // Legacy rows store `form_fields` as a JSON string, and `getById` hands
+    // the column through as-is.
+    const content = duplicateFormContent({
+      form_fields: safeJSONParse(
+        source.form_fields,
+        [] as Record<string, unknown>[],
+      ),
+      translations: safeJSONParse(
+        source.translations,
+        [] as EventForm.FieldTranslation[],
+      ),
+    });
+
+    // Only the authored columns: `insert` mints the id and stamps every
+    // timestamp itself, which is what the cast covers.
+    const created = await EventForm.API.insert({
+      name: `${source.name || "Untitled form"}${COPY_NAME_SUFFIX}`,
+      description: source.description,
+      language: source.language,
+      is_editable: source.is_editable,
+      is_snapshot_form: source.is_snapshot_form,
+      metadata: source.metadata,
+      clinic_ids: source.clinic_ids,
+      form_fields: content.form_fields,
+      translations: content.translations,
+      is_deleted: false,
+    } as unknown as EventForm.EncodedT);
+
+    return { id: created.id };
   });
 
 const toggleFormDetail = createServerFn({ method: "POST" })
@@ -68,6 +114,7 @@ export const Route = createFileRoute("/app/event-forms/")({
 function RouteComponent() {
   const { forms, clinics } = Route.useLoaderData();
   const route = useRouter();
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
 
   const clinicMap = new Map(clinics.map((c) => [c.id, c.name]));
 
@@ -93,6 +140,27 @@ function RouteComponent() {
         toast.error("Failed to toggle form editable mode");
         Logger.error(error);
       });
+  };
+
+  const handleDuplicate = (id: string) => {
+    setDuplicatingId(id);
+    duplicateForm({ data: { id } })
+      .then(() => {
+        toast.success("Form duplicated successfully");
+        route.invalidate({ sync: true });
+      })
+      .catch((error) => {
+        // `insert` re-validates the source's rules, so a form the admin never
+        // touched can fail here and the breakdown is all they have to go on.
+        const reason: unknown = error?.message;
+        toast.error(
+          typeof reason === "string" && reason.length > 0
+            ? `Failed to duplicate form: ${reason}`
+            : "Failed to duplicate form",
+        );
+        Logger.error(error);
+      })
+      .finally(() => setDuplicatingId(null));
   };
 
   const handleDelete = (id: string) => {
@@ -186,6 +254,16 @@ function RouteComponent() {
                           Edit
                         </Button>
                       </Link>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={duplicatingId === form.id}
+                        onClick={() => handleDuplicate(form.id)}
+                      >
+                        {duplicatingId === form.id
+                          ? "Duplicating…"
+                          : "Duplicate"}
+                      </Button>
                       <Button
                         variant="destructive"
                         size="sm"

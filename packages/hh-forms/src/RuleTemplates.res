@@ -604,3 +604,90 @@ let ruleReferencesField = (rule: option<JSON.t>, fieldId: string): bool =>
     }
   }
 }
+
+// Rewrite a `var` path's field id to `mapping`'s replacement, keeping any
+// subpath. Paths outside the form scope, and ids the mapping doesn't cover,
+// come back unchanged.
+let remapVarPath = (mapping: dict<string>, path: string): string =>
+  if String.startsWith(path, formVarPrefix) {
+    let rest = String.sliceToEnd(path, ~start=String.length(formVarPrefix))
+    let (fieldId, subpath) = switch String.indexOf(rest, ".") {
+    | -1 => (rest, "")
+    | idx => (String.slice(rest, ~start=0, ~end=idx), String.sliceToEnd(rest, ~start=idx))
+    }
+    switch mapping->Dict.get(fieldId) {
+    | Some(replacement) => formVarPrefix ++ replacement ++ subpath
+    | None => path
+    }
+  } else {
+    path
+  }
+
+// The argument of a `var` node: the bare path, or the `[path, default]` array
+// form whose default is copied through untouched, as the reference collectors
+// also treat it as opaque.
+let remapVarArg = (mapping: dict<string>, arg: JSON.t): JSON.t =>
+  switch arg {
+  | String(path) => JSON.String(remapVarPath(mapping, path))
+  | Array(items) if Array.length(items) > 0 =>
+    switch Array.getUnsafe(items, 0) {
+    | String(path) =>
+      let rewritten = Array.copy(items)
+      Array.setUnsafe(rewritten, 0, JSON.String(remapVarPath(mapping, path)))
+      JSON.Array(rewritten)
+    | _ => arg
+    }
+  | _ => arg
+  }
+
+// Rewrite every `{var: "form.<fieldId>"}` reference in a rule into a fresh
+// tree, leaving the input untouched. Duplicating a form mints new field ids,
+// and its rules have to follow or they silently read the original's fields.
+//
+// Computed paths (`{var: {cat: [...]}}`) can't be resolved statically and are
+// copied verbatim, matching `ruleReferencesField`.
+//
+// `None` means the walk hit its node ceiling. The half-rebuilt tree would
+// carry stale references, and a rule quietly reading another form's field is
+// worse than a refused duplication.
+@genType
+let remapFormFieldRefs = (rule: JSON.t, mapping: dict<string>): option<JSON.t> => {
+  // Each frame carries the setter that drops its rewritten node into the
+  // already-published parent, so one pre-order pass suffices. Iterative for the
+  // same reason the walkers above are — user JSON can nest past the JS stack.
+  let rebuilt = ref(JSON.Null)
+  let stack: array<(JSON.t, JSON.t => unit)> = [(rule, node => rebuilt := node)]
+  let visited = ref(0)
+  while Array.length(stack) > 0 && visited.contents < maxWalkVisits {
+    visited := visited.contents + 1
+    let (node, place) = Array.pop(stack)->Option.getUnsafe
+    // Classify explicitly — see the note in `ruleReferencesField` on why a
+    // bare match would send `null` down the Object arm.
+    switch JSON.Classify.classify(node) {
+    | Array(items) =>
+      let out = Array.make(~length=Array.length(items), JSON.Null)
+      place(JSON.Array(out))
+      items->Array.forEachWithIndex((item, index) =>
+        Array.push(stack, (item, node => Array.setUnsafe(out, index, node)))
+      )
+    | Object(obj) =>
+      let out = Dict.make()
+      place(JSON.Object(out))
+      obj
+      ->Dict.toArray
+      ->Array.forEach(((key, value)) =>
+        if key === "var" {
+          out->Dict.set(key, remapVarArg(mapping, value))
+        } else {
+          Array.push(stack, (value, node => out->Dict.set(key, node)))
+        }
+      )
+    | Null | Bool(_) | Number(_) | String(_) => place(node)
+    }
+  }
+  if Array.length(stack) > 0 {
+    None
+  } else {
+    Some(rebuilt.contents)
+  }
+}

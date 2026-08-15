@@ -27,7 +27,8 @@
   "dependencies": {
     "kysely": "^0.28.16",
     "kysely-ctl": "^0.20.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@swc/cli": "^0.7.9",

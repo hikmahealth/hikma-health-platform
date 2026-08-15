@@ -32,7 +32,13 @@ import { PharmacyNavigator } from "./PharmacyNavigator"
 import { getActiveRouteName, navigationRef, useBackButtonHandler } from "./navigationUtilities"
 import { PatientNavigator } from "./PatientNavigator"
 import { shouldSeedE2E } from "@/utils/e2e"
-import { applyScreenCapturePolicy, initScreenCaptureProtection } from "@/utils/screenCapture"
+import {
+  applyScreenCapturePolicy,
+  initScreenCaptureProtection,
+  setScreenCaptureAllowance,
+} from "@/utils/screenCapture"
+import { useAppConfigValue } from "@/hooks/useAppConfigValue"
+import AppConfig from "@/models/AppConfig"
 import { Logger } from "@hikmahealth/js-utils"
 
 /**
@@ -240,6 +246,20 @@ export const AppNavigator = (props: NavigationProps) => {
   useEffect(() => {
     void initScreenCaptureProtection()
   }, [])
+
+  // No clinic: read above the point one is selected, and the setting is
+  // organization-wide, so a clinic-scoped row deliberately does not apply.
+  const { value: screenCaptureAllowance } = useAppConfigValue(
+    AppConfig.Namespaces.SYSTEM,
+    "allow-mobile-screen-capture",
+    null,
+  )
+
+  useEffect(() => {
+    void setScreenCaptureAllowance(
+      screenCaptureAllowance === true || screenCaptureAllowance === "true",
+    )
+  }, [screenCaptureAllowance])
 
   // `onStateChange` does not fire on the first render, and persisted navigation
   // restores the app into the last-visited screen — usually a patient record —
