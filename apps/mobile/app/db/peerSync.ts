@@ -1,9 +1,5 @@
 /**
- * Unified peer sync module.
- *
- * Treats every sync target — cloud server or local hub — as a peer
- * in the `peers` table. Dispatches to the appropriate sync strategy
- * based on `peer.peerType`:
+ * Sync against any peer in the `peers` table, dispatching on `peer.peerType`:
  *
  *   cloud_server → WatermelonDB synchronize() over HTTPS
  *   sync_hub     → encrypted RPC + manual change application
@@ -22,14 +18,10 @@ import { logger } from "@/utils/logger"
 import { applyRemoteChanges, fetchLocalChanges, markLocalChangesAsSynced } from "./localSync"
 import { countRecordsInChanges, updateDates } from "./syncNormalize"
 
-import database from "."
+import database, { databaseReady } from "."
 import { Logger } from "@hikmahealth/js-utils"
 
 global.Buffer = require("buffer").Buffer
-
-//////////////////////////////////////////////////////////////////////////////////
-// TYPES
-//////////////////////////////////////////////////////////////////////////////////
 
 export type SyncCallbacks = {
   hasLocalChangesToPush: boolean
@@ -46,11 +38,9 @@ type SyncPullResponse = {
   timestamp: number
 }
 
-// ── Auth helpers ─────────────────────────────────────────────────────
-
 /**
- * Exported so the first-sync backfill reads sync credentials the same way this
- * module does, rather than growing a second definition of where they live.
+ * Exported so the first-sync backfill reads credentials the same way this module
+ * does, rather than growing a second definition of where they live.
  */
 export const getCredentials = async (): Promise<{ email: string; password: string }> => {
   const email = await EncryptedStorage.getItem("provider_email")
@@ -72,14 +62,10 @@ const getSyncApiUrl = async (): Promise<string> => {
   return `${url}/api/v2/sync`
 }
 
-//////////////////////////////////////////////////////////////////////////////////
-/////////////////////// CLOUD STRATEGY ///////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////
-
 const syncCloud = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> => {
   const { email, password } = await getCredentials()
 
-  // Refresh user info (clinic, roles, etc.) before syncing
+  // Refreshes clinic and roles, which the pull below depends on.
   await User.signIn(email, password)
 
   const headers = buildBasicAuthHeaders(email, password)
@@ -140,8 +126,6 @@ const syncCloud = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> 
   await Peer.DB.updateLastSyncedAt(peer.id, Date.now())
 }
 
-// ── Strategy: Hub (encrypted RPC) ────────────────────────────────────
-
 const syncHub = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> => {
   callbacks.setSyncStart()
 
@@ -153,16 +137,8 @@ const syncHub = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> =>
   const lastPulledAt = peer.lastSyncedAt ?? 0
   const token_res = await Peer.Session.getTokenByPeerId(peer.peerId)
   const token = getResultData(token_res, undefined)
-  // () => {
-  //   if (token_res.ok) {
-  //     return token_res.data
-  //   } else {
-  //     return undefined
-  //   }
-  // }
   logger.log("[HUB SYNC]", { lastPulledAt, peer: JSON.stringify(peer, null, 2), token })
 
-  // PULL
   const pullResult = await transport.sendQuery<SyncPullResponse>(
     "sync_pull",
     { lastPulledAt },
@@ -180,7 +156,6 @@ const syncHub = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> =>
 
   await applyRemoteChanges(changes)
 
-  // ── Push ─────────────────────────────────────────────────────────
   const localChanges = await fetchLocalChanges()
   const pushCount = countRecordsInChanges(localChanges)
   callbacks.setPushStart(pushCount)
@@ -197,12 +172,9 @@ const syncHub = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> =>
     await markLocalChangesAsSynced(localChanges)
   }
 
-  // ── Persist timestamp ────────────────────────────────────────────
   await Peer.DB.updateLastSyncedAt(peer.id, timestamp)
   callbacks.onSyncCompleted()
 }
-
-// ── Strategy dispatch ────────────────────────────────────────────────
 
 const strategies: Record<Peer.PeerType, (peer: Peer.T, cb: SyncCallbacks) => Promise<void>> = {
   cloud_server: syncCloud,
@@ -212,15 +184,13 @@ const strategies: Record<Peer.PeerType, (peer: Peer.T, cb: SyncCallbacks) => Pro
   },
 }
 
-// ── Public API ───────────────────────────────────────────────────────
-
 /**
- * Sync the local database with a specific peer.
- *
- * @param peerId  WatermelonDB record ID of the peer in the `peers` table
- * @param callbacks  UI / state callbacks for progress reporting
+ * Sync the local database with the peer holding this WatermelonDB record id.
  */
 export const syncDB = async (peerId: string, callbacks: SyncCallbacks): Promise<void> => {
+  // Reached directly as well as via `startSync`, so it gates for itself.
+  await databaseReady
+
   const peer = await Peer.DB.getById(peerId)
 
   const strategy = strategies[peer.peerType]

@@ -145,6 +145,6 @@ export const ManualSyncScreen: FC<AppStackScreenProps<"ManualSync">> = ({ route,
   )
 }
 
-const $root: ViewStyle = { flex: 1, paddingHorizontal: 24 }
+const $root: ViewStyle = { flex: 1, paddingHorizontal: 24, paddingTop: 24 }
 const $centre: ViewStyle = { flex: 1, justifyContent: "center", alignItems: "center" }
 const $warning = { color: colors.palette.angry500 }

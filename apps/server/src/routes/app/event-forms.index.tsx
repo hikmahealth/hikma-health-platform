@@ -30,6 +30,7 @@ import {
   duplicateFormContent,
 } from "@/lib/duplicate-event-form";
 import { safeJSONParse } from "@/lib/utils";
+import { truncate } from "es-toolkit/compat";
 
 const deleteForm = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => d)
@@ -231,11 +232,11 @@ function RouteComponent() {
                       />
                     </TableCell>
                     <TableCell>{form.name || "—"}</TableCell>
-                    <TableCell>{form.description || "—"}</TableCell>
+                    <TableCell>{truncate(form.description || "—", { length: 72 })}</TableCell>
                     <TableCell>
                       {!form.clinic_ids || form.clinic_ids.length === 0
                         ? "All"
-                        : form.clinic_ids
+                        : form.clinic_ids.slice(0, 5)
                             .map((id) => clinicMap.get(id) ?? id)
                             .join(", ")}
                     </TableCell>

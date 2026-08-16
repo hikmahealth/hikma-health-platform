@@ -16,6 +16,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
+    // The form-builder suites drive hundreds of jsdom renders each, so the 5s
+    // default fails them on scheduling rather than on a real bug. Matches
+    // vitest.integration.config.ts.
+    testTimeout: 30_000,
     setupFiles: ["./tests/setup.ts"],
     exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**", "**/tests/integration/**"],
     coverage: {

@@ -1,16 +1,9 @@
 /**
- * Sync Service Module
+ * Entry point for syncing with the configured peer, cloud or local hub.
  *
- * This module provides a centralized interface for managing data synchronization
- * between the mobile app and the server (both local and cloud).
- *
- * Key features:
- * - Automatic detection of sync type (local vs cloud)
- * - State management through XState store
- * - Error handling and user notifications
- * - Prevention of concurrent sync operations
- *
- * @module services/syncService
+ * Owns the choice of sync route, the mutex that stops concurrent runs, and the
+ * XState store the UI reads. The transports themselves live in `db/peerSync.ts`
+ * and `db/cloudManualSync.ts`.
  */
 
 import { Alert } from "react-native"
@@ -19,7 +12,7 @@ import { getLastPulledAt } from "@nozbe/watermelondb/sync/impl"
 import * as Sentry from "@sentry/react-native"
 import Toast from "react-native-root-toast"
 
-import database from "@/db"
+import database, { databaseReady } from "@/db"
 import { runManualSync } from "@/db/cloudManualSync"
 import { getCredentials, syncDB } from "@/db/peerSync"
 import { translate } from "@/i18n/translate"
@@ -31,30 +24,6 @@ import { syncStore } from "@/store/sync"
 import { withSyncLock, isSyncInFlight, currentSyncLabel } from "@/services/syncLock"
 import { Logger } from "@hikmahealth/js-utils"
 
-/**
- * Starts a sync operation with the configured server.
- * This function handles both local and remote sync scenarios.
- *
- * You can (probably should always) call startSync twice in a row.
- * The first sync does: PULL --> local data conflict resolution ---> PUSH
- * The second sync does: PULL ---> local data conflict resolution (no push since there are no changes)
- * The extra sync gets any updated counts in the server (like stock counts)
- *
- *
- * @param providerEmail - Optional email to check for test accounts
- * @param options.trigger - `"user"` (default) queues behind any sync already
- *   running; `"auto"` gives up instead. See {@link SyncTrigger}.
- * @returns Promise that resolves when sync is complete or rejects on error.
- *   An `auto` trigger also resolves — with nothing synced — when another sync
- *   holds the lock, so callers cannot infer from resolution alone that work
- *   happened.
- *
- * @throws {Error} When:
- * - Test account attempts to sync
- * - App is not activated
- * - Network connection fails
- * - Server returns an error
- */
 let ordinarySyncInFlight: Promise<void> | null = null
 
 /**
@@ -77,11 +46,26 @@ export type SyncTrigger = "user" | "auto"
  */
 const FIRST_SYNC_CEILING_MS = 30 * 60_000
 
+/**
+ * Sync with the active peer.
+ *
+ * Worth calling twice in a row: the first run is PULL → conflict resolution →
+ * PUSH, the second is a PULL with nothing left to push, which is what picks up
+ * server-side values the push itself changed (stock counts, for one).
+ *
+ * Resolution does not mean work happened — an `auto` trigger also resolves when
+ * another sync holds the lock. Rejects on a test account, a missing peer, or a
+ * transport failure.
+ */
 export const startSync = async (
   providerEmail?: string,
   options?: { trigger?: SyncTrigger },
 ): Promise<void> => {
-  // Skip sync in online mode — data flows directly via RPC
+  // Before the mutex, not inside it: this resolves immediately on all but the
+  // first cold start, and holding the lock across it would make every caller
+  // that joins `ordinarySyncInFlight` wait on it too.
+  await databaseReady
+
   if (operationModeStore.getSnapshot().context.mode === "online") {
     Logger.log("Skipping sync: app is in online mode")
     return Promise.resolve()
@@ -165,16 +149,16 @@ const resolveFirstSyncPeer = async (): Promise<Peer.T | null> => {
  * run rather than restarting it, and that is what makes the fallback safe.
  */
 const runFirstSyncBackfill = async (peer: Peer.T): Promise<boolean> => {
-  // Nobody is watching this run and there is no Cancel button, and `fetch` has
-  // no timeout, so a socket that never answers would hold the sync lock for the
-  // life of the process.
+  // `fetch` has no timeout and nothing here can be cancelled by a user, so a
+  // socket that never answers would hold the sync lock for the life of the
+  // process.
   const controller = new AbortController()
   const ceiling = setTimeout(() => controller.abort(), FIRST_SYNC_CEILING_MS)
 
   try {
     Logger.log({ msg: "[Sync] First sync — routing through the paged backfill", peer: peer.id })
 
-    // syncCloud refreshes clinic and roles before syncing. This is the run where
+    // Mirrors syncCloud: refresh clinic and roles first. This is the run where
     // the provider record is least established, so it matters most here.
     const { email, password } = await getCredentials()
     await User.signIn(email, password)
@@ -204,16 +188,12 @@ const runFirstSyncBackfill = async (peer: Peer.T): Promise<boolean> => {
     Sentry.captureException(error)
     return false
   } finally {
-    // Or the timer keeps the JS context alive and eventually aborts a signal
-    // nothing is listening to.
     clearTimeout(ceiling)
   }
 }
 
-/**
- * Re-pairing only happens on the login screen, so signing out is the only way
- * forward — hence one button and no dismiss.
- */
+// Re-pairing only happens on the login screen, so signing out is the only way
+// forward — hence one button and no dismiss.
 const promptSignInAfterDisconnect = (): void => {
   Alert.alert(
     translate("login:disconnectedTitle"),
@@ -234,11 +214,10 @@ const promptSignInAfterDisconnect = (): void => {
 
 const runSync = async (providerEmail?: string): Promise<void> => {
   try {
-    // Find the active peer to sync with — prefer hub if available, fall back to cloud
     const activePeers = await Peer.DB.getActive()
     const activePeer = activePeers.pop()
     if (activePeers.length > 0) {
-      // we dont care to await this, if it fails it should not impact the user
+      // Not awaited — a failed deactivation should not stop the sync.
       Peer.DB.deactivatePeersById(activePeers.map((it) => it.id)).catch((error) =>
         Logger.log({ error }),
       )
@@ -296,12 +275,7 @@ const runSync = async (providerEmail?: string): Promise<void> => {
   }
 }
 
-/**
- * Checks if the app is properly configured for syncing.
- * Verifies that the app has been activated on the administrator portal.
- *
- * @returns Promise<boolean> - true if sync is available, false otherwise
- */
+/** Whether this device has been paired with a peer on the admin portal. */
 export const isSyncAvailable = async (): Promise<boolean> => {
   try {
     const peer = await Peer.DB.resolveActive()
@@ -311,20 +285,10 @@ export const isSyncAvailable = async (): Promise<boolean> => {
   }
 }
 
-/**
- * Gets the current sync state from the store.
- *
- * @returns Current sync state: 'idle' | 'fetching' | 'resolving' | 'pushing' | 'error'
- */
 export const getSyncState = (): Sync.StateT => {
   return syncStore.getSnapshot().context.state
 }
 
-/**
- * Checks if a sync operation is currently in progress.
- *
- * @returns true if syncing, false if idle or in error state
- */
 export const isSyncing = (): boolean => {
   return getSyncState() !== Sync.State.IDLE
 }

@@ -3,71 +3,47 @@ import LokiJSAdapter from "@nozbe/watermelondb/adapters/lokijs"
 import SQLiteAdapter from "@nozbe/watermelondb/adapters/sqlite"
 import { setGenerator } from "@nozbe/watermelondb/utils/common/randomId"
 import * as Sentry from "@sentry/react-native"
-import { v1 as uuidv1 } from "uuid"
 import { uuidv7 } from "uuidv7"
 
 import migrations from "./migrations"
 
 import { modelClasses } from "./modelClasses"
+import { type RawSqlAdapter, repairSchemaDrift } from "./repairSchemaDrift"
 import schema from "./schema"
 import { Logger } from "@hikmahealth/js-utils"
 
-// setGenerator(() => uuidv1())
+const isTest = process.env.NODE_ENV === "test"
+
 setGenerator(() => uuidv7())
 
 function createAdapter() {
-  const isTest = process.env.NODE_ENV === "test"
-
   if (!isTest) {
     return new SQLiteAdapter({
       dbName: "hikmahealthdb",
       schema,
-      // (You might want to comment it out for development purposes -- see Migrations documentation)
       migrations,
-      // (recommended option, should work flawlessly out of the box on iOS. On Android,
-      // additional installation steps have to be taken - disable if you run into issues...)
-      jsi: true /* Platform.OS === 'ios' */,
-      // (optional, but you should implement this method)
+      jsi: true,
       onSetUpError: (error) => {
-        // Database failed to load -- offer the user to reload the app or log out
-        // TODO: add error reporting to Sentry or similar here
         Logger.error({ msg: "Database failed to load!", error })
       },
     })
   } else {
-    // For testing environment
     return new LokiJSAdapter({
       schema,
-      // (You might want to comment out migrations for development purposes -- see Migrations documentation)
       migrations,
       useWebWorker: false,
       useIncrementalIndexedDB: true,
-      dbName: "test_hikmahealthdb", // optional db name
+      dbName: "test_hikmahealthdb",
 
       onQuotaExceededError: (error) => {
-        // Browser ran out of disk space -- offer the user to reload the app or log out
         Sentry.captureException(error)
-        // FIXME: Must inform the user on quota exceeded error
       },
       onSetUpError: (error) => {
-        // Database failed to load -- offer the user to reload the app or log out
         Sentry.captureException(error)
-        // FIXME: Must inform the user on database setup error
       },
       extraIncrementalIDBOptions: {
-        onDidOverwrite: () => {
-          // Called when this adapter is forced to overwrite contents of IndexedDB.
-          // This happens if there's another open tab of the same app that's making changes.
-          // Try to synchronize the app now, and if user is offline, alert them that if they close this
-          // tab, some data may be lost
-        },
-        onversionchange: () => {
-          // database was deleted in another browser tab (user logged out), so we must make sure we delete
-          // it in this tab as well - usually best to just refresh the page
-          // if (checkIfUserIsLoggedIn()) {
-          // window.location.reload()
-          // }
-        },
+        onDidOverwrite: () => {},
+        onversionchange: () => {},
       },
     })
   }
@@ -77,5 +53,39 @@ export const database = new Database({
   adapter: createAdapter(),
   modelClasses,
 })
+
+/**
+ * Resolves once this device's tables are known to match `schema.ts`.
+ *
+ * Every path that writes through sync awaits this, because the columns
+ * `repairSchemaDrift` adds are missing from the INSERT target rather than from
+ * the payload. Reads need no gate — a missing column only breaks INSERT/UPDATE,
+ * and WatermelonDB selects with `table.*`.
+ *
+ * Chained off `initializingPromise` rather than started alongside it. Adapter
+ * methods do not wait for setup, and `setUpWithMigrations` is dispatched from
+ * inside `initialize`'s own callback, so a repair kicked off at module load
+ * lands *between* the two. `jsi: true` is not protection — WatermelonDB
+ * silently downgrades to `'asynchronous'` when the JSI bridge is unavailable.
+ *
+ * Never rejects, so awaiting it can only delay a caller, never fail one. LokiJS
+ * (tests) has no raw SQL and is always built straight from the schema, so there
+ * is nothing to repair there.
+ */
+export const databaseReady: Promise<void> = isTest
+  ? Promise.resolve()
+  : // `Promise.resolve` rather than reading `.then` off the accessor: if a
+    // WatermelonDB upgrade renames or drops `initializingPromise`, this
+    // degrades to the old unsequenced behaviour instead of failing to boot.
+    Promise.resolve(
+      (database.adapter.underlyingAdapter as unknown as { initializingPromise?: Promise<void> })
+        .initializingPromise,
+    ).then(
+      () => repairSchemaDrift(database.adapter as unknown as RawSqlAdapter),
+      // Setup failed, so there is no database to repair and `onSetUpError`
+      // already owns reporting it. Gated callers should fail on their own terms
+      // against a dead database rather than hang waiting on this.
+      () => undefined,
+    )
 
 export default database

@@ -1,18 +1,14 @@
 /**
- * Manual ("Sync from…") cloud sync.
+ * Manual ("Sync from…") cloud sync: push everything pending, then pull a
+ * keyset-paginated backfill from a chosen point in time, one page per write
+ * transaction so memory does not grow with the transfer.
  *
- * A user-initiated recovery operation: push everything pending, then pull a
- * keyset-paginated backfill from a chosen point in time, applying one page per
- * write transaction so memory never grows with the size of the transfer.
+ * Push-then-pull, unlike ordinary sync: recovery devices carry a backlog of
+ * unpushed edits, and offering them before overwriting local state is what stops
+ * the server's staleness guard discarding them.
  *
- * Deliberately separate from `peerSync.ts`, which stays as the reference
- * implementation and rollback target. Shared pure helpers live in
- * `syncNormalize.ts`; this module must not import from `peerSync.ts`.
- *
- * Unlike ordinary sync this is push-then-pull. Recovery devices carry a backlog
- * of unpushed edits, and offering them to the server BEFORE overwriting local
- * state with a wide historical window is what stops the server's staleness
- * guard silently discarding them.
+ * Kept separate from `peerSync.ts`, the rollback target — shared helpers go in
+ * `syncNormalize.ts` and this must not import from `peerSync.ts`.
  */
 
 import { Platform } from "react-native"
@@ -36,39 +32,29 @@ import { withRetry } from "@/services/syncRetry"
 import { withSyncLock } from "@/services/syncLock"
 import { getBearerToken, refreshBearerToken } from "@/utils/authHeader"
 
-import database from "."
+import database, { databaseReady } from "."
 import { INBOUND_TABLES, OUTBOUND_TABLES } from "./localSync"
 import { countRecordsInChanges, updateDates } from "./syncNormalize"
 
 /**
- * Rows to request per table bucket — mirrors the server's `MAX_PAGE_ROWS`.
- *
- * Must be sent explicitly. Omitting it gets `DEFAULT_PAGE_ROWS = 500`, which at
- * ~900 decoded bytes a record caps a bucket near 450 KB — under even the
- * smallest byte budget, so every `pickPageBudget` tier would produce identical
- * pages and the OOM margin would rest on a server default rather than on the
- * budget. Asking for more than the server's ceiling is silently clamped, so
- * this must move with that constant.
+ * Rows per table bucket — mirrors the server's `MAX_PAGE_ROWS` and must move
+ * with it, since asking for more is silently clamped. Sending it explicitly is
+ * load-bearing: the server's default of 500 caps a bucket under even the
+ * smallest byte budget, so every `pickPageBudget` tier would page identically.
  */
 const PULL_PAGE_ROWS = 2_000
 
 /**
- * Records per push request.
- *
- * `fetchLocalChanges` materialises every pending record at once and upstream
- * offers no way to page it, so this does not bound the fetch — it bounds the
- * multiplier on top of it: the JSON string, the request body and the server's
- * parse of them. Same size as a pull page, so both directions move work in
- * comparable units.
+ * Records per push request. Does not bound the fetch — `fetchLocalChanges`
+ * materialises everything at once and upstream cannot page it — but bounds the
+ * JSON string, request body, and server-side parse built on top of it.
  */
 const PUSH_CHUNK_RECORDS = 2_000
 
 /**
- * Pages one pull may walk before giving up.
- *
- * Far above any real dataset — at `PULL_PAGE_ROWS` this is 200 million records.
- * It exists so a server bug that returns a constant non-null cursor ends as a
- * resumable failure rather than spinning until the user happens to cancel.
+ * Pages one pull may walk before giving up — 200 million records, far above any
+ * real dataset. It exists so a server bug that returns a constant non-null
+ * cursor ends as a resumable failure rather than spinning forever.
  */
 const MAX_PULL_PAGES = 100_000
 
@@ -103,22 +89,14 @@ export type ManualSyncResult =
   | { ok: false; error: string; resumable: boolean }
 
 /**
- * Normalise one inbound page before handing it to upstream.
+ * Normalise one inbound page. Each step guards a way upstream would otherwise
+ * fail the whole page: `created` merges into `updated` (the server classifies
+ * against the CURSOR, not against what this device holds, so the split is not
+ * trustworthy); unknown tables are dropped (`db.get` throws on them); and
+ * `_status`/`_changed`/`__proto__` are stripped as upstream treats all three as
+ * fatal invariants.
  *
- * Three things happen here, each guarding a way upstream would otherwise fail:
- *
- * 1. `created` is merged into `updated`. The server classifies created-vs-updated
- *    relative to the CURSOR, not relative to what this device has, so the split
- *    carries no trustworthy information. Merging makes every row an upsert and
- *    avoids upstream's per-record logError during a large backfill.
- * 2. Tables outside INBOUND_TABLES, or absent from `knownTables`, are dropped.
- *    Upstream calls `db.get(tableName)` directly and throws on an unknown table,
- *    which would roll back the whole page.
- * 3. `_status` / `_changed` are stripped and `__proto__`-bearing records dropped.
- *    Upstream treats both as fatal invariants.
- *
- * `knownTables` is a parameter rather than a read of the database so this stays
- * pure and testable; `runManualSync` supplies the live schema.
+ * `knownTables` is a parameter rather than a database read to keep this pure.
  */
 export function prepareInboundPage(
   changes: SyncDatabaseChangeSet,
@@ -162,21 +140,13 @@ export function prepareInboundPage(
 
 /**
  * Split pending local changes into requests of at most `maxRecords` rows,
- * keeping only tables this device is allowed to send.
+ * keeping only tables this device may send.
  *
- * `fetchLocalChanges` reports pending records for every collection, including
- * device-local ones — `peers` holds hub URLs and public keys — so the filter is
- * not optional. It happens in the same pass as the split rather than over a
- * filtered copy, because materialising a second full changeset is exactly the
- * memory cost this is here to avoid.
- *
- * Each chunk carries the `affectedRecords` its own rows refer to, because
- * `markLocalChangesAsSynced` looks every raw up by id and table and logs an
- * error for any it cannot find. Splitting per chunk also keeps that lookup from
- * scanning the whole pending set once per record.
- *
- * Deletions are tombstone ids with no model behind them, so they are chunked by
- * id alone.
+ * The filter is not optional — `fetchLocalChanges` reports every collection,
+ * including device-local `peers`, which holds hub URLs and public keys — and it
+ * runs in the same pass as the split so a second full changeset is never
+ * materialised. Each chunk carries only its own `affectedRecords`, since
+ * `markLocalChangesAsSynced` logs an error for any raw it cannot find.
  */
 export function chunkLocalChanges(
   local: SyncLocalChanges,
@@ -212,12 +182,8 @@ export function chunkLocalChanges(
   )) {
     if (!allowedTables.has(table)) continue
 
-    // The created/updated split is preserved. Inbound it carries no trustworthy
-    // information — the server classifies against the cursor, not against what
-    // this device holds — but outbound this device genuinely knows which rows it
-    // created, and ordinary sync sends the split intact. The server concatenates
-    // the two and upserts either way, so merging would discard accurate
-    // information for nothing.
+    // Preserved here even though `prepareInboundPage` discards it: outbound,
+    // this device genuinely knows which rows it created.
     for (const bucketKey of ["created", "updated"] as const) {
       for (const row of bucket[bucketKey] ?? []) {
         bucketFor(table)[bucketKey].push(row)
@@ -237,12 +203,10 @@ export function chunkLocalChanges(
 }
 
 /**
- * Walk the server's pages until it stops issuing cursors.
- *
- * Each page is applied and its resume cursor persisted before the next request,
- * so an interrupted run continues rather than restarting. The cursor for the
- * FINAL page is not persisted — the run is complete, and the caller advances the
- * real sync cursors instead.
+ * Walk the server's pages until it stops issuing cursors, persisting each resume
+ * cursor before the next request so an interrupted run continues rather than
+ * restarts. The final page's cursor is deliberately not persisted — the caller
+ * advances the real sync watermarks instead.
  *
  * Dependencies are arguments so this is testable without a database or network.
  */
@@ -275,8 +239,8 @@ export async function pullLoop(args: {
       // Cancelling surfaces as a non-retryable error, so resumability cannot be
       // read from `retryable` alone: an aborted run's cursor is still good.
       if (signal.aborted) return { ok: false, error: "Cancelled", resumable: true }
-      // Retries happen inside fetchPage; reaching here means it gave up. A
-      // retryable class of failure is still resumable — the cursor stands.
+      // Retries happen inside fetchPage, so reaching here means it gave up — but
+      // a retryable class of failure still leaves the cursor standing.
       return {
         ok: false,
         error: result.error.message,
@@ -304,21 +268,16 @@ export async function pullLoop(args: {
       return { ok: false, error: "Server kept issuing pages", resumable: true }
     }
 
-    // Aborting between apply and save would lose one page of progress, not
+    // Aborting between apply and save loses one page of progress, not
     // correctness — every applied record is `synced` and idempotent.
     await saveResume({ cursor, since, snapshotTs, pagesApplied, recordsApplied })
   }
 }
 
 /**
- * Apply one page inside a single write transaction.
- *
- * Upstream's applyRemoteChanges does NOT open its own transaction — it calls
- * db.batch and expects a caller-supplied write. One write per page is what
- * bounds memory; wrapping the whole run in one transaction would not.
- *
- * `sendCreatedAsUpdated: true` matches prepareInboundPage having moved every row
- * into the `updated` bucket.
+ * Apply one page inside a single write transaction. Upstream's
+ * `applyRemoteChanges` does not open its own, and one write per page is what
+ * bounds memory — wrapping the whole run in one transaction would not.
  */
 async function applyPage(
   changes: SyncDatabaseChangeSet,
@@ -336,19 +295,14 @@ async function applyPage(
 }
 
 /**
- * The peer_type the server should attribute this run to.
- *
  * Only `sync_hub` changes which entities the server returns; the rest are
- * equivalent to `unknown`. Sending the real platform is what makes the audit
- * trail worth reading.
+ * equivalent, so the real platform goes out purely for the audit trail.
  */
 const devicePeerType = (): string => (Platform.OS === "ios" ? "ios" : "android")
 
 /**
- * Run a request, re-authenticating once if the token has expired.
- *
- * A backfill can run for ten minutes and outlive its token. The resume cursor
- * makes recovery cheap, but silently failing the run would not be.
+ * Run a request, re-authenticating once if the token expired. A backfill can run
+ * for ten minutes and outlive its token.
  */
 async function withAuthRefresh<T>(
   call: () => Promise<RpcResult<T>>,
@@ -366,7 +320,7 @@ async function withAuthRefresh<T>(
  *
  * Holds the process-wide sync lock for the whole run, so ordinary sync queues
  * behind it rather than interleaving. Returns the outcome instead of throwing;
- * `resumable` says whether retrying would continue from the stored cursor.
+ * `resumable` says whether a retry would continue from the stored cursor.
  */
 export async function runManualSync(args: {
   peerId: string
@@ -376,11 +330,14 @@ export async function runManualSync(args: {
 }): Promise<ManualSyncResult> {
   const { peerId, since, signal, onProgress } = args
 
-  // Brackets the shared store from INSIDE the lock, so existing consumers do
-  // not read "idle" through a ten-minute operation. Inside matters: bracketing
-  // from the caller would let the lock release first, so a queued ordinary sync
-  // could set FETCHING before the reset lands and the store would read IDLE for
-  // the whole of that run.
+  // Outside `withSyncLock` — the lock is not reentrant and this must not be
+  // held across the repair. See `repairSchemaDrift`.
+  await databaseReady
+
+  // Brackets the shared store from inside the lock so consumers do not read
+  // "idle" through a ten-minute operation. Inside matters: bracketing from the
+  // caller would let the lock release first, so a queued ordinary sync could set
+  // FETCHING before the reset lands and the store would read IDLE all run.
   return withSyncLock("manual", async () => {
     syncStore.trigger.start_sync()
     try {
@@ -396,8 +353,7 @@ export async function runManualSync(args: {
       return { ok: false as const, error: "This server is not active", resumable: false }
     }
     // This transport speaks tRPC; a hub speaks its own protocol at the same
-    // paths, so pointing it at one produces confusing 404s rather than a clear
-    // refusal.
+    // paths, so pointing it at one gives confusing 404s rather than a refusal.
     if (peer.peerType !== "cloud_server") {
       return { ok: false as const, error: "Manual sync requires a cloud server", resumable: false }
     }
@@ -411,8 +367,8 @@ export async function runManualSync(args: {
     const peerType = devicePeerType()
     const knownTables = new Set(Object.keys(database.schema.tables))
 
-    // A device that has never held a token would otherwise spend its first
-    // request discovering that, on the operation least able to afford one.
+    // A device that has never held a token would otherwise discover that on its
+    // first request, in the operation least able to afford one.
     if ((await getBearerToken()) === "") {
       await refresh()
     }
@@ -420,8 +376,8 @@ export async function runManualSync(args: {
     const pageBytes = await pickPageBudget()
 
     let recordsPushed = 0
-    // Accumulated across push chunks. SyncRejectedIds is keyed by known table
-    // names, which is too narrow to build up one table at a time.
+    // Accumulated across chunks. SyncRejectedIds is keyed by known table names,
+    // too narrow to build up one table at a time.
     const rejected: Record<string, string[]> = {}
     const rejectedCount = () => Object.values(rejected).flat().length
 
@@ -437,8 +393,6 @@ export async function runManualSync(args: {
         rejectedCount: rejectedCount(),
       })
 
-    // Offer local work to the server at its real timestamps BEFORE the pull
-    // overwrites local state.
     report("pushing")
 
     const local = await fetchLocalChanges(database)
@@ -475,14 +429,13 @@ export async function runManualSync(args: {
         rejected[table] = [...(rejected[table] ?? []), ...ids]
       }
 
-      // Rejected rows keep their `_status`/`_changed`, and rejected deletions
-      // keep their tombstone, so neither is marked synced and a later pull
-      // cannot silently overwrite them. Marking per chunk is what lets an
-      // interrupted push keep its progress.
+      // Rejected rows keep their `_status`/`_changed` and rejected deletions
+      // keep their tombstone, so a later pull cannot silently overwrite them.
+      // Marking per chunk is what lets an interrupted push keep its progress.
       await markLocalChangesAsSynced(database, chunk, chunkRejected as SyncRejectedIds)
 
-      // What the server took, not what was offered: a rejected row is still
-      // pending afterwards, so counting it as pushed would overstate progress.
+      // What the server took, not what was offered — a rejected row is still
+      // pending afterwards.
       const offered = countRecordsInChanges(chunk.changes)
       const refused = Object.values(chunkRejected).flat().length
       recordsPushed += Math.max(0, offered - refused)
@@ -524,26 +477,22 @@ export async function runManualSync(args: {
     })
 
     if (!pull.ok) {
-      // A cursor the server will never accept again — it encodes an entity list,
-      // so a redeploy or schema change invalidates it — would otherwise be read
-      // back by every subsequent run against the same range and fail identically
-      // forever. Only a resumable failure leaves it in place.
+      // A cursor encodes an entity list, so a redeploy or schema change can
+      // invalidate it permanently. Keeping such a cursor would make every later
+      // run against the same range fail identically forever.
       if (!pull.resumable) await Peer.DB.clearResumeState(peerId)
       return { ok: false as const, error: pull.error, resumable: pull.resumable }
     }
 
-    // Cursors advance only now, and only as far as this run established. These
-    // two values are ordinary sync's `since`, so having pulled [since,
-    // snapshotTs] the device is complete to snapshotTs only if `since` reaches
-    // back to where it was already complete. A bounded range starting after
-    // that leaves an unfetched gap, and moving the watermark past it hides that
-    // gap from ordinary sync forever.
+    // Both values are ordinary sync's `since`, so having pulled [since,
+    // snapshotTs] this device is complete to snapshotTs only if `since` reaches
+    // back to where it was already complete. A bounded range starting after that
+    // leaves a gap, and moving the watermark past it hides the gap forever.
     //
     // Each watermark is guarded against ITS OWN prior value: `last_synced_at`
     // holds the client clock (`Date.now()` in peerSync) while
-    // `__watermelon_last_pulled_at` holds the server's timestamp. Comparing
-    // `since` against the wrong one lets clock skew wave a bounded range past
-    // the guard.
+    // `__watermelon_last_pulled_at` holds the server's. Comparing against the
+    // wrong one lets clock skew wave a bounded range past the guard.
     if (pull.snapshotTs !== null) {
       const priorPeer = peer.lastSyncedAt ?? 0
       if (since <= priorPeer) {
@@ -556,8 +505,8 @@ export async function runManualSync(args: {
     }
     await Peer.DB.clearResumeState(peerId)
 
-    // Carries the run's real totals: a "done" that reset the page count to zero
-    // would leave the completion screen reporting nothing was transferred.
+    // The run's real totals — a "done" that reset these to zero would leave the
+    // completion screen reporting nothing was transferred.
     report("done", { recordsApplied: pull.recordsApplied, pagesApplied: pull.pagesApplied })
 
     return {
