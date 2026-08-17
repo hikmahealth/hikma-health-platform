@@ -9,10 +9,6 @@ import * as Sentry from "@sentry/tanstackstart-react";
 import { Result } from "@/lib/result";
 import { adminMiddleware } from "@/middleware/auth";
 
-/**
- * Get all prescriptions
- * @returns {Promise<Prescription.EncodedT[]>} - The list of prescriptions
- */
 const getAllPrescriptions = createServerFn({ method: "GET" })
   .middleware([adminMiddleware])
   .handler(async (): Promise<Prescription.EncodedT[]> => {
@@ -20,10 +16,6 @@ const getAllPrescriptions = createServerFn({ method: "GET" })
     return res;
   });
 
-/**
- * Get all prescriptions with their patients, clinics, and providers information
- * @returns {Promise<{prescription: Prescription.EncodedT, patient: Patient.EncodedT, clinic: Clinic.EncodedT, provider: User.EncodedT}[]>} - The list of prescriptions with their patients, clinics, and providers information
- */
 const getAllPrescriptionsWithDetails = createServerFn({
   method: "GET",
 })
@@ -42,12 +34,6 @@ const getAllPrescriptionsWithDetails = createServerFn({
     },
   );
 
-/**
- * Toggle the status of a prescription
- * @param {string} id - The ID of the prescription
- * @param {string} status - The new status of the prescription
- * @returns {Promise<void>}
- */
 const togglePrescriptionStatus = createServerFn({ method: "POST" })
   .inputValidator((data: { id: string; status: string }) => data)
   .middleware([adminMiddleware])
@@ -68,6 +54,7 @@ const getPatientPrescriptions = createServerFn({ method: "GET" })
     }): Promise<
       Result<{
         items: Prescription.EncodedT[];
+        statusCounts: Prescription.StatusCount[];
         pagination: Pagination;
       }>
     > => {
@@ -92,6 +79,7 @@ const getPatientPrescriptions = createServerFn({ method: "GET" })
 
         return Result.ok({
           items: result.items,
+          statusCounts: result.statusCounts,
           pagination: result.pagination,
         });
       } catch (error) {

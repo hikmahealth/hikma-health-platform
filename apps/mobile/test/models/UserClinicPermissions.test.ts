@@ -8,10 +8,6 @@ type UserPermissionsT = UserClinicPermissions.UserPermissionsT
 const Check = UserClinicPermissions.Check
 type PermissionContext = Check.PermissionContext
 
-// ---------------------------------------------------------------------------
-// Arbitraries
-// ---------------------------------------------------------------------------
-
 /** All boolean permission keys on UserClinicPermissions.T */
 const ALL_PERMISSION_KEYS: ReadonlyArray<UserPermissionsT> = [
   "canRegisterPatients",
@@ -75,10 +71,6 @@ const arbPermissions: fc.Arbitrary<T> = fc
     canDeletePatientRecords: fc.boolean(),
   })
   .map((flags) => makePermissions(flags))
-
-// =========================================================================
-// Existing pure functions
-// =========================================================================
 
 describe("UserClinicPermissions.getSQLPermissionName", () => {
   it("maps every known permission key to snake_case", () => {
@@ -166,10 +158,6 @@ describe("UserClinicPermissions.getPermissionsList", () => {
   })
 })
 
-// =========================================================================
-// Check namespace — constructors
-// =========================================================================
-
 describe("Check constructors", () => {
   it("requirePermission produces a single-kind check", () => {
     const check = Check.requirePermission("canEditRecords")
@@ -192,10 +180,6 @@ describe("Check constructors", () => {
     })
   })
 })
-
-// =========================================================================
-// Check.checkPermission — bypass paths
-// =========================================================================
 
 describe("Check.checkPermission — bypass paths", () => {
   it("super_admin always passes for any permission check (property)", () => {
@@ -236,10 +220,6 @@ describe("Check.checkPermission — bypass paths", () => {
   })
 })
 
-// =========================================================================
-// Check.checkPermission — null permissions
-// =========================================================================
-
 describe("Check.checkPermission — null permissions", () => {
   it("denies when permissions are null and no bypass applies (property)", () => {
     fc.assert(
@@ -253,10 +233,6 @@ describe("Check.checkPermission — null permissions", () => {
     )
   })
 })
-
-// =========================================================================
-// Check.checkPermission — single permission
-// =========================================================================
 
 describe("Check.checkPermission — single permission", () => {
   it("allows when the specific permission flag is true (property)", () => {
@@ -285,10 +261,6 @@ describe("Check.checkPermission — single permission", () => {
     )
   })
 })
-
-// =========================================================================
-// Check.checkPermission — requireAll
-// =========================================================================
 
 describe("Check.checkPermission — requireAll", () => {
   it("allows when all permissions are true", () => {
@@ -327,10 +299,6 @@ describe("Check.checkPermission — requireAll", () => {
   })
 })
 
-// =========================================================================
-// Check.checkPermission — requireAny
-// =========================================================================
-
 describe("Check.checkPermission — requireAny", () => {
   it("allows when at least one permission is true (property)", () => {
     fc.assert(
@@ -366,9 +334,87 @@ describe("Check.checkPermission — requireAny", () => {
   })
 })
 
-// =========================================================================
-// Check.checkEditEventPermission
-// =========================================================================
+describe("Check.checkEditPrescriptionPermission", () => {
+  it("allows editing own prescription with canPrescribeMedications", () => {
+    const ctx = makeCtx({ userId: "user-1" })
+    const perms = makePermissions({ canPrescribeMedications: true })
+    expect(Check.checkEditPrescriptionPermission(ctx, perms, "user-1").ok).toBe(true)
+  })
+
+  it("denies editing own prescription without canPrescribeMedications", () => {
+    const ctx = makeCtx({ userId: "user-1" })
+    const perms = makePermissions({ canPrescribeMedications: false })
+    expect(Check.checkEditPrescriptionPermission(ctx, perms, "user-1").ok).toBe(false)
+  })
+
+  it("canEditRecords alone does not authorise editing a prescription", () => {
+    const ctx = makeCtx({ userId: "user-1" })
+    const perms = makePermissions({ canEditRecords: true, canEditOtherProviderEvent: true })
+    expect(Check.checkEditPrescriptionPermission(ctx, perms, "user-1").ok).toBe(false)
+  })
+
+  it("allows editing another provider's prescription with both permissions", () => {
+    const ctx = makeCtx({ userId: "user-1" })
+    const perms = makePermissions({
+      canPrescribeMedications: true,
+      canEditOtherProviderEvent: true,
+    })
+    expect(Check.checkEditPrescriptionPermission(ctx, perms, "user-2").ok).toBe(true)
+  })
+
+  it("denies another provider's prescription without canEditOtherProviderEvent", () => {
+    const ctx = makeCtx({ userId: "user-1" })
+    const perms = makePermissions({
+      canPrescribeMedications: true,
+      canEditOtherProviderEvent: false,
+    })
+    expect(Check.checkEditPrescriptionPermission(ctx, perms, "user-2").ok).toBe(false)
+  })
+
+  it("treats an unknown author as another provider", () => {
+    const ctx = makeCtx({ userId: "user-1" })
+    const perms = makePermissions({
+      canPrescribeMedications: true,
+      canEditOtherProviderEvent: false,
+    })
+    expect(Check.checkEditPrescriptionPermission(ctx, perms, "").ok).toBe(false)
+  })
+
+  it("a clinic that disabled permission checking allows anyone to edit (property)", () => {
+    fc.assert(
+      fc.property(fc.uuid(), arbPermissions, (authorId, perms) => {
+        const ctx = makeCtx({ userId: "user-1", isPermissionsDisabled: true })
+        expect(Check.checkEditPrescriptionPermission(ctx, perms, authorId).ok).toBe(true)
+      }),
+    )
+  })
+
+  it("the override applies even with no permissions row at all (property)", () => {
+    fc.assert(
+      fc.property(fc.uuid(), (authorId) => {
+        const ctx = makeCtx({ userId: "user-1", isPermissionsDisabled: true })
+        expect(Check.checkEditPrescriptionPermission(ctx, null, authorId).ok).toBe(true)
+      }),
+    )
+  })
+
+  it("super_admin can always edit any prescription (property)", () => {
+    const ctx = makeCtx({ userId: "user-1", role: "super_admin" })
+    fc.assert(
+      fc.property(fc.uuid(), arbPermissions, (authorId, perms) => {
+        expect(Check.checkEditPrescriptionPermission(ctx, perms, authorId).ok).toBe(true)
+      }),
+    )
+  })
+
+  it("a normal user with no permissions row is always denied (property)", () => {
+    fc.assert(
+      fc.property(arbNormalCtx, fc.uuid(), (ctx, authorId) => {
+        expect(Check.checkEditPrescriptionPermission(ctx, null, authorId).ok).toBe(false)
+      }),
+    )
+  })
+})
 
 describe("Check.checkEditEventPermission", () => {
   it("allows editing own event with canEditRecords", () => {
@@ -435,7 +481,7 @@ describe("Check.checkEditEventPermission", () => {
     )
   })
 
-  // --- Edge cases ---
+  // Edge cases
 
   it("empty string eventCreatedByUserId with non-empty userId → treated as other provider", () => {
     const ctx = makeCtx({ userId: "user-1" })
@@ -496,10 +542,6 @@ describe("Check.checkEditEventPermission", () => {
   })
 })
 
-// =========================================================================
-// OPERATION_PERMISSIONS
-// =========================================================================
-
 describe("Check.OPERATION_PERMISSIONS", () => {
   it("every operation maps to a valid PermissionCheck", () => {
     for (const [opName, check] of Object.entries(Check.OPERATION_PERMISSIONS)) {
@@ -529,6 +571,7 @@ describe("Check.OPERATION_PERMISSIONS", () => {
       "event:edit",
       "event:delete",
       "prescription:create",
+      "prescription:edit",
       "prescription:updateStatus",
       "prescription:dispense",
       "vitals:create",

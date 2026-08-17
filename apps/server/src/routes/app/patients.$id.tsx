@@ -68,6 +68,7 @@ export const Route = createFileRoute("/app/patients/$id")({
       visitsPagination: Pagination;
       prescriptions: Prescription.EncodedT[];
       prescriptionsPagination: Pagination;
+      prescriptionStatusCounts: Prescription.StatusCount[];
       problems: PatientProblem.EncodedT[];
       problemsPagination: Pagination;
     } = {
@@ -78,6 +79,7 @@ export const Route = createFileRoute("/app/patients/$id")({
       visitsPagination: emptyPagination,
       prescriptions: [],
       prescriptionsPagination: emptyPagination,
+      prescriptionStatusCounts: [],
       problems: [],
       problemsPagination: emptyPagination,
     };
@@ -94,7 +96,6 @@ export const Route = createFileRoute("/app/patients/$id")({
 
       result.patient = patient;
 
-      // Fetch appointments, visits, prescriptions, problems, and vitals in parallel
       const [
         appointmentsRes,
         visitsRes,
@@ -159,10 +160,12 @@ export const Route = createFileRoute("/app/patients/$id")({
 
       const rxData = Result.getOrElse(prescriptionsRes, {
         items: [] as Prescription.EncodedT[],
+        statusCounts: [] as Prescription.StatusCount[],
         pagination: emptyPagination,
       });
       result.prescriptions = rxData.items;
       result.prescriptionsPagination = rxData.pagination;
+      result.prescriptionStatusCounts = rxData.statusCounts;
 
       const problemsData = Result.getOrElse(problemsRes, {
         items: [] as PatientProblem.EncodedT[],
@@ -190,6 +193,7 @@ function RouteComponent() {
     visitsPagination: initialVisitsPag,
     prescriptions: initialPrescriptions,
     prescriptionsPagination: initialRxPag,
+    prescriptionStatusCounts: initialRxStatusCounts,
     problems: initialProblems,
     problemsPagination: initialProblemsPag,
   } = Route.useLoaderData();
@@ -205,17 +209,15 @@ function RouteComponent() {
     typeof PatientVital.PatientVitalSchema.Encoded | null
   >(null);
 
-  // Visits pagination state
   const [visits, setVisits] = useState(initialVisits);
   const [visitsPag, setVisitsPag] = useState(initialVisitsPag);
   const [visitsLoading, setVisitsLoading] = useState(false);
 
-  // Prescriptions pagination state
   const [prescriptions, setPrescriptions] = useState(initialPrescriptions);
   const [rxPag, setRxPag] = useState(initialRxPag);
+  const [rxStatusCounts, setRxStatusCounts] = useState(initialRxStatusCounts);
   const [rxLoading, setRxLoading] = useState(false);
 
-  // Problems pagination state
   const [problems, setProblems] = useState(initialProblems);
   const [problemsPag, setProblemsPag] = useState(initialProblemsPag);
   const [problemsLoading, setProblemsLoading] = useState(false);
@@ -228,7 +230,8 @@ function RouteComponent() {
   useEffect(() => {
     setPrescriptions(initialPrescriptions);
     setRxPag(initialRxPag);
-  }, [initialPrescriptions, initialRxPag]);
+    setRxStatusCounts(initialRxStatusCounts);
+  }, [initialPrescriptions, initialRxPag, initialRxStatusCounts]);
 
   useEffect(() => {
     setProblems(initialProblems);
@@ -273,6 +276,7 @@ function RouteComponent() {
         if (res.ok) {
           setPrescriptions(res.data.items);
           setRxPag(res.data.pagination);
+          setRxStatusCounts(res.data.statusCounts ?? []);
         }
       } catch (e) {
         Logger.error({ msg: "Failed to fetch prescriptions page:", e });
@@ -331,7 +335,6 @@ function RouteComponent() {
     return age;
   };
 
-  // Get patient initials for avatar
   const getInitials = (givenName?: string, surname?: string) => {
     const first = givenName?.[0] || "";
     const last = surname?.[0] || "";
@@ -362,7 +365,6 @@ function RouteComponent() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      {/* Patient Header */}
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between">
@@ -395,16 +397,10 @@ function RouteComponent() {
                 </div>
               </div>
             </div>
-            {/*TODO: add patient actions*/}
-            {/*<div className="flex gap-2">
-              <Button variant="outline">Edit Patient</Button>
-              <Button>New Visit</Button>
-            </div>*/}
           </div>
         </CardHeader>
       </Card>
 
-      {/* Demographics and Contact */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -468,10 +464,8 @@ function RouteComponent() {
         </Card>
       </div>
 
-      {/* Vitals Section */}
       <PatientVitalsCard vital={mostRecentVital} />
 
-      {/* Tabs for Additional Information */}
       <Tabs defaultValue="visits" className="w-full">
         <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="visits">Recent Visits</TabsTrigger>
@@ -558,6 +552,7 @@ function RouteComponent() {
           <PrescriptionsList
             prescriptions={prescriptions}
             pagination={rxPag}
+            statusCounts={rxStatusCounts}
             onPageChange={handleRxPageChange}
             loading={rxLoading}
           />

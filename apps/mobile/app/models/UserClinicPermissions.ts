@@ -19,14 +19,11 @@ namespace UserClinicPermissions {
     id: string
     userId: string
     clinicId: string
-    // General umbrell permission capabilities
     canRegisterPatients: boolean // Whether or not a user can register a patient
     canViewHistory: boolean //Given a registered patient, can a provider view their history, including their patient files/charts
     canEditRecords: boolean // Whether or not they are allowed to edit any records of the patient at all
     canDeleteRecords: boolean // Whether or not they can delete patient records
     isClinicAdmin: boolean // Whether or not they are the clinic Admin. If they are a clinic Admin, they have all permissions for their given clinic. not for other clinics.
-    // V9
-    // More fine-grained capabilities
     canEditOtherProviderEvent: boolean // If a visit, event, appointment or prescription is made by a user that is not this user, can they edit it?
     canDownloadPatientReports: boolean // Whether or not the user can download the patient chart information
     canPrescribeMedications: boolean // Whether or not a user can prescribe patient medictications in the Medication screens and models
@@ -39,11 +36,6 @@ namespace UserClinicPermissions {
     updatedAt: Date
   }
 
-  /**
-   * Union type representing the available permission fields that can be checked for a user
-   * within a specific clinic context. These permissions control various aspects of
-   * patient data management and clinic administration.
-   */
   export type UserPermissionsT = keyof Pick<
     T,
     | "canRegisterPatients"
@@ -59,13 +51,7 @@ namespace UserClinicPermissions {
     | "canDeletePatientRecords"
   >
 
-  /**
-   * Function to retrieve the SQL permission name for a given permission type.
-   * This function maps the permission type to its corresponding SQL column name.
-   *
-   * @param permission - The permission type to retrieve the SQL name for.
-   * @returns The SQL permission name as a string.
-   */
+  /** Maps a permission field to its snake_case database column. */
   export function getSQLPermissionName(permission: UserPermissionsT): string {
     switch (permission) {
       case "canRegisterPatients":
@@ -101,7 +87,6 @@ namespace UserClinicPermissions {
     }
   }
 
-  /** Default empty UserClinicPermissions Item */
   export const empty: T = {
     id: "",
     userId: "",
@@ -201,11 +186,6 @@ namespace UserClinicPermissions {
     lastModifiedBy: Option.none(),
   }
 
-  /**
-   * Check if a user has any permission for a clinic
-   * @param permissions User clinic permissions
-   * @returns True if user has at least one permission
-   */
   export const hasAnyPermission = (permissions: T): boolean => {
     return (
       permissions.canRegisterPatients ||
@@ -222,23 +202,12 @@ namespace UserClinicPermissions {
     )
   }
 
-  /**
-   * Check if a user has a specific permission
-   * @param permissions User clinic permissions
-   * @param permission Permission to check
-   * @returns True if user has the permission
-   */
   export const isPermissionPresent = (permissions: T, permission: UserPermissionsT): boolean => {
     // Admin has all permissions
     if (permissions.isClinicAdmin) return true
     return permissions[permission]
   }
 
-  /**
-   * Get a human-readable list of permissions
-   * @param permissions User clinic permissions
-   * @returns Array of permission descriptions
-   */
   export const getPermissionsList = (permissions: T): string[] => {
     const list: string[] = []
     if (permissions.isClinicAdmin) {
@@ -276,7 +245,6 @@ namespace UserClinicPermissions {
     }
     return list
   }
-
 
   export namespace Check {
     /** Minimal user context needed for permission checking (extracted from providerStore) */
@@ -380,29 +348,56 @@ namespace UserClinicPermissions {
     }
 
     /**
-     * Check if a user can edit a specific event.
-     * Requires canEditRecords, and additionally canEditOtherProviderEvent
-     * if the event was created by a different user.
+     * Check if a user can edit a record another provider may have authored.
+     *
+     * Requires `basePermission` always, plus canEditOtherProviderEvent when the
+     * record belongs to someone else. An unknown author (empty id) counts as
+     * someone else — the stricter reading is the safe one when the record does
+     * not say who wrote it.
      */
-    export const checkEditEventPermission = (
+    export const checkEditOwnedRecordPermission = (
       ctx: PermissionContext,
       permissions: UserClinicPermissions.T | null,
-      eventCreatedByUserId: string,
+      basePermission: UserPermissionsT,
+      recordCreatedByUserId: string,
     ): Result<true, PermissionDeniedError> => {
-      const baseCheck = checkPermission(ctx, requirePermission("canEditRecords"), permissions)
+      const baseCheck = checkPermission(ctx, requirePermission(basePermission), permissions)
       if (!baseCheck.ok) return baseCheck
 
-      if (eventCreatedByUserId !== ctx.userId) {
+      if (recordCreatedByUserId !== ctx.userId) {
         return checkPermission(ctx, requirePermission("canEditOtherProviderEvent"), permissions)
       }
 
       return ok(true)
     }
 
+    export const checkEditEventPermission = (
+      ctx: PermissionContext,
+      permissions: UserClinicPermissions.T | null,
+      eventCreatedByUserId: string,
+    ): Result<true, PermissionDeniedError> =>
+      checkEditOwnedRecordPermission(ctx, permissions, "canEditRecords", eventCreatedByUserId)
+
     /**
-     * Canonical mapping of operations to their required permissions.
-     * Used by mutation hooks and screens to determine which permission an action needs.
+     * Check if a user can edit an existing prescription.
+     *
+     * Prescribing is the base capability rather than canEditRecords: changing a
+     * prescription is writing one. canEditOtherProviderEvent still applies on
+     * top for another provider's prescription, which is what that flag documents.
      */
+    export const checkEditPrescriptionPermission = (
+      ctx: PermissionContext,
+      permissions: UserClinicPermissions.T | null,
+      prescriptionCreatedByUserId: string,
+    ): Result<true, PermissionDeniedError> =>
+      checkEditOwnedRecordPermission(
+        ctx,
+        permissions,
+        "canPrescribeMedications",
+        prescriptionCreatedByUserId,
+      )
+
+    /** The permission each named operation requires. */
     export const OPERATION_PERMISSIONS = {
       "patient:register": requirePermission("canRegisterPatients"),
       "patient:edit": requirePermission("canEditRecords"),
@@ -417,6 +412,10 @@ namespace UserClinicPermissions {
       "event:delete": requirePermission("canDeleteRecords"),
 
       "prescription:create": requirePermission("canPrescribeMedications"),
+      // Ownership-agnostic, so it answers "could this user edit any prescription
+      // here?" — right for showing an Edit affordance. The save path uses
+      // checkEditPrescriptionPermission, which also weighs who wrote it.
+      "prescription:edit": requirePermission("canPrescribeMedications"),
       "prescription:updateStatus": requirePermission("canPrescribeMedications"),
       "prescription:dispense": requirePermission("canDispenseMedications"),
 
@@ -437,12 +436,7 @@ namespace UserClinicPermissions {
   export namespace DB {
     export type T = UserClinicPermissionModel
     /**
-     * Given a user id, a clinic id and a permission to check for, returns a Result object for whether or not the user has the permission.
-     * @deprecated
-     * @param userId User ID
-     * @param clinicId Clinic ID
-     * @param permission Permission to check for
-     * @returns Result object for whether or not the user has the permission
+     * @deprecated Hits the database per call; prefer the pure `Check` helpers.
      */
     export const userHasPermission = async (
       userId: string,
@@ -451,7 +445,7 @@ namespace UserClinicPermissions {
     ): Promise<Either.Either<boolean, string>> => {
       const user = providerStore.getSnapshot().context
       const userRole = Option.getOrNull(user.role)
-      /// SUPER ADMIN CAN ACCESS EVERYTHING.
+      // Super admins bypass every permission.
       if (userRole === "super_admin") {
         return Either.right(true)
       }
@@ -476,12 +470,6 @@ namespace UserClinicPermissions {
       }
     }
 
-    /**
-     * Get permissions for a user at a specific clinic
-     * @param userId User ID
-     * @param clinicId Clinic ID
-     * @returns User's permissions or none if not found
-     */
     export const getForUserAndClinic = async (
       userId: string,
       clinicId: string,
@@ -498,12 +486,6 @@ namespace UserClinicPermissions {
       return Option.some(fromDB(permissions[0]))
     }
 
-    /**
-     * Get all clinics where a user has a given permission
-     * @param userId User ID
-     * @param permission Permission to check for
-     * @returns Array of clinics where the user has the permission
-     */
     export const getClinicIdsWithPermission = async (
       userId: string,
       permission: UserPermissionsT,
@@ -511,10 +493,8 @@ namespace UserClinicPermissions {
       const user = providerStore.getSnapshot().context
       const userRole = Option.getOrNull(user.role)
 
-      /**
-       * isPermissionDisabled - can be set in the admin server, this effectively disables permissions checking across clinics.
-       * As long as the user is signed in. all other permissions can fall back on roles.
-       */
+      // Set in the admin server: disables permission checking across every
+      // clinic for as long as the user is signed in.
       const isPermissionDisabled =
         (await AppConfig.DB.getValue(
           AppConfig.Namespaces.AUTH,
@@ -522,8 +502,6 @@ namespace UserClinicPermissions {
           Option.getOrNull(user.clinic_id),
         )) || false
 
-      /// SUPER ADMIN CAN ACCESS EVERYTHING.
-      // If the permissions are disabled by the super admin, the users have access to all clinics
       if (userRole === "super_admin" || isPermissionDisabled) {
         return database
           .get<ClinicModel>("clinics")
@@ -542,11 +520,6 @@ namespace UserClinicPermissions {
       return clinics.map((clinic) => clinic.clinicId)
     }
 
-    /**
-     * Get all permissions for a user across all clinics
-     * @param userId User ID
-     * @returns Array of user's permissions
-     */
     export const getAllForUser = async (userId: string): Promise<UserClinicPermissions.T[]> => {
       const permissions = await database
         .get<UserClinicPermissionModel>("user_clinic_permissions")
@@ -556,11 +529,6 @@ namespace UserClinicPermissions {
       return permissions.map(fromDB)
     }
 
-    /**
-     * Get all permissions for a clinic
-     * @param clinicId Clinic ID
-     * @returns Array of permissions for the clinic
-     */
     export const getAllForClinic = async (clinicId: string): Promise<UserClinicPermissions.T[]> => {
       const permissions = await database
         .get<UserClinicPermissionModel>("user_clinic_permissions")
@@ -570,13 +538,6 @@ namespace UserClinicPermissions {
       return permissions.map(fromDB)
     }
 
-    /**
-     * Subscribe to user's permissions for a specific clinic
-     * @param userId User ID
-     * @param clinicId Clinic ID
-     * @param callback Function called when permissions update
-     * @returns Object containing unsubscribe function
-     */
     export function subscribe(
       userId: string,
       clinicId: string,
@@ -600,11 +561,6 @@ namespace UserClinicPermissions {
       }
     }
 
-    /**
-     * Convert from UserClinicPermissionModel to UserClinicPermissions.T
-     * @param dbPermissions The UserClinicPermissionModel to convert
-     * @returns The converted UserClinicPermissions.T
-     */
     export const fromDB = (dbPermissions: DB.T): UserClinicPermissions.T => ({
       id: dbPermissions.id,
       userId: dbPermissions.user.id,

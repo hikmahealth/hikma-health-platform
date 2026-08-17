@@ -17,6 +17,7 @@ import { View } from "@/components/View"
 import database from "@/db"
 import PatientProblem from "@/db/model/PatientProblems"
 import { useDBPatientProblems } from "@/hooks/useDBPatientProblems"
+import { usePermissionGuard } from "@/hooks/usePermissionGuard"
 import DrugCatalogue from "@/models/DrugCatalogue"
 import Patient from "@/models/Patient"
 import Prescription from "@/models/Prescription"
@@ -30,7 +31,6 @@ import { calculateAge } from "@/utils/date"
 import { getPrescriptionItemStatusColor } from "@/utils/misc"
 import { enhancePrescribedDrugsItem } from "@/db/enhancers/enhancePrescribedDrugsItem"
 import { Logger } from "@hikmahealth/js-utils"
-// import { useNavigation } from "@react-navigation/native"
 
 interface PrescriptionViewScreenProps extends NativeStackScreenProps<
   PharmacyNavigatorParamList,
@@ -42,6 +42,7 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
   const { theme } = useAppTheme()
   const [key, setKey] = useState<string>(Math.random().toString())
   const providerId = useSelector(providerStore, (state) => state.context.id)
+  const { checkEditPrescription, isLoading: isLoadingPermissions } = usePermissionGuard()
   const [prescription, setPrescription] = useState<Prescription.DB.T | null>(null)
   const [patient, setPatient] = useState<Patient.DB.T | null>(null)
   const diagnoses = useDBPatientProblems(prescription?.patientId ?? "")
@@ -135,37 +136,25 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
       })
   }
 
+  // Hidden while permissions load rather than shown-then-revoked; the editor
+  // re-checks on save, so this is the affordance and not the boundary.
+  const canEditPrescription =
+    prescription !== null &&
+    !isLoadingPermissions &&
+    checkEditPrescription(prescription.providerId || "").ok
+
+  const handleEditPrescription = () => {
+    if (!prescription) return
+    navigation.navigate("PrescriptionEditorForm", {
+      patientId: prescription.patientId,
+      prescriptionId: prescription.id,
+      visitId: prescription.visitId || undefined,
+      shouldCreateNewVisit: false,
+    })
+  }
+
   const handleItemDispensed = (prescriptionItem: PrescriptionItem.DB.T) => {
     navigation.navigate("DispensePrescriptionItem", { prescriptionItemId: prescriptionItem.id })
-    // Alert.alert("Dispense Item", "Are you sure you want to dispense this item?", [
-    //   {
-    //     text: "Cancel",
-    //     style: "cancel",
-    //   },
-    //   {
-    //     text: "Cancel",
-    //     style: "cancel",
-    //   },
-    //   {
-    //     text: "Cancel",
-    //     style: "cancel",
-    //   },
-    //   {
-    //     text: "Cancel",
-    //     style: "cancel",
-    //   },
-    //   {
-    //     text: "OK",
-    //     onPress: () => {
-    //       // dispenseAndUpdateInventory
-    //       // PrescriptionItem.DB.dispenseAndUpdateInventory(
-    //       //   prescriptionItem.id,
-    //       //   prescriptionItem.quantityPrescribed,
-    //       //   batchId,
-    //       // )
-    //     },
-    //   },
-    // ])
   }
 
   const handleItemCancelled = (prescriptionItem: PrescriptionItem.DB.T) => {
@@ -177,7 +166,7 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
       {
         text: "OK",
         onPress: () => {
-          // cancel
+          // Cancelling an item is not implemented; OK is a no-op.
         },
       },
     ])
@@ -194,7 +183,6 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
   return (
     <Screen style={$root} preset="scroll">
       {patient !== null && (
-        // NOTE: This is copy pasted from PatientEditorFormScreen. consider refactoring
         <View py={theme.spacing.md}>
           <Text size="xl" text={Patient.displayName(patient)} />
           <Text text={`Age: ${calculateAge(patient.dateOfBirth)}`} />
@@ -236,6 +224,14 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
         </View>
       )}
 
+      <If condition={canEditPrescription}>
+        <View pb={14}>
+          <Button preset="reversed" testID="edit-prescription" onPress={handleEditPrescription}>
+            Edit Prescription
+          </Button>
+        </View>
+      </If>
+
       <View>
         <Text text="Change Status" size="lg" />
         <View gap={6}>
@@ -274,11 +270,6 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
         />
       </View>
 
-      {/*<If condition={prescription.status === "prepared"}>
-        <View>
-          <Button onPress={handleMarkAsPickedUp}>Confirm Patient Pick up</Button>
-        </View>
-      </If>*/}
     </Screen>
   )
 }
@@ -323,8 +314,7 @@ function DiagnosisSnippet({ diagnosis }: { diagnosis: PatientProblem }) {
   )
 }
 
-// TODO: use this component
-
+// TODO: unused — intended to replace the inline drug list above.
 const PrescriptionDrugsItem = enhancePrescribedDrugsItem(
   ({
     prescription,
@@ -360,23 +350,12 @@ const PrescriptionDrugsItem = enhancePrescribedDrugsItem(
                 </View>
               </View>
 
-              {/* Buttons to mark as picked up or to mark as cancelled */}
               {/* TODO: this should respond to the quantityPrescribed and quantityDispensed counts */}
-              {/*<If condtion*/}
               <View direction="row" gap={10} mt={8}>
                 <Pressable onPress={() => onItemDispensed(item)} style={$prescriptionItemActionBtn}>
                   <Text size="xs">Dispense Medication</Text>
                 </Pressable>
 
-                {/*<If condition={item.quantityDispensed === 0}>
-                  <Pressable
-                    onPress={() => onItemCancelled(item)}
-                    style={$prescriptionItemActionBtn}
-                  >
-                    <LucideX color={colors.palette.angry500} size={20} />
-                    <Text>Cancel</Text>
-                  </Pressable>
-                  </If>*/}
               </View>
             </View>
           )
@@ -414,40 +393,6 @@ const $prescriptionItemActionBtn: ViewStyle = {
   alignItems: "center",
   justifyContent: "center",
 }
-
-// function useDBPrescription(prescriptionId: string) {
-//   const [patient, setPatient] = useState<Patient.DB.T | null>(null)
-//   const [prescription, setPrescription] = useState<Prescription.DB.T | null>(null)
-//   const [prescriptionItems, setPrescriptionItems] = useState<PrescriptionItem.DB.T[] | null>([])
-
-//   useEffect(() => {
-//     const prescriptionSub = database
-//       .get<Prescription.DB.T>(Prescription.DB.table_name)
-//       .findAndObserve(prescriptionId)
-//       .pipe(catchError(() => of(null)))
-//       .subscribe((prescription) => {
-//         setPrescription(prescription)
-//       })
-
-//     const itemsSub = database
-//       .get<PrescriptionItem.DB.T>(PrescriptionItem.DB.table_name)
-//       .query(Q.where("prescription_id", prescriptionId))
-//       .observe()
-//       .subscribe((items) => {
-//         setPrescriptionItems(items)
-//       })
-
-//     return () => {
-//       prescriptionSub?.unsubscribe()
-//     }
-//   }, [prescriptionId])
-
-//   return {
-//     patient,
-//     prescription,
-//     prescriptionItem,
-//   }
-// }
 
 const $root: ViewStyle = {
   flex: 1,

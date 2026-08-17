@@ -275,6 +275,7 @@ const ar: Translations = {
     medications: "الأدوية",
     notes: "ملاحظات",
     refills: "إعادة الصرف",
+    editPrescription: "تعديل الوصفة الطبية",
   },
   component: {
     dateOfBirthInput: {

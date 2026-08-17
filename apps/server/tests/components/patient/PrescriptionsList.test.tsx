@@ -6,10 +6,11 @@ import {
   PrescriptionRow,
   formatPrescriptionDate,
   statusLabel,
+  summarizePrescriptionStatuses,
 } from "@/components/patient/PrescriptionsList";
 import type Prescription from "@/models/prescription";
 
-// ── Pure function tests ──
+// Pure function tests
 
 describe("formatPrescriptionDate", () => {
   it('returns "—" for null/undefined', () => {
@@ -55,7 +56,124 @@ describe("statusLabel", () => {
   });
 });
 
-// ── Arbitrary for Prescription.EncodedT ──
+describe("summarizePrescriptionStatuses", () => {
+  const knownStatuses = [
+    "pending",
+    "prepared",
+    "picked-up",
+    "not-picked-up",
+    "partially-picked-up",
+    "cancelled",
+    "other",
+  ];
+
+  const countsArb = fc.array(
+    fc.record({
+      status: fc.oneof(
+        fc.constantFrom(...knownStatuses),
+        fc.string({ maxLength: 12 }),
+        fc.constant(null),
+      ),
+      count: fc.integer({ min: -5, max: 500 }),
+    }),
+    { maxLength: 12 },
+  );
+
+  it("keeps total equal to the sum of the buckets", () => {
+    fc.assert(
+      fc.property(countsArb, (counts) => {
+        const summary = summarizePrescriptionStatuses(counts);
+        const summed = summary.byStatus.reduce((sum, e) => sum + e.count, 0);
+        expect(summary.total).toBe(summed);
+      }),
+    );
+  });
+
+  it("conserves every positive count, including unknown statuses", () => {
+    fc.assert(
+      fc.property(countsArb, (counts) => {
+        const expected = counts
+          .filter((c) => c.count > 0)
+          .reduce((sum, c) => sum + c.count, 0);
+        expect(summarizePrescriptionStatuses(counts).total).toBe(expected);
+      }),
+    );
+  });
+
+  it("emits no zero or negative buckets", () => {
+    fc.assert(
+      fc.property(countsArb, (counts) => {
+        for (const entry of summarizePrescriptionStatuses(counts).byStatus) {
+          expect(entry.count).toBeGreaterThan(0);
+        }
+      }),
+    );
+  });
+
+  it("emits each status at most once", () => {
+    fc.assert(
+      fc.property(countsArb, (counts) => {
+        const seen = summarizePrescriptionStatuses(counts).byStatus.map(
+          (e) => e.status,
+        );
+        expect(new Set(seen).size).toBe(seen.length);
+      }),
+    );
+  });
+
+  it("merges rows that repeat a status", () => {
+    const summary = summarizePrescriptionStatuses([
+      { status: "pending", count: 2 },
+      { status: "pending", count: 3 },
+    ]);
+    expect(summary.byStatus).toEqual([{ status: "pending", count: 5 }]);
+    expect(summary.total).toBe(5);
+  });
+
+  it('folds a null or blank status into "other"', () => {
+    const summary = summarizePrescriptionStatuses([
+      { status: null, count: 1 },
+      { status: "   ", count: 2 },
+      { status: "other", count: 3 },
+    ]);
+    expect(summary.byStatus).toEqual([{ status: "other", count: 6 }]);
+  });
+
+  it("orders known statuses by lifecycle, not by count", () => {
+    const summary = summarizePrescriptionStatuses([
+      { status: "cancelled", count: 9 },
+      { status: "pending", count: 1 },
+      { status: "picked-up", count: 5 },
+    ]);
+    expect(summary.byStatus.map((e) => e.status)).toEqual([
+      "pending",
+      "picked-up",
+      "cancelled",
+    ]);
+  });
+
+  it("sorts unknown statuses after known ones, stably", () => {
+    const summary = summarizePrescriptionStatuses([
+      { status: "zeta", count: 1 },
+      { status: "alpha", count: 1 },
+      { status: "cancelled", count: 1 },
+    ]);
+    expect(summary.byStatus.map((e) => e.status)).toEqual([
+      "cancelled",
+      "alpha",
+      "zeta",
+    ]);
+  });
+
+  it("returns an empty summary for no counts", () => {
+    expect(summarizePrescriptionStatuses([])).toEqual({
+      total: 0,
+      byStatus: [],
+    });
+  });
+});
+
+// Arbitrary for Prescription.EncodedT
 
 const statusArb = fc.constantFrom(
   "pending",
@@ -110,7 +228,7 @@ const prescriptionArb: fc.Arbitrary<Prescription.EncodedT> = fc.record({
   }),
 });
 
-// ── Component tests ──
+// Component tests
 
 describe("PrescriptionRow", () => {
   it("always shows a status badge", () => {
@@ -187,5 +305,46 @@ describe("PrescriptionsList", () => {
       ),
       { numRuns: 10 },
     );
+  });
+
+  it("omits the summary line when no counts are supplied", () => {
+    render(
+      <PrescriptionsList
+        prescriptions={[]}
+        pagination={emptyPag}
+        onPageChange={noop}
+      />,
+    );
+    expect(screen.queryByText(/total/)).toBeNull();
+  });
+
+  it("summarises across all pages, not just the rendered page", () => {
+    render(
+      <PrescriptionsList
+        prescriptions={[]}
+        pagination={{ offset: 0, limit: 10, total: 12, hasMore: false }}
+        statusCounts={[
+          { status: "pending", count: 7 },
+          { status: "picked-up", count: 5 },
+        ]}
+        onPageChange={noop}
+      />,
+    );
+    expect(
+      screen.getByText("12 total · 7 pending · 5 picked up"),
+    ).toBeDefined();
+  });
+
+  it("keeps the summary line out of the prescription row count", () => {
+    const rx = fc.sample(prescriptionArb, 1)[0]!;
+    const { container } = render(
+      <PrescriptionsList
+        prescriptions={[rx]}
+        pagination={{ offset: 0, limit: 10, total: 1, hasMore: false }}
+        statusCounts={[{ status: rx.status, count: 1 }]}
+        onPageChange={noop}
+      />,
+    );
+    expect(container.querySelectorAll(".border.rounded-lg.p-4").length).toBe(1);
   });
 });

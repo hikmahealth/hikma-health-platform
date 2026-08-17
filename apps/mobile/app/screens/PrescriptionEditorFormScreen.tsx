@@ -62,13 +62,22 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
     name: providerName,
   } = useSelector(providerStore, (state) => state.context)
   const { theme } = useAppTheme()
-  const { can } = usePermissionGuard()
+  const { can, checkEditPrescription, isLoading: isLoadingPermissions } = usePermissionGuard()
 
   const providerClinicId = Option.getOrUndefined(clinic_id)
 
   const { patientId, visitId, prescriptionId, shouldCreateNewVisit = true } = route.params
 
+  const isEditing = Boolean(prescriptionId)
+  // An edit already has a visit; letting the save path invent one would move the
+  // prescription off the visit it belongs to.
+  const createVisitIfMissing = isEditing ? false : shouldCreateNewVisit
+
   const [prescriptionItems, setPrescriptionItems] = useState<PrescriptionItem.T[]>([])
+  const [isHydrating, setIsHydrating] = useState(isEditing)
+  // Who wrote the prescription, which decides whether editing it also needs
+  // canEditOtherProviderEvent. Blank until loaded, and blank is the strict case.
+  const [prescriptionAuthorId, setPrescriptionAuthorId] = useState("")
 
   const { patient } = usePatientRecord(patientId)
   const patientRecord = Option.getOrNull(patient)
@@ -81,6 +90,7 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
     formState: { isSubmitting },
     getValues,
     setValue,
+    reset,
     watch,
   } = useForm<Prescription.T>({
     defaultValues: {
@@ -118,18 +128,64 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
 
   const pickupClinicId = watch("pickupClinicId")
 
+  // Stock differs between clinics, so items do not survive a change of pickup
+  // clinic. Cleared where the clinic moves rather than in an effect on the
+  // value — an effect also fires on hydration, wiping the items just loaded.
+  const changePickupClinic = useCallback(
+    (clinicId: string, onChange: (value: string) => void) => {
+      if (clinicId === pickupClinicId) return
+      onChange(clinicId)
+      setPrescriptionItems([])
+    },
+    [pickupClinicId],
+  )
+
   // If the chosen city no longer contains the selected pickup clinic, clear the stale selection.
   useEffect(() => {
     if (!selectedCity || !pickupClinicId) return
     if (!filteredClinics.some((clinic) => clinic.id === pickupClinicId)) {
       setValue("pickupClinicId", "")
+      setPrescriptionItems([])
     }
   }, [selectedCity, pickupClinicId, filteredClinics, setValue])
 
-  // if pick-up clinic id is changed, reset the prescription items - stock could differ between the clinics
+  // Load the prescription being edited. Runs before anything can be submitted,
+  // so a partially-loaded form is never what gets saved.
   useEffect(() => {
-    setPrescriptionItems([])
-  }, [pickupClinicId])
+    if (!prescriptionId) return
+
+    let cancelled = false
+
+    const hydrate = async () => {
+      try {
+        const record = await database
+          .get<Prescription.DB.T>(Prescription.DB.table_name)
+          .find(prescriptionId)
+        const items = await PrescriptionItem.DB.getByPrescriptionId(prescriptionId)
+        if (cancelled) return
+
+        reset(Prescription.DB.rawToT(record))
+        setPrescriptionItems(items)
+        setPrescriptionAuthorId(record.providerId || "")
+      } catch (error) {
+        if (cancelled) return
+        Logger.error({ msg: "Failed to load the prescription being edited", error })
+        Toast.show("Could not open this prescription for editing", {
+          duration: Toast.durations.LONG,
+          position: Toast.positions.BOTTOM,
+        })
+        navigation.goBack()
+      } finally {
+        if (!cancelled) setIsHydrating(false)
+      }
+    }
+
+    hydrate()
+
+    return () => {
+      cancelled = true
+    }
+  }, [prescriptionId, reset, navigation])
 
   const [isLoading, setIsLoading] = useState(false)
 
@@ -162,14 +218,10 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
     }, [handleBackPress]),
   )
 
-  /**
-   * Adds an item to the prescription items if it does not already exist
-   * @param item
-   */
+  /** No-op when the drug is already on the prescription. */
   const handleSelectItem = (item: ClinicInventory.DB.T) => {
     const drugId = item.drugId
     if (prescriptionItems.some((item) => item.drugId === drugId)) {
-      // close the modal
       bottomSheetModalRef.current?.dismiss()
       return
     }
@@ -217,15 +269,26 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
     })
   }
 
+  // Editing weighs who wrote the prescription; creating does not.
+  const canSave = isEditing
+    ? checkEditPrescription(prescriptionAuthorId).ok
+    : can("prescription:create")
+
+  const saveDeniedMessage = isEditing
+    ? "You do not have permission to edit this prescription"
+    : "You do not have permission to create prescriptions"
+
   const onSubmit = async (submission: Prescription.T) => {
-    if (!can("prescription:create")) {
-      Toast.show("You do not have permission to create prescriptions", {
+    // The boundary, not the affordance: permissions load asynchronously and can
+    // change under a screen that was left open.
+    if (!canSave) {
+      Toast.show(saveDeniedMessage, {
         duration: Toast.durations.SHORT,
         position: Toast.positions.BOTTOM,
       })
       return
     }
-    // Making sure the data is complete and that the defaults are sane
+
     const data: Prescription.T = {
       ...submission,
       createdAt: new Date(),
@@ -256,16 +319,14 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
             id: providerId,
             name: providerName,
           },
-          shouldCreateNewVisit,
+          createVisitIfMissing,
         )
 
-      // If there is no visitId and we are not creating a new visit, just go back
-      if (!createdVisitId && !shouldCreateNewVisit) {
+      if (!createdVisitId && !createVisitIfMissing) {
         navigation.goBack()
       } else if (createdVisitId) {
         navigation.goBack()
       } else {
-        // Visit creation was expected but failed
         Toast.show("Error: visit was not created", {
           position: Toast.positions.BOTTOM,
           duration: Toast.durations.LONG,
@@ -274,13 +335,21 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
       }
     } catch (error) {
       Logger.error(error)
-      Toast.show("Error creating prescription", {
+      Toast.show(isEditing ? "Error saving prescription" : "Error creating prescription", {
         position: Toast.positions.BOTTOM,
         duration: Toast.durations.LONG,
       })
     } finally {
       setIsLoading(false)
     }
+  }
+
+  if (isHydrating) {
+    return (
+      <Screen style={$root} preset="scroll">
+        <Text text="Loading prescription..." />
+      </Screen>
+    )
   }
 
   if (!patientRecord) {
@@ -339,7 +408,7 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
                   }))}
                   fieldKey="pickupClinicId"
                   modalTitle="Pickup Clinic"
-                  setValue={() => (value: string) => field.onChange(value)}
+                  setValue={() => (value: string) => changePickupClinic(value, field.onChange)}
                   setOpen={(value: boolean) => setOpenPicker(value ? "pickupClinic" : null)}
                   isOpen={openPicker === "pickupClinic"}
                   value={field.value || ""}
@@ -404,13 +473,13 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
           />
         </View>
 
-        {/*Prescription items*/}
         <View gap={theme.spacing.lg} pt={20}>
           {prescriptionItems.map((item) => (
             <View key={item.id} gap={theme.spacing.sm} testID="prescription-item">
               <PrescriptionItemEditor
                 drugId={item.drugId}
-                quantity={item.quantityDispensed}
+                quantity={item.quantityPrescribed}
+                quantityDispensed={item.quantityDispensed}
                 instructions={item.dosageInstructions}
                 onQtyChange={(qty: number) => handleUpdatePrescriptionItemQty(item.id, qty)}
                 onInstructionsChange={(instructions: string) =>
@@ -440,13 +509,19 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
 
         <If condition={prescriptionItems.length > 0}>
           <View py={16}>
-            <Button
-              preset="defaultPrimary"
-              testID="submit-prescription"
-              onPress={handleSubmit(onSubmit)}
-            >
-              Submit
-            </Button>
+            {isLoadingPermissions ? (
+              <Text text="Checking permissions..." />
+            ) : canSave ? (
+              <Button
+                preset="defaultPrimary"
+                testID="submit-prescription"
+                onPress={handleSubmit(onSubmit)}
+              >
+                Submit
+              </Button>
+            ) : (
+              <Text testID="prescription-permission-denied" text={saveDeniedMessage} />
+            )}
           </View>
         </If>
 
@@ -492,6 +567,7 @@ const PrescriptionItemEditor = enhancePrescriptionItemEditor(
   ({
     drug,
     quantity,
+    quantityDispensed = 0,
     instructions,
     onRemove,
     onQtyChange,
@@ -499,12 +575,17 @@ const PrescriptionItemEditor = enhancePrescriptionItemEditor(
   }: {
     drug: DrugCatalogue.DB.T | null
     quantity: number
+    /** Units already handed to the patient. Above zero locks the row. */
+    quantityDispensed?: number
     instructions: string
     onRemove: () => void
     onQtyChange: (qty: number) => void
     onInstructionsChange: (instructions: string) => void
   }) => {
     const { themed, theme } = useAppTheme()
+    // Dispensed medication has left the pharmacy and is recorded in
+    // dispensing_records; changing the row would contradict that history.
+    const isDispensed = quantityDispensed > 0
 
     if (!drug) {
       return (
@@ -523,14 +604,24 @@ const PrescriptionItemEditor = enhancePrescriptionItemEditor(
               <Text>({drug.genericName})</Text>
             </View>
 
-            <Pressable testID="remove-prescription-item" onPress={onRemove}>
-              <LucideX size={24} color={theme.colors.palette.neutral900} />
-            </Pressable>
+            <If condition={!isDispensed}>
+              <Pressable testID="remove-prescription-item" onPress={onRemove}>
+                <LucideX size={24} color={theme.colors.palette.neutral900} />
+              </Pressable>
+            </If>
           </View>
           <Text>
             {friendlyString(drug.form)} {drug.dosageQuantity}
             {drug.dosageUnits} {drug.route}
           </Text>
+          <If condition={isDispensed}>
+            <Text
+              testID="prescription-item-dispensed-note"
+              size="xs"
+              color={theme.colors.textDim}
+              text={`${quantityDispensed} already dispensed — this item can no longer be changed`}
+            />
+          </If>
         </View>
         <View gap={8}>
           <TextField
@@ -538,6 +629,7 @@ const PrescriptionItemEditor = enhancePrescriptionItemEditor(
             label="Quantity"
             keyboardType="numeric"
             placeholder="How many units should be dispensed?"
+            editable={!isDispensed}
             defaultValue={quantity.toString()}
             onChangeText={(t) => (!isNaN(Number(t)) ? onQtyChange(parseInt(t)) : null)}
           />
@@ -546,6 +638,7 @@ const PrescriptionItemEditor = enhancePrescriptionItemEditor(
             label="Dosage Instructions"
             keyboardType="default"
             multiline
+            editable={!isDispensed}
             onChangeText={(t) => onInstructionsChange(t)}
             value={instructions}
             placeholder="Enter dosage instructions"
@@ -607,10 +700,9 @@ const enhanceInventoryItem = withObservables(
   ["inventoryItem"],
   ({ inventoryItem }: { inventoryItem: ClinicInventory.DB.T }) => ({
     inventoryItem,
-    // A drug_catalogue row this device never synced makes the relation error,
-    // and withObservables re-throws that during render — taking down the whole
-    // editor rather than this row. Test the foreign key, then catch a dangling
-    // id.
+    // withObservables re-throws a relation error during render, taking down the
+    // whole editor rather than this row. Test the foreign key, then catch a
+    // dangling id.
     drug: inventoryItem.drugId
       ? inventoryItem.drug.observe().pipe(catchError(() => of$(null)))
       : of$(null),

@@ -17,18 +17,12 @@ type PermissionDeniedError = Extract<DataError, { _tag: "PermissionDenied" }>
 const Check = UserClinicPermissions.Check
 
 /**
- * Bridges the pure permission-checking functions to live app context.
- *
- * - Reads userId, role, clinicId from providerStore
- * - Loads global disable toggle from AppConfig
- * - Subscribes to live permission updates via UserClinicPermissions.DB.subscribe
- * - Exposes check/can/checkOperation/checkEditEvent helpers
+ * Binds the pure `Check` helpers to live app context: the signed-in provider,
+ * the clinic's permissions row, and the admin-set toggle that disables checking.
  */
 export function usePermissionGuard() {
-  // Use separate selectors so each returns a stable primitive (string | null).
-  // A single selector returning an object would create a new reference on every
-  // store emission, defeating the built-in Object.is equality check and causing
-  // unnecessary re-renders.
+  // One selector per field: a selector returning an object would allocate on
+  // every store emission and defeat the built-in Object.is check.
   const userId = useSelector(providerStore, (state) => state.context.id)
   const role = useSelector(providerStore, (state) => Option.getOrNull(state.context.role))
   const clinicId = useSelector(providerStore, (state) => Option.getOrNull(state.context.clinic_id))
@@ -56,7 +50,6 @@ export function usePermissionGuard() {
     }
   }, [clinicId])
 
-  // Subscribe to live permission updates
   useEffect(() => {
     if (!userId || !clinicId) {
       setPermissions(null)
@@ -112,6 +105,17 @@ export function usePermissionGuard() {
     [ctx, permissions],
   )
 
+  const checkEditPrescription = useCallback(
+    (prescriptionCreatedByUserId: string): Result<true, PermissionDeniedError> => {
+      return Check.checkEditPrescriptionPermission(
+        ctx,
+        permissions,
+        prescriptionCreatedByUserId,
+      )
+    },
+    [ctx, permissions],
+  )
+
   const can = useCallback(
     (operationName: OperationName): boolean => {
       if (isLoading) {
@@ -128,6 +132,7 @@ export function usePermissionGuard() {
     check,
     checkOperation,
     checkEditEvent,
+    checkEditPrescription,
     can,
   } as const
 }

@@ -200,7 +200,6 @@ namespace Prescription {
     updatedAt: Date
   }
 
-  /** Default empty Prescription Item */
   export const empty: T = {
     id: "",
     patientId: "",
@@ -241,75 +240,101 @@ namespace Prescription {
     export type T = PrescriptionModel
     export const table_name = "prescriptions"
     /**
-     * Create a prescription
-     * @param {PrescriptionForm} prescription
-     * @param {User.Provider} provider
-     * @returns {Promise<{visitId: string | null, prescriptionId: string}>}
+     * The prescription with this id, or null when there is no such row.
+     * Anything that is not a lookup miss is rethrown.
      */
-    // export const createPrescription = async (
-    //   prescription: PrescriptionForm,
-    //   provider: User.Provider,
-    // ): Promise<{ visitId: string | null; prescriptionId: string }> => {
-    //   return await database.write(async () => {
-    //     // If there is no visitId, we need to create a new visit
-    //     let visit: VisitModel | null = null
-    //     let visitId: string | null = prescription.visitId || null
-    //     if (!prescription.visitId) {
-    //       const visitClinicId =
-    //         prescription.pickupClinicId || Option.getOrElse(provider.clinic_id, () => null)
-    //       visit = database.get<VisitModel>("visits").prepareCreate((newVisit) => {
-    //         newVisit.patientId = prescription.patientId
-    //         if (visitClinicId !== null) newVisit.clinicId = visitClinicId
-    //         newVisit.providerId = provider.id
-    //         newVisit.providerName = provider.name
-    //         newVisit.checkInTimestamp = new Date()
-    //         newVisit.metadata = {}
-    //       })
-    //       visitId = visit.id
-    //     }
-
-    //     const prescriptionQuery = database
-    //       .get<PrescriptionModel>(table_name)
-    //       .prepareCreate((newPrescription) => {
-    //         newPrescription.patientId = prescription.patientId
-    //         newPrescription.providerId = provider.id
-    //         newPrescription.pickupClinicId = prescription.pickupClinicId || null
-    //         newPrescription.visitId = visitId || null
-    //         newPrescription.priority = prescription.priority
-    //         newPrescription.status = prescription.status
-    //         newPrescription.filledBy = prescription.filledBy || null
-    //         newPrescription.expirationDate = prescription.expirationDate
-    //         newPrescription.prescribedAt = prescription.prescribedAt
-    //         newPrescription.filledAt = prescription.filledAt || null
-    //         newPrescription.notes = prescription.notes
-    //         // newPrescription.items = JSON.stringify(prescription.items)
-    //         newPrescription.items = prescription.items
-    //         newPrescription.metadata = {
-    //           ...(prescription.metadata || {}),
-    //           providerId: provider.id,
-    //           providerName: provider.name,
-    //         }
-    //       })
-
-    //     await database.batch([visit, prescriptionQuery].filter(Boolean) as Model[])
-    //     return {
-    //       visitId,
-    //       prescriptionId: prescriptionQuery.id,
-    //     }
-    //   })
-    // }
+    const findExisting = async (id: string | null): Promise<PrescriptionModel | null> => {
+      if (!id) return null
+      try {
+        return await database.get<PrescriptionModel>(table_name).find(id)
+      } catch (err: any) {
+        if (err?.message?.includes("not found") || err?.message?.includes("find")) {
+          return null
+        }
+        throw err
+      }
+    }
 
     /**
-     * Creates a prescription entry.
+     * Prepared writes that make a prescription's items match `submittedItems`.
      *
-     * @description First checks if the prescription id exists. if it does, it updates. if not, it creates a new one.
+     * Items already on the prescription are updated in place rather than
+     * recreated: recreating them duplicates every item on each save and strands
+     * the dispensing history, which is keyed to the original item ids.
      *
-     * @param {string | null} prescriptionId
-     * @param {Prescription.T} prescription
-     * @param {PrescriptionItem.T[]} prescriptionItems
-     * @param {User.Provider} provider
-     * @param {boolean} shouldCreateNewVisit - whether or not to create a new visit
-     * @returns {Promise<{visitId: string | null, prescriptionId: string}>}
+     * A dropped item is soft-deleted so the server receives a tombstone —
+     * unless some of it has already been dispensed, in which case the row
+     * records medication that physically left the pharmacy and is kept.
+     */
+    const reconcileItems = ({
+      existingItems,
+      submittedItems,
+      prescriptionId,
+      patientId,
+      providerId,
+    }: {
+      existingItems: readonly PrescriptionItem.DB.T[]
+      submittedItems: readonly PrescriptionItem.T[]
+      prescriptionId: string
+      patientId: string
+      providerId: string
+    }): Model[] => {
+      const collection = database.get<PrescriptionItem.DB.T>(PrescriptionItem.DB.table_name)
+      const existingById = new Map(existingItems.map((item) => [item.id, item]))
+      const submittedIds = new Set(submittedItems.map((item) => item.id))
+
+      const writes: Model[] = []
+
+      for (const item of submittedItems) {
+        const existing = existingById.get(item.id)
+
+        if (existing) {
+          // Only the fields the editor owns. quantityDispensed, refillsUsed and
+          // itemStatus are advanced by the dispensing flow, so writing the
+          // form's copy back would undo a dispense that happened meanwhile.
+          writes.push(
+            existing.prepareUpdate((record) => {
+              record.drugId = item.drugId
+              record.clinicId = item.clinicId
+              record.dosageInstructions = item.dosageInstructions
+              record.quantityPrescribed = item.quantityPrescribed
+              record.notes = item.notes
+            }),
+          )
+          continue
+        }
+
+        writes.push(
+          collection.prepareCreate((newItem) => {
+            newItem.prescriptionId = prescriptionId
+            newItem.patientId = patientId
+            newItem.drugId = item.drugId
+            newItem.clinicId = item.clinicId
+            newItem.dosageInstructions = item.dosageInstructions
+            newItem.quantityPrescribed = item.quantityPrescribed
+            newItem.quantityDispensed = item.quantityDispensed
+            newItem.refillsAuthorized = item.refillsAuthorized
+            newItem.refillsUsed = item.refillsUsed
+            newItem.itemStatus = item.itemStatus
+            newItem.notes = item.notes
+            newItem.recordedByUserId = providerId
+            newItem.metadata = item.metadata || {}
+          }),
+        )
+      }
+
+      for (const existing of existingItems) {
+        if (submittedIds.has(existing.id)) continue
+        if (existing.quantityDispensed > 0) continue
+        writes.push(existing.prepareMarkAsDeleted())
+      }
+
+      return writes
+    }
+
+    /**
+     * Create a prescription, or update it when `prescriptionId` names one that
+     * already exists. Its items are reconciled either way.
      */
     export const create = async (
       prescriptionId: string | null,
@@ -323,10 +348,13 @@ namespace Prescription {
       shouldCreateNewVisit: boolean = false,
     ): Promise<{ visitId: string | null; prescriptionId: string }> => {
       return await database.write(async () => {
+        // Resolved before the visit lookup because an edit must not mint a new
+        // visit: doing so would silently re-parent the prescription onto it.
+        const existingPrescription = await findExisting(prescriptionId)
+
         let dbVisitId: string | null = null
         let dbVisit: VisitModel | null = null
 
-        // Find or create visit
         try {
           const visit = await database.get<VisitModel>("visits").find(prescription.visitId || "")
           if (visit) {
@@ -335,8 +363,10 @@ namespace Prescription {
             throw new Error("Visit not found")
           }
         } catch (err: any) {
-          if (shouldCreateNewVisit === true) {
-            // Only create new visit if it's a "not found" error
+          if (existingPrescription) {
+            // Editing: keep whichever visit it already belongs to.
+            dbVisitId = existingPrescription.visitId || null
+          } else if (shouldCreateNewVisit === true) {
             if (err?.message?.includes("not found") || err?.message?.includes("find")) {
               const visitClinicId = prescription.pickupClinicId || provider.clinicId
               dbVisit = database.get<VisitModel>("visits").prepareCreate((newVisit) => {
@@ -348,7 +378,6 @@ namespace Prescription {
               })
               dbVisitId = dbVisit.id
             } else {
-              // Re-throw unexpected errors
               throw err
             }
           }
@@ -356,13 +385,7 @@ namespace Prescription {
 
         let dbPrescription: PrescriptionModel
 
-        // Find or create prescription
-        try {
-          const existingPrescription = await database
-            .get<PrescriptionModel>(table_name)
-            .find(prescriptionId || "")
-
-          // Update existing prescription
+        if (existingPrescription) {
           dbPrescription = existingPrescription.prepareUpdate((updatedPrescription) => {
             updatedPrescription.patientId = prescription.patientId
             updatedPrescription.pickupClinicId = prescription.pickupClinicId || null
@@ -374,65 +397,50 @@ namespace Prescription {
             updatedPrescription.prescribedAt = prescription.prescribedAt
             updatedPrescription.filledAt = prescription.filledAt || null
             updatedPrescription.notes = prescription.notes
-            // newPrescription.items = JSON.stringify(prescription.items)
             // items are deprecated
-            // newPrescription.items = prescription.items
             updatedPrescription.metadata = {
               ...(prescription.metadata || {}),
               lastUpdatedBy: provider.id,
               lastUpdatedByName: provider.name,
             }
           })
-        } catch (err: any) {
-          // Only create new prescription if it's a "not found" error
-          if (err?.message?.includes("not found") || err?.message?.includes("find")) {
-            dbPrescription = database
-              .get<PrescriptionModel>(table_name)
-              .prepareCreate((newPrescription) => {
-                newPrescription.patientId = prescription.patientId
-                newPrescription.providerId = provider.id
-                newPrescription.pickupClinicId = prescription.pickupClinicId || null
-                newPrescription.visitId = dbVisitId || null
-                newPrescription.priority = prescription.priority
-                newPrescription.status = prescription.status
-                newPrescription.filledBy = prescription.filledBy || null
-                newPrescription.expirationDate = prescription.expirationDate
-                newPrescription.prescribedAt = prescription.prescribedAt
-                newPrescription.filledAt = prescription.filledAt || null
-                newPrescription.notes = prescription.notes
-                // newPrescription.items = JSON.stringify(prescription.items)
-                // items are deprecated
-                // newPrescription.items = prescription.items
-                newPrescription.metadata = {
-                  ...(prescription.metadata || {}),
-                  providerId: provider.id,
-                  providerName: provider.name,
-                }
-              })
-          } else {
-            // Re-throw unexpected errors
-            throw err
-          }
+        } else {
+          dbPrescription = database
+            .get<PrescriptionModel>(table_name)
+            .prepareCreate((newPrescription) => {
+              newPrescription.patientId = prescription.patientId
+              newPrescription.providerId = provider.id
+              newPrescription.pickupClinicId = prescription.pickupClinicId || null
+              newPrescription.visitId = dbVisitId || null
+              newPrescription.priority = prescription.priority
+              newPrescription.status = prescription.status
+              newPrescription.filledBy = prescription.filledBy || null
+              newPrescription.expirationDate = prescription.expirationDate
+              newPrescription.prescribedAt = prescription.prescribedAt
+              newPrescription.filledAt = prescription.filledAt || null
+              newPrescription.notes = prescription.notes
+              // items are deprecated
+              newPrescription.metadata = {
+                ...(prescription.metadata || {}),
+                providerId: provider.id,
+                providerName: provider.name,
+              }
+            })
         }
 
-        const dbPrescriptionItems = prescriptionItems.map((item) => {
-          return database
-            .get<PrescriptionItem.DB.T>(PrescriptionItem.DB.table_name)
-            .prepareCreate((newItem) => {
-              newItem.prescriptionId = dbPrescription.id
-              newItem.patientId = prescription.patientId
-              newItem.drugId = item.drugId
-              newItem.clinicId = item.clinicId
-              newItem.dosageInstructions = item.dosageInstructions
-              newItem.quantityPrescribed = item.quantityPrescribed
-              newItem.quantityDispensed = item.quantityDispensed
-              newItem.refillsAuthorized = item.refillsAuthorized
-              newItem.refillsUsed = item.refillsUsed
-              newItem.itemStatus = item.itemStatus
-              newItem.notes = item.notes
-              newItem.recordedByUserId = provider.id
-              newItem.metadata = item.metadata || {}
-            })
+        const existingItems = existingPrescription
+          ? await database
+              .get<PrescriptionItem.DB.T>(PrescriptionItem.DB.table_name)
+              .query(Q.where("prescription_id", existingPrescription.id))
+              .fetch()
+          : []
+
+        const dbPrescriptionItems = reconcileItems({
+          existingItems,
+          submittedItems: prescriptionItems,
+          prescriptionId: dbPrescription.id,
+          patientId: prescription.patientId,
+          providerId: provider.id,
         })
 
         const changesBatch = [dbVisit, dbPrescription, ...dbPrescriptionItems].filter(
@@ -447,12 +455,7 @@ namespace Prescription {
       })
     }
 
-    /**
-     * Update the status of a prescription.
-     * @param {string} prescriptionId
-     * @param {Status} status
-     * @returns {Promise<void>}
-     */
+    /** Update the status of a prescription. */
     export const updateStatus = async (prescriptionId: string, status: Status): Promise<void> => {
       await database.write(async () => {
         const prescriptionRecord = await database
@@ -470,11 +473,8 @@ namespace Prescription {
     /**
      * Marks a prescription as picked up. Prescriptions marked as picked up cannot be edited.
      *
-     * 1. we mark it as picked up and set the dates
-     * 2. we update the inventory values for that batch
-     * @param {string} prescriptionId
-     * @param {User.Provider} provider
-     * @returns {Promise<void>}
+     * Sets the pickup dates, then draws the dispensed amounts down from the
+     * batch inventory.
      */
     export const markAsPickedUp = async (
       prescriptionId: string,
@@ -496,13 +496,8 @@ namespace Prescription {
     }
 
     /**
-     * Update a prescription
-     *
-     * @deprecated
-     * @param {string} prescriptionId
-     * @param {Partial<PrescriptionForm>} prescription
-     * @param {User.Provider} provider
-     * @returns {Promise<{visitId: string | null, prescriptionId: string}>}
+     * @deprecated Writes only the fields present in the partial, and never
+     * touches items. `create` is the upsert the editor uses.
      */
     export const updatePrescription = async (
       prescriptionId: string,
@@ -515,12 +510,7 @@ namespace Prescription {
           .find(prescriptionId)
 
         const updatedPrescription = prescriptionRecord.prepareUpdate((updatedPrescription) => {
-          // The commented fields should be immutable after creation. Left here for reference.
-          // updatedPrescription.patientId = prescription.patientId
-          // updatedPrescription.providerId = provider.id
-          // updatedPrescription.clinicId = prescription.clinicId
-          // updatedPrescription.visitId = prescription.visitId || null
-          // Update only the fields that are present in the partial prescription object
+          // patientId, providerId, clinicId and visitId are immutable after creation.
           if (prescription.pickupClinicId !== undefined)
             updatedPrescription.pickupClinicId = prescription.pickupClinicId
           if (prescription.priority !== undefined)
@@ -536,7 +526,6 @@ namespace Prescription {
           if (prescription.items !== undefined) updatedPrescription.items = prescription.items
 
           // TODO: Determine how to handle the filledBy field
-          // updatedPrescription.filledBy = provider.id;
           updatedPrescription.metadata = {
             ...(prescription.metadata || {}),
             lastUpdatedBy: provider.id,
@@ -544,7 +533,6 @@ namespace Prescription {
           }
         })
 
-        // Prepare update for the visit
         let visitUpdate: VisitModel | null = null
         try {
           if (updatedPrescription.visitId) {
@@ -572,7 +560,6 @@ namespace Prescription {
           })
         }
 
-        // Batch update both prescription and visit (if applicable)
         const updateBatch = [updatedPrescription, visitUpdate].filter(Boolean) as Model[]
         await database.batch(updateBatch)
 
@@ -603,7 +590,6 @@ namespace Prescription {
         conditions.push(Q.where("pickup_clinic_id", Q.oneOf(clinicIds)))
       }
 
-      // Add date filter - filter by prescribed date
       const startOfDay = new Date(date)
       startOfDay.setHours(0, 0, 0, 0)
       const endOfDay = new Date(date)
@@ -614,12 +600,10 @@ namespace Prescription {
         Q.where("prescribed_at", Q.lte(endOfDay.getTime())),
       )
 
-      // Add status filter if provided
       if (status.length > 0) {
         conditions.push(Q.where("status", Q.oneOf(status)))
       }
 
-      // Add patient name search if search query is provided
       const nameTokens = tokenizeForSearch(searchQuery)
       if (nameTokens.length > 0) {
         conditions.push(
@@ -633,7 +617,6 @@ namespace Prescription {
         )
       }
 
-      // Add pagination
       const { offset = 0, limit = 50 } = options
       if (offset > 0) {
         conditions.push(Q.skip(offset))
@@ -645,9 +628,6 @@ namespace Prescription {
       return conditions
     }
 
-    /**
-     * Convert raw database model to Prescription.T type
-     */
     export function rawToT(rawPrescription: PrescriptionModel): T {
       return {
         id: rawPrescription.id,

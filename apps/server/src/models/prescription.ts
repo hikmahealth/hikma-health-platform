@@ -54,6 +54,13 @@ namespace Prescription {
     "other",
   ] as const;
 
+  /**
+   * How many prescriptions carry one status. `status` is typed loosely because
+   * it comes straight out of a GROUP BY, and the column is a plain string that
+   * predates `StatusSchema` — rows outside the union are possible.
+   */
+  export type StatusCount = { status: string | null; count: number };
+
   export const PrescriptionSchema = Schema.Struct({
     id: Schema.String,
     patient_id: Schema.String,
@@ -87,7 +94,6 @@ namespace Prescription {
      * */
     export const ALWAYS_PUSH_TO_MOBILE = false;
     export const name = "prescriptions";
-    /** The name of the table in the mobile database */
     export const mobileName = "prescriptions";
 
     export const columns = {
@@ -168,9 +174,7 @@ namespace Prescription {
       },
     );
 
-    /**
-     * Get paginated prescriptions for a patient, ordered by most recent first.
-     */
+    /** Paginated prescriptions for a patient, most recent first. */
     export const getByPatientId = createServerOnlyFn(
       async (options: {
         patientId: string;
@@ -179,6 +183,7 @@ namespace Prescription {
         includeCount?: boolean;
       }): Promise<{
         items: Prescription.EncodedT[];
+        statusCounts: StatusCount[];
         pagination: {
           offset: number;
           limit: number;
@@ -203,19 +208,29 @@ namespace Prescription {
           .offset(offset)
           .execute();
 
-        let total = 0;
+        // One GROUP BY where a COUNT(*) used to be: the total is the sum of the
+        // buckets, so the summary can never disagree with the page count. The
+        // predicates must stay identical to the page query above for that to hold.
+        let statusCounts: StatusCount[] = [];
         if (includeCount) {
-          const countResult = await db
+          const rows = await db
             .selectFrom(Table.name)
+            .select(["status"])
             .select(db.fn.countAll().as("count"))
             .where("patient_id", "=", patientId)
             .where("is_deleted", "=", false)
-            .executeTakeFirst();
-          total = Number(countResult?.count ?? 0);
+            .groupBy("status")
+            .execute();
+          statusCounts = rows.map((row) => ({
+            status: row.status,
+            count: Number(row.count ?? 0),
+          }));
         }
+        const total = statusCounts.reduce((sum, entry) => sum + entry.count, 0);
 
         return {
           items: items as unknown as Prescription.EncodedT[],
+          statusCounts,
           pagination: {
             offset,
             limit,
@@ -264,14 +279,11 @@ namespace Prescription {
       return res.rows;
     });
 
-    /**
-     * Save a prescription - this is an upsert operation
-     */
+    /** Upsert a prescription. */
     export const save = createServerOnlyFn(
       async (
         id: string | null,
         prescription: Prescription.EncodedT,
-        // prescription_items:  PrescriptionItem.EncodedT[],
         prescription_items: PrescriptionItemValues[], // TODO: replace this with the above. HACK: this is temporary
         currentUserName: string,
         currentClinicId: string,
@@ -315,7 +327,6 @@ namespace Prescription {
                 ? prescription.visit_id
                 : null;
 
-            // If there is no visit Id, create a new visit
             if (!visitId) {
               let newVisitId = uuidV1();
               const visit = await trx
@@ -382,10 +393,7 @@ namespace Prescription {
                     )}::timestamp with time zone`
                   : null,
                 status: prescription.status,
-                // items here is replaced by the prescription_items table
-                // items: sql`${JSON.stringify(
-                //   safeJSONParse(prescription.items, []),
-                // )}::jsonb`,
+                // items is superseded by the prescription_items table
                 items: sql`${JSON.stringify([])}::jsonb`,
                 notes: prescription.notes || "",
                 metadata: {} as any,
@@ -491,9 +499,7 @@ namespace Prescription {
       },
     );
 
-    /**
-     * Soft delete a prescription. ITs an update operation -
-     */
+    /** Soft delete a prescription. */
     export const softDelete = createServerOnlyFn(async (id: string) => {
       await db
         .updateTable(Prescription.Table.name)

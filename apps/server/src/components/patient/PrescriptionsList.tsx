@@ -16,6 +16,71 @@ type Props = {
   pagination: Pagination;
   onPageChange: (offset: number) => void;
   loading?: boolean;
+  /**
+   * Counts across every one of the patient's prescriptions, not just the page
+   * on screen. Omit to hide the summary line.
+   */
+  statusCounts?: readonly Prescription.StatusCount[];
+};
+
+/**
+ * Display order for the summary line. Mirrors `Prescription.statusValues`, which
+ * lives behind a server-only module the browser bundle can't import.
+ */
+const STATUS_DISPLAY_ORDER = [
+  "pending",
+  "prepared",
+  "picked-up",
+  "not-picked-up",
+  "partially-picked-up",
+  "cancelled",
+  "other",
+] as const;
+
+export type PrescriptionsSummary = {
+  total: number;
+  /** Statuses with at least one prescription, in `STATUS_DISPLAY_ORDER`. */
+  byStatus: { status: string; count: number }[];
+};
+
+/**
+ * Tally raw per-status counts into the summary the list renders.
+ *
+ * Every count reaches a bucket, so `total` always equals the sum of `byStatus`:
+ * unknown statuses sort after the known ones rather than being dropped, and a
+ * null or blank status folds into `other`.
+ */
+export const summarizePrescriptionStatuses = (
+  counts: readonly Prescription.StatusCount[],
+): PrescriptionsSummary => {
+  const totals = new Map<string, number>();
+
+  for (const { status, count } of counts) {
+    if (!Number.isFinite(count) || count <= 0) continue;
+    const key = status?.trim() ? status.trim() : "other";
+    totals.set(key, (totals.get(key) ?? 0) + count);
+  }
+
+  const rank = (status: string) => {
+    const index = STATUS_DISPLAY_ORDER.indexOf(
+      status as (typeof STATUS_DISPLAY_ORDER)[number],
+    );
+    return index === -1 ? STATUS_DISPLAY_ORDER.length : index;
+  };
+
+  const byStatus = [...totals.entries()]
+    .map(([status, count]) => ({ status, count }))
+    // Unknown statuses all share the fallback rank, so break the tie by name to
+    // keep the order stable across renders.
+    .sort(
+      (a, b) =>
+        rank(a.status) - rank(b.status) || a.status.localeCompare(b.status),
+    );
+
+  return {
+    total: byStatus.reduce((sum, entry) => sum + entry.count, 0),
+    byStatus,
+  };
 };
 
 const statusVariant = (status: string) => {
@@ -103,12 +168,36 @@ export function PrescriptionRow({
   );
 }
 
+/** One-line tally of the patient's prescriptions by status. */
+export function PrescriptionsSummaryLine({
+  summary,
+}: {
+  summary: PrescriptionsSummary;
+}) {
+  return (
+    <p className="text-xs text-muted-foreground mb-3">
+      {[
+        `${summary.total} total`,
+        ...summary.byStatus.map(
+          ({ status, count }) =>
+            `${count} ${statusLabel(status).toLowerCase()}`,
+        ),
+      ].join(" · ")}
+    </p>
+  );
+}
+
 export function PrescriptionsList({
   prescriptions,
   pagination,
   onPageChange,
   loading,
+  statusCounts,
 }: Props) {
+  const summary = statusCounts
+    ? summarizePrescriptionStatuses(statusCounts)
+    : null;
+
   return (
     <Card>
       <CardHeader>
@@ -116,6 +205,11 @@ export function PrescriptionsList({
         <CardDescription>Active and past medications</CardDescription>
       </CardHeader>
       <CardContent>
+        {/* Keyed off the summary, not the page: `hasMore` can land the user on an
+            empty last page while the patient still has prescriptions. */}
+        {summary && summary.total > 0 && (
+          <PrescriptionsSummaryLine summary={summary} />
+        )}
         {prescriptions.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             No prescriptions recorded

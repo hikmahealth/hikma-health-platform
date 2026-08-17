@@ -12,9 +12,11 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   PackageIcon,
+  PencilIcon,
   LucideFileCheck,
 } from "lucide-react-native"
 
+import { If } from "@/components/If"
 import { Screen } from "@/components/Screen"
 import { Text } from "@/components/Text"
 import { View } from "@/components/View"
@@ -25,6 +27,7 @@ import {
   PrescribedDrug,
 } from "@/db/enhancers/enhancePrescribedDrugsItem"
 import { usePatientRecord } from "@/hooks/usePatientRecord"
+import { usePermissionGuard } from "@/hooks/usePermissionGuard"
 import { translate } from "@/i18n/translate"
 import DrugCatalogue from "@/models/DrugCatalogue"
 import Patient from "@/models/Patient"
@@ -36,11 +39,6 @@ import { colors } from "@/theme/colors"
 interface PatientPrescriptionsListScreenProps
   extends NativeStackScreenProps<PharmacyNavigatorParamList, "PatientPrescriptionsList"> {}
 
-/**
- * Hook to listen to patient prescriptions changes
- * @param patientId
- * @returns
- */
 function useDBPatientPrescriptions(patientId: string) {
   const [prescriptions, setPrescriptions] = useState<Prescription.DB.T[]>([])
   useEffect(() => {
@@ -75,6 +73,8 @@ export const PatientPrescriptionsListScreen: FC<PatientPrescriptionsListScreenPr
 
   const { prescriptions } = useDBPatientPrescriptions(patientId)
 
+  const { checkEditPrescription, isLoading: isLoadingPermissions } = usePermissionGuard()
+
   const openPrescriptionForm = () => {
     navigation.navigate("PrescriptionEditorForm", {
       patientId,
@@ -88,10 +88,23 @@ export const PatientPrescriptionsListScreen: FC<PatientPrescriptionsListScreenPr
     navigation.navigate("PrescriptionView", { prescriptionId })
   }
 
+  const openPrescriptionEditor = (prescription: Prescription.DB.T) => {
+    navigation.navigate("PrescriptionEditorForm", {
+      patientId,
+      prescriptionId: prescription.id,
+      visitId: prescription.visitId || undefined,
+      shouldCreateNewVisit: false,
+    })
+  }
+
+  // Resolved once for the list rather than per card: the guard opens a
+  // subscription per call site, and the check itself is pure.
+  const canEditPrescription = (prescription: Prescription.DB.T): boolean =>
+    !isLoadingPermissions && checkEditPrescription(prescription.providerId || "").ok
+
   return (
     <>
       <Screen style={$root} preset="scroll">
-        {/* Patient Header */}
         <View style={$patientHeader}>
           <Text text={patientName} preset="heading" size="md" />
           <Text
@@ -101,7 +114,6 @@ export const PatientPrescriptionsListScreen: FC<PatientPrescriptionsListScreenPr
           />
         </View>
 
-        {/* Prescriptions List */}
         <View style={$prescriptionsContainer}>
           {prescriptions.length === 0 ? (
             <View style={$emptyState}>
@@ -118,13 +130,14 @@ export const PatientPrescriptionsListScreen: FC<PatientPrescriptionsListScreenPr
                 key={prescription.id}
                 prescription={prescription as Prescription.DB.T}
                 onPress={() => openPrescriptionDetails(prescription.id!)}
+                canEdit={canEditPrescription(prescription)}
+                onEdit={() => openPrescriptionEditor(prescription)}
               />
             ))
           )}
         </View>
       </Screen>
 
-      {/* Floating Action Button */}
       <Pressable
         testID="new-patient-prescription"
         onPress={openPrescriptionForm}
@@ -137,20 +150,21 @@ export const PatientPrescriptionsListScreen: FC<PatientPrescriptionsListScreenPr
   )
 }
 
-/**
- * Prescription card component
- */
 const PrescriptionCard = enhancePrescribedDrugsItem(
   ({
     prescription,
     prescriptionItems,
     drugs,
     onPress,
+    canEdit,
+    onEdit,
   }: {
     prescription: Prescription.DB.T
     prescriptionItems: PrescriptionItem.DB.T[] | null
     drugs: DrugCatalogue.DB.T[] | null
     onPress: () => void
+    canEdit: boolean
+    onEdit: () => void
   }) => {
     const formattedPrescribedDate = prescription.prescribedAt?.toLocaleDateString("en-US", {
       month: "short",
@@ -164,7 +178,6 @@ const PrescriptionCard = enhancePrescribedDrugsItem(
       year: "numeric",
     })
 
-    // Get status icon and style
     const getStatusDisplay = () => {
       switch (prescription.status) {
         case Prescription.Status.PENDING:
@@ -234,7 +247,6 @@ const PrescriptionCard = enhancePrescribedDrugsItem(
 
     return (
       <Pressable onPress={onPress} style={$prescriptionCard}>
-        {/* Header with status and priority */}
         <View direction="row" justifyContent="space-between" alignItems="flex-start" mb={8}>
           <View flex={1}>
             <View direction="row" alignItems="center" gap={8}>
@@ -248,9 +260,23 @@ const PrescriptionCard = enhancePrescribedDrugsItem(
               <Text text={`Rx# ${prescription.id?.slice(-6)}`} size="xs" style={$rxNumber} />
             </View>
           </View>
+
+          <If condition={canEdit}>
+            {/* Nested inside the card's Pressable — RN gives the inner press
+                priority, so tapping the pencil edits instead of opening. */}
+            <Pressable
+              testID={`edit-prescription-${prescription.id}`}
+              onPress={onEdit}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel={translate("prescriptions:editPrescription")}
+              style={$editPrescriptionButton}
+            >
+              <PencilIcon size={18} color={colors.palette.primary500} />
+            </Pressable>
+          </If>
         </View>
 
-        {/* Dates */}
         <View gap={4} mb={8}>
           <View direction="row" alignItems="center" gap={8}>
             <CalendarIcon size={14} color={colors.textDim} />
@@ -287,7 +313,6 @@ const PrescriptionCard = enhancePrescribedDrugsItem(
           </View>
         </View>
 
-        {/* Prescription Items */}
         <View style={$itemsSection}>
           <Text
             text={translate("prescriptions:medications")}
@@ -300,7 +325,6 @@ const PrescriptionCard = enhancePrescribedDrugsItem(
           ))}
         </View>
 
-        {/* Notes */}
         {prescription.notes && prescription.notes.length > 0 && (
           <View mt={8} p={8} style={$notesSection}>
             <Text
@@ -315,9 +339,6 @@ const PrescriptionCard = enhancePrescribedDrugsItem(
   },
 )
 
-/**
- * Prescription item component
- */
 const PrescriptionItemEntry = ({ prescription }: { prescription: PrescribedDrug }) => {
   const drugName = `${prescription.drug?.brandName} (${prescription.drug?.genericName})`
 
@@ -347,7 +368,6 @@ const PrescriptionItemEntry = ({ prescription }: { prescription: PrescribedDrug 
   )
 }
 
-// Styles
 const $root: ViewStyle = {
   flex: 1,
   paddingHorizontal: 14,
@@ -381,6 +401,10 @@ const $prescriptionCard: ViewStyle = {
   shadowOpacity: 0.05,
   shadowRadius: 2,
   elevation: 1,
+}
+
+const $editPrescriptionButton: ViewStyle = {
+  padding: 4,
 }
 
 const $priorityBadge: ViewStyle = {

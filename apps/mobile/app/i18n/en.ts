@@ -279,6 +279,7 @@ const en = {
     medications: "Medications",
     notes: "Notes",
     refills: "Refills",
+    editPrescription: "Edit prescription",
   },
   component: {
     dateOfBirthInput: {

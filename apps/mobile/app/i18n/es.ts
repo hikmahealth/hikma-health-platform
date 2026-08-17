@@ -282,6 +282,7 @@ const es: ENTranslations = {
     medications: "Medicamentos",
     notes: "Notas",
     refills: "Reposiciones",
+    editPrescription: "Editar receta",
   },
   component: {
     dateOfBirthInput: {
