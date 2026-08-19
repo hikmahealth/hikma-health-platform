@@ -2,7 +2,7 @@
   "name": "Hikma Health",
   "slug": "hikma-health-mobile",
   "scheme": "hikma-health-mobile",
-  "version": "1.7.3",
+  "version": "1.7.4",
   "orientation": "default",
   "userInterfaceStyle": "light",
   "icon": "./assets/images/app-icon-all.png",
@@ -24,8 +24,8 @@
     "allowBackup": false,
     "edgeToEdgeEnabled": true,
     "blockedPermissions": ["android.permission.READ_MEDIA_IMAGES"],
-    "versionCode": 73,
-    "versionName": "1.7.3"
+    "versionCode": 74,
+    "versionName": "1.7.4"
   },
   "ios": {
     "icon": "./assets/images/app-icon-ios.png",
