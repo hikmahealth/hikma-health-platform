@@ -606,6 +606,24 @@ namespace Peer {
   }
 
   /**
+   * Base URL of the cloud server, for the `/api/...` routes only it serves —
+   * `getActiveUrl` prefers the hub, which has none of them.
+   *
+   * Inactive cloud peers count: pairing a hub demotes the cloud peer, but an
+   * upload is not a sync. `revoked` and `untrusted` never count. HTTPS only,
+   * so callers can safely put a credential on the result.
+   */
+  export const getCloudApiUrl = async (): Promise<string | null> => {
+    const clouds = (await DB.getAll()).filter((peer) => peer.peerType === "cloud_server")
+    const usable = clouds.filter((peer) => peer.status === "active" || peer.status === "inactive")
+    if (usable.length === 0) return null
+
+    const preferred = usable.find((peer) => peer.status === "active") ?? usable[0]
+    const url = getUrl(preferred)
+    return url?.startsWith("https://") ? url : null
+  }
+
+  /**
    * One-time migration: if there's a HIKMA_API value in SecureStore but no
    * cloud peer registered, create the cloud peer from the legacy URL.
    * Safe to call multiple times — no-ops if a cloud peer already exists.
@@ -746,6 +764,38 @@ namespace Peer {
 
       const refreshed = await rehandshaking
       return refreshed ? createEncryptedTransport(refreshed) : null
+    }
+
+    /**
+     * Re-authenticate against the hub and persist the new token. Callers reach
+     * for this on `AUTH_FAILED`; nothing else renews a hub token.
+     *
+     * Writes both copies: `HubSession.token` is what sync sends,
+     * `provider_token` is what the rest of the app reads.
+     *
+     * Returns false without touching the existing token, so an unreachable hub
+     * does not cost the user their session.
+     */
+    export const refreshToken = async (): Promise<boolean> => {
+      const [email, password] = await Promise.all([
+        SecureStore.getItemAsync("provider_email"),
+        SecureStore.getItemAsync("provider_password"),
+      ])
+      if (!email || !password) return false
+
+      const session = await Session.load()
+      if (!session) return false
+
+      const transport = createEncryptedTransport(session)
+      const result = await transport.login(email, password).catch((error: unknown) => {
+        Logger.warn({ msg: "[Hub] token refresh failed", error })
+        return null
+      })
+      if (!result?.ok || !result.data?.token) return false
+
+      await Session.save({ ...session, token: result.data.token })
+      await SecureStore.setItemAsync("provider_token", result.data.token)
+      return true
     }
 
     export const unpair = async (): Promise<void> => {

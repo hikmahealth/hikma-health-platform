@@ -158,10 +158,12 @@ const runFirstSyncBackfill = async (peer: Peer.T): Promise<boolean> => {
   try {
     Logger.log({ msg: "[Sync] First sync — routing through the paged backfill", peer: peer.id })
 
-    // Mirrors syncCloud: refresh clinic and roles first. This is the run where
-    // the provider record is least established, so it matters most here.
+    // Mirrors syncCloud: refresh clinic and roles first.
     const { email, password } = await getCredentials()
-    await User.signIn(email, password)
+    // `peer` is cloud-only by construction; the active peer could be a hub.
+    const cloudUrl = Peer.getUrl(peer)
+    if (!cloudUrl) throw new Error("Cloud peer has no URL")
+    await User.signIn(email, password, cloudUrl)
 
     const result = await runManualSync({
       peerId: peer.id,

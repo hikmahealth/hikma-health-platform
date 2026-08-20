@@ -214,13 +214,28 @@ onFlowStart:
 - tapOn: "Pharmacy"
 - waitForAnimationToEnd
 
-# Verify the prescription is in the pharmacy list
+# Verify the patient's group is in the pharmacy list
 - assertVisible:
-    id: "pharmacy-prescription-item-.*"
+    id: "pharmacy-patient-group-.*"
 
 # Verify patient name is visible in pharmacy prescription
 - assertVisible:
     id: "pharmacy-patient-name-.*"
+
+# A patient with more than one prescription for the day starts collapsed
+- runFlow:
+    when:
+      notVisible:
+        id: "pharmacy-prescription-item-.*"
+    commands:
+      - tapOn:
+          id: "pharmacy-patient-group-.*"
+          index: 0
+      - waitForAnimationToEnd
+
+# Verify the prescription is in the pharmacy list
+- assertVisible:
+    id: "pharmacy-prescription-item-.*"
 
 # Verify prescription status is visible
 - assertVisible:

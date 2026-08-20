@@ -1,5 +1,6 @@
 import { Model, Q } from "@nozbe/watermelondb"
 import * as Sentry from "@sentry/react-native"
+import { addDays } from "date-fns"
 
 import database from "@/db"
 import PrescriptionModel from "@/db/model/Prescription"
@@ -200,25 +201,42 @@ namespace Prescription {
     updatedAt: Date
   }
 
-  export const empty: T = {
-    id: "",
-    patientId: "",
-    providerId: "",
-    filledBy: null,
-    pickupClinicId: null,
-    visitId: null,
-    priority: "normal",
-    status: "pending",
-    items: [],
-    notes: "",
-    expirationDate: new Date(),
-    prescribedAt: new Date(),
-    filledAt: null,
-    metadata: {},
-    isDeleted: false,
-    deletedAt: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+  /** How long a prescription stays valid when no expiry is given explicitly. */
+  const DEFAULT_VALIDITY_DAYS = 90
+
+  /** The expiry a prescription written at `prescribedAt` carries by default. */
+  export const defaultExpirationDate = (prescribedAt: Date): Date =>
+    addDays(prescribedAt, DEFAULT_VALIDITY_DAYS)
+
+  /**
+   * A blank prescription for a form to start from.
+   *
+   * A function, not a constant: a constant freezes its timestamps at import.
+   * `prescribedAt` is a placeholder — the saved value is minted at submit.
+   */
+  export const empty = (): T => {
+    const prescribedAt = new Date()
+
+    return {
+      id: "",
+      patientId: "",
+      providerId: "",
+      filledBy: null,
+      pickupClinicId: null,
+      visitId: null,
+      priority: "normal",
+      status: "pending",
+      items: [],
+      notes: "",
+      expirationDate: defaultExpirationDate(prescribedAt),
+      prescribedAt,
+      filledAt: null,
+      metadata: {},
+      isDeleted: false,
+      deletedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
   }
 
   export type PrescriptionForm = {
@@ -235,6 +253,62 @@ namespace Prescription {
     items: Item[]
     metadata?: Record<string, any>
   }
+
+  /** How many prescriptions in a group carry one status. */
+  export type StatusCount = {
+    readonly status: Status
+    readonly count: number
+  }
+
+  /** Every prescription one patient has within a single filtered result set. */
+  export type PatientGroup = {
+    readonly patientId: string
+    readonly prescriptions: readonly T[]
+    readonly statusCounts: readonly StatusCount[]
+  }
+
+  const countByStatus = (prescriptions: readonly T[]): StatusCount[] => {
+    const counts = new Map<Status, number>()
+    for (const prescription of prescriptions) {
+      counts.set(prescription.status, (counts.get(prescription.status) ?? 0) + 1)
+    }
+
+    // Known statuses first for a fixed order, then any drifted value, so
+    // nothing is dropped from a breakdown that claims to cover the group.
+    const known = statusList.filter((status) => counts.has(status))
+    const unknown = Array.from(counts.keys()).filter((status) => !statusList.includes(status))
+
+    return [...known, ...unknown].map((status) => ({ status, count: counts.get(status) ?? 0 }))
+  }
+
+  /**
+   * One group per patient, preserving input order at both levels.
+   *
+   * The counts describe exactly the prescriptions passed in, so callers must
+   * pass a complete result set rather than a page of one.
+   */
+  export const groupByPatient = (prescriptions: readonly T[]): PatientGroup[] => {
+    const byPatient = new Map<string, T[]>()
+
+    for (const prescription of prescriptions) {
+      const existing = byPatient.get(prescription.patientId)
+      if (existing) {
+        existing.push(prescription)
+        continue
+      }
+      byPatient.set(prescription.patientId, [prescription])
+    }
+
+    return Array.from(byPatient, ([patientId, grouped]) => ({
+      patientId,
+      prescriptions: grouped,
+      statusCounts: countByStatus(grouped),
+    }))
+  }
+
+  /** A one-line breakdown of a group's statuses, e.g. "2 pending · 1 picked up". */
+  export const describeStatusCounts = (statusCounts: readonly StatusCount[]): string =>
+    statusCounts.map(({ status, count }) => `${count} ${status.replaceAll("-", " ")}`).join(" · ")
 
   export namespace DB {
     export type T = PrescriptionModel
@@ -628,7 +702,7 @@ namespace Prescription {
       return conditions
     }
 
-    export function rawToT(rawPrescription: PrescriptionModel): T {
+    export function rawToT(rawPrescription: PrescriptionModel): Prescription.T {
       return {
         id: rawPrescription.id,
         patientId: rawPrescription.patientId,

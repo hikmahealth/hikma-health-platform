@@ -20,7 +20,12 @@ import Patient from "@/models/Patient"
 import { useDataAccess } from "@/providers/DataAccessProvider"
 import { DataProviderError } from "../../types/data"
 import type { DataProvider } from "../../types/data"
-import { buildPrefilter, normalizeForSearch, tokenizeForSearch } from "@/utils/parsers"
+import {
+  buildPrefilter,
+  normalizeForSearch,
+  rankByRelevance,
+  tokenizeForSearch,
+} from "@/utils/parsers"
 
 import { useClinicIdsWithPermission } from "./useClinicIdsWithPermission"
 import { useDebounce } from "./useDebounce"
@@ -39,6 +44,15 @@ function fieldLikeClause(column: string, value: string | number, fieldType: stri
   }
   return Q.where(column, Q.like(buildPrefilter(normalizeForSearch(raw))))
 }
+
+/**
+ * How many rows a name search pulls before ranking.
+ *
+ * Ranking happens in JS, so without over-fetching the page is only a recency
+ * slice of the match set. 500 is a bound, not a measurement — lower it if
+ * search feels sluggish on older hardware.
+ */
+const RANK_CANDIDATE_BUDGET = 500
 
 // Re-export SearchFilter so screens can reference it without importing the old hook
 export type SearchFilter = {
@@ -123,9 +137,10 @@ export function useDataProviderPatients(
           pageSize,
           formFields,
           userId,
-          debouncedSearchFilter,
           debouncedSearchParams,
-          searchFilterQuery: searchFilter.query,
+          // Debounced: the effect below re-subscribes on this, and the scan is
+          // unindexed.
+          searchFilterQuery: debouncedSearchFilter.query,
         },
   )
 
@@ -157,7 +172,6 @@ type OfflineParams = {
   pageSize: number
   formFields: RegistrationFormField[]
   userId: string
-  debouncedSearchFilter: SearchFilter
   debouncedSearchParams: Record<string, string>
   searchFilterQuery: string
 }
@@ -198,7 +212,7 @@ function useOfflinePatients(params: OfflineParams | null) {
     if (canViewHistoryClinicIds === null) return
 
     setIsLoading(true)
-    const { debouncedSearchFilter, debouncedSearchParams, formFields, searchFilterQuery } = params
+    const { debouncedSearchParams, formFields, searchFilterQuery } = params
 
     // Separate base fields (direct patient columns) from attribute fields
     const baseFields = formFields
@@ -242,17 +256,19 @@ function useOfflinePatients(params: OfflineParams | null) {
       return fieldLikeClause(col, field.value, field.fieldType)
     })
 
-    // Build name search conditions: any token may match given_name OR surname.
+    // Every token must match given_name OR surname: AND across tokens, OR
+    // across columns, the same shape `searchRanked` uses.
     const nameTokens = tokenizeForSearch(searchFilterQuery)
+    const isNameSearch = searchFilterQuery.length > 1 && nameTokens.length > 0
     let ptQueryConditionsWithStr: any[] = []
-    if (searchFilterQuery.length > 1 && nameTokens.length > 0) {
+    if (isNameSearch) {
       ptQueryConditionsWithStr = [
         Q.and(
-          Q.or(
-            ...nameTokens.flatMap((token) => [
+          ...nameTokens.map((token) =>
+            Q.or(
               Q.where("given_name", Q.like(buildPrefilter(token))),
               Q.where("surname", Q.like(buildPrefilter(token))),
-            ]),
+            ),
           ),
         ),
         ...patientQueryConditions,
@@ -261,12 +277,14 @@ function useOfflinePatients(params: OfflineParams | null) {
       ptQueryConditionsWithStr = patientQueryConditions
     }
 
-    // Sort order: when searching, sort by name; otherwise most recent first
+    // Candidate-selection order only — `rankByRelevance` sets the display order.
     const ptQueryConditions = [Q.sortBy("updated_at", "desc")]
-    if (ptQueryConditionsWithStr.length > 0) {
-      ptQueryConditions.push(Q.sortBy("given_name", "asc"))
-      ptQueryConditions.push(Q.sortBy("surname", "asc"))
-    }
+
+    // Both queries below share the limit: they are intersected, so a smaller
+    // cap on either side drops patients that matched.
+    const candidateLimit = isNameSearch
+      ? Math.max(totalShowingResults, RANK_CANDIDATE_BUDGET)
+      : totalShowingResults
 
     const sub = patientsRef
       .query(
@@ -277,7 +295,7 @@ function useOfflinePatients(params: OfflineParams | null) {
           Q.where("primary_clinic_id", Q.oneOf(canViewHistoryClinicIds)),
           Q.where("primary_clinic_id", null),
         ),
-        Q.take(totalShowingResults),
+        Q.take(candidateLimit),
       )
       .observe()
       .subscribe(async (patientRes) => {
@@ -294,7 +312,7 @@ function useOfflinePatients(params: OfflineParams | null) {
                   ...patientAttrsQueryConditions,
                   ...queryPtIds,
                   Q.sortBy("updated_at", "desc"),
-                  Q.take(totalShowingResults),
+                  Q.take(candidateLimit),
                 )
                 .fetch()
 
@@ -317,8 +335,18 @@ function useOfflinePatients(params: OfflineParams | null) {
             ? patientRes
             : patientRes.filter((pt) => attrPatientIds.includes(pt.id))
 
-        // Convert to Patient.T via fromDB transformer
-        setPatients([...filteredPatients, ...patientsRes2].map(Patient.DB.fromDB))
+        const matched = [...filteredPatients, ...patientsRes2]
+
+        // `LIKE` wildcards every ambiguous Arabic letter, so many candidates do
+        // not contain the query. Rank first, then cut to the requested page.
+        const display = isNameSearch
+          ? rankByRelevance(matched, ["given_name", "surname"], searchFilterQuery, {
+              // A real substring hit, not just letters-in-order.
+              minTokenScore: 2,
+            }).slice(0, totalShowingResults)
+          : matched
+
+        setPatients(display.map(Patient.DB.fromDB))
         setIsLoading(false)
       })
 

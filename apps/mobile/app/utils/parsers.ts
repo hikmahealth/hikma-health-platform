@@ -225,8 +225,6 @@ export async function searchRanked<T extends Model>(
   if (tokens.length === 0) return []
   if (columns.length === 0) return []
 
-  const queryFlat = tokens.join("")
-
   // Phase 1: each token must appear in some column (leading `%` => full scan,
   // no index; fine on-device at moderate row counts, measure if tables grow).
   const clause = Q.and(
@@ -237,7 +235,32 @@ export async function searchRanked<T extends Model>(
   )
   const candidates = await collection.query(clause).fetch()
 
-  // Phase 2: re-normalize, reject false positives, score, rank.
+  return rankByRelevance(candidates, columns, rawQuery)
+}
+
+/**
+ * Phase 2 on its own: reject candidates that do not really contain every token,
+ * then rank — exact full match, then summed token score, then shortest field.
+ *
+ * Split out of `searchRanked` for callers that must build their own phase-1
+ * query, like the patient list with its permission and attribute clauses.
+ *
+ * @param candidates  rows that already passed a phase-1 prefilter
+ * @param columns     real DB column names holding searchable text
+ * @param minTokenScore  lowest per-token score to keep (see `scoreToken`)
+ */
+export function rankByRelevance<T extends Model>(
+  candidates: readonly T[],
+  columns: string[],
+  rawQuery: string,
+  { minTokenScore = 1 }: { minTokenScore?: number } = {},
+): T[] {
+  const tokens = tokenizeForSearch(rawQuery)
+  if (tokens.length === 0) return []
+  if (columns.length === 0) return []
+
+  const queryFlat = tokens.join("")
+
   const scored: ScoredRecord<T>[] = []
   for (const record of candidates) {
     const haystack = columns
@@ -247,7 +270,10 @@ export async function searchRanked<T extends Model>(
     const hayFlat = haystack.replace(/ /g, "")
 
     const tokenScores = tokens.map((token) => scoreToken(words, hayFlat, token))
-    if (tokenScores.some((score) => score < 0)) continue // some token missing → reject
+    // 1 keeps `lettersInOrder` subsequence hits — the typo tolerance the
+    // duplicate-patient search wants. 2 demands a real substring, or "علي"
+    // matches "عبدالله المصري" by scattered letters.
+    if (tokenScores.some((score) => score < minTokenScore)) continue
 
     scored.push({
       record,

@@ -23,7 +23,8 @@ import Event from "@/models/Event"
 import ICDEntry from "@/models/ICDEntry"
 import Peer from "@/models/Peer"
 import { colors } from "@/theme/colors"
-import { getProviderAuthHeader } from "@/utils/authHeader"
+import { getProviderAuthHeader, refreshProviderToken } from "@/utils/authHeader"
+import { requestWithSessionRetry } from "@/utils/authorizedRequest"
 
 import { If } from "./If"
 
@@ -269,8 +270,11 @@ function FileAttachmentField({
       const authorization = await getProviderAuthHeader()
       if (!authorization) throw new Error("Not signed in. Please sign in again.")
 
-      const apiUrl = await Peer.getActiveUrl()
-      if (!apiUrl) throw new Error("No server URL configured")
+      // Attachments are cloud-only; `getActiveUrl` would hand back the hub.
+      const apiUrl = await Peer.getCloudApiUrl()
+      if (!apiUrl) {
+        throw new Error("Attachments need a cloud server, and none is configured on this device.")
+      }
 
       const storedKind = attachmentKind(mimetype)
       const extension =
@@ -278,8 +282,11 @@ function FileAttachmentField({
       const target = `${FileSystem.cacheDirectory}hh_attachment_${resourceId}${extension}`
 
       const url = `${apiUrl}/api/events/${eventId}/attachments/${resourceId}`
-      const result = await FileSystem.downloadAsync(url, target, {
-        headers: { Authorization: authorization },
+      const result = await requestWithSessionRetry({
+        authorization,
+        refresh: () => refreshProviderToken(apiUrl),
+        attempt: (auth) =>
+          FileSystem.downloadAsync(url, target, { headers: { Authorization: auth } }),
       })
 
       // A non-200 wrote a JSON error body to the file, not the attachment.

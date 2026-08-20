@@ -72,7 +72,8 @@ import {
   getOptionId,
   type ResolvedFormTranslations,
 } from "@/utils/eventFormTranslations"
-import { getProviderAuthHeader } from "@/utils/authHeader"
+import { getProviderAuthHeader, refreshProviderToken } from "@/utils/authHeader"
+import { requestWithSessionRetry } from "@/utils/authorizedRequest"
 import { sanitizeFieldName, unsanitizeFormData } from "@/utils/fieldNameSanitizer"
 import { EVENT_MULTI_SEPARATOR, joinMultiValues } from "@/utils/parsers"
 import { useSafeAreaInsetsStyle } from "@/utils/useSafeAreaInsetsStyle"
@@ -830,8 +831,11 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
     const authorization = await getProviderAuthHeader()
     if (!authorization) throw new Error("Not signed in. Please sign in again.")
 
-    const apiUrl = await Peer.getActiveUrl()
-    if (!apiUrl) throw new Error("No server URL configured")
+    // Not `getActiveUrl`: it prefers the hub, which serves no `/api` routes.
+    const apiUrl = await Peer.getCloudApiUrl()
+    if (!apiUrl) {
+      throw new Error("Uploads need a cloud server, and none is configured on this device.")
+    }
 
     const resourceId = uuidv7()
 
@@ -840,23 +844,26 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
       // serializer rejects React Native's `{ uri, name, type }` file part with
       // "Unsupported FormDataPart implementation". uploadAsync also streams from
       // disk instead of buffering up to 50MB into JS memory.
-      const uploaded = await FileSystem.uploadAsync(
-        `${apiUrl}/api/forms/resources`,
-        file.uri,
-        {
-          httpMethod: "POST",
-          uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-          fieldName: "file",
-          mimeType: file.mimeType,
-          parameters: {
-            id: resourceId,
-            patient_id: patientId,
-            clinic_id: clinicId,
-            field_id: field.id,
-          },
-          headers: { Authorization: authorization },
-        },
-      )
+      // `resourceId` is fixed outside the retry, so a replay resolves to the
+      // same resource rather than attaching the file twice.
+      const uploaded = await requestWithSessionRetry({
+        authorization,
+        refresh: () => refreshProviderToken(apiUrl),
+        attempt: (auth) =>
+          FileSystem.uploadAsync(`${apiUrl}/api/forms/resources`, file.uri, {
+            httpMethod: "POST",
+            uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+            fieldName: "file",
+            mimeType: file.mimeType,
+            parameters: {
+              id: resourceId,
+              patient_id: patientId,
+              clinic_id: clinicId,
+              field_id: field.id,
+            },
+            headers: { Authorization: auth },
+          }),
+      })
 
       if (uploaded.status < 200 || uploaded.status >= 300) {
         throw new Error(uploadErrorMessage(uploaded.status))

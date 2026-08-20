@@ -40,7 +40,7 @@ const CLINIC_ID = "clinic-1"
 const provider = { id: "provider-1", name: "Dr. Test", clinicId: CLINIC_ID }
 
 const prescriptionForm = (over: Partial<Prescription.T> = {}): Prescription.T => ({
-  ...Prescription.empty,
+  ...Prescription.empty(),
   patientId: PATIENT_ID,
   providerId: provider.id,
   pickupClinicId: CLINIC_ID,

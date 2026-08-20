@@ -9,8 +9,10 @@ use base64::Engine;
 use ring::hmac;
 use serde::{Deserialize, Serialize};
 
-/// Default token time-to-live: 24 hours in seconds
-const DEFAULT_TTL_SECS: i64 = 24 * 60 * 60;
+/// Default token time-to-live, matching the cloud server's `User.signIn`.
+/// Clients recover from expiry via `AUTH_FAILED` -> `Peer.Hub.refreshToken`;
+/// without that refresh, hub sync breaks every two hours.
+const DEFAULT_TTL_SECS: i64 = 2 * 60 * 60;
 
 /// Pre-computed base64url encoding of `{"alg":"HS256","typ":"JWT"}`
 const HEADER_B64: &str = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
@@ -53,7 +55,7 @@ fn now_secs() -> i64 {
 }
 
 impl JwtClaims {
-    /// Creates claims with default 24-hour expiry from now.
+    /// Creates claims with the default expiry (`DEFAULT_TTL_SECS`) from now.
     pub fn new(user_id: String, clinic_id: String, role: String) -> Self {
         let now = now_secs();
         Self {
@@ -231,6 +233,15 @@ mod tests {
         let header_json = r#"{"alg":"HS256","typ":"JWT"}"#;
         let expected = URL_SAFE_NO_PAD.encode(header_json.as_bytes());
         assert_eq!(HEADER_B64, expected);
+    }
+
+    // Pinned: drift back to 24h desyncs hub and cloud session lifetimes.
+    #[test]
+    fn default_ttl_is_two_hours() {
+        assert_eq!(DEFAULT_TTL_SECS, 2 * 60 * 60);
+
+        let claims = JwtClaims::new("u1".into(), "c1".into(), "admin".into());
+        assert_eq!(claims.exp - claims.iat, 2 * 60 * 60);
     }
 
     #[test]

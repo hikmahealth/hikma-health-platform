@@ -29,6 +29,20 @@ function rpcError(code: RpcError["code"], message: string): RpcResult<never> {
 }
 
 /**
+ * Read an error out of a hub response envelope, or null when there isn't one.
+ *
+ * A hub failure arrives as HTTP 200 with a plaintext `error` and an empty
+ * `payload`, so decrypting it reports "Failed to decrypt" and loses the real
+ * message. A hub too old to send `error_code` degrades to SERVER_ERROR.
+ */
+function hubEnvelopeError(json: { error?: string; error_code?: string }): RpcResult<never> | null {
+  if (!json?.error) return null
+  return json.error_code === "AUTH_FAILED"
+    ? rpcError("AUTH_FAILED", json.error)
+    : rpcError("SERVER_ERROR", json.error)
+}
+
+/**
  * Create an encrypted transport for hub communication.
  * Encrypts request payloads with AES-GCM, decrypts responses.
  */
@@ -53,6 +67,8 @@ export function createEncryptedTransport(session: HubSession): RpcTransport {
           return rpcError("NETWORK_ERROR", `HTTP ${response.status}`)
         }
         const json = await response.json()
+        const envelopeError = hubEnvelopeError(json)
+        if (envelopeError) return envelopeError
         const decrypted = decryptFromWire(sharedKey, json.payload, "command_response")
         if (!decrypted) return rpcError("DECRYPTION_FAILED", "Failed to decrypt command response")
         return { ok: true, data: decrypted as T }
@@ -91,6 +107,11 @@ export function createEncryptedTransport(session: HubSession): RpcTransport {
           return rpcError("NETWORK_ERROR", `HTTP ${response.status}`)
         }
         const json = await response.json()
+        const envelopeError = hubEnvelopeError(json)
+        if (envelopeError) {
+          Logger.warn({ msg: "[RpcTransport:hub] sendQuery rejected", query, error: envelopeError })
+          return envelopeError
+        }
         const decrypted = decryptFromWire(sharedKey, json.payload, "query_response")
         if (!decrypted) {
           Logger.error({ msg: "[RpcTransport:hub] sendQuery decryption failed", query })

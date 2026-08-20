@@ -69,7 +69,8 @@ export const PatientDiagnosisEditorScreen: FC<PatientDiagnosisEditorScreenProps>
   const [verificationStatus, setVerificationStatus] =
     useState<PatientProblems.VerificationStatus>("provisional")
   const [severityScore, setSeverityScore] = useState("")
-  const [onsetDate, setOnsetDate] = useState<Date>(new Date())
+  // Null until picked: defaulting at mount records the day the screen opened.
+  const [onsetDate, setOnsetDate] = useState<Date | null>(null)
   const [endDate, setEndDate] = useState<Date | null>(null)
   const [showEndDate, setShowEndDate] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -150,7 +151,7 @@ export const PatientDiagnosisEditorScreen: FC<PatientDiagnosisEditorScreenProps>
           clinicalStatus,
           verificationStatus,
           severityScore: Option.fromNullable(score),
-          onsetDate: Option.some(onsetDate),
+          onsetDate: Option.some(onsetDate ?? new Date()),
           endDate: Option.fromNullable(endDate),
         },
       })
@@ -229,7 +230,7 @@ export const PatientDiagnosisEditorScreen: FC<PatientDiagnosisEditorScreenProps>
           <View mb={spacing.md}>
             <Text tx="diagnosisEditor:onsetDate" preset="formLabel" style={$label} />
             <DatePickerButton
-              date={onsetDate}
+              date={onsetDate ?? new Date()}
               onDateChange={setOnsetDate}
               maximumDate={new Date()}
             />
@@ -263,7 +264,7 @@ export const PatientDiagnosisEditorScreen: FC<PatientDiagnosisEditorScreenProps>
                 <DatePickerButton
                   date={endDate}
                   onDateChange={setEndDate}
-                  minimumDate={onsetDate}
+                  minimumDate={onsetDate ?? undefined}
                   maximumDate={new Date()}
                 />
               </View>

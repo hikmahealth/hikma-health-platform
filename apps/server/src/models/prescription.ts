@@ -1,3 +1,4 @@
+import { addDays } from "date-fns";
 import { Option } from "effect";
 import {
   type ColumnType,
@@ -159,6 +160,29 @@ namespace Prescription {
     export type Prescriptions = Selectable<T>;
     export type NewPrescriptions = Insertable<T>;
     export type PrescriptionsUpdate = Updateable<T>;
+  }
+
+  /**
+   * Validity window when a prescription is saved without an expiry. Mirrors the
+   * mobile default; the two models are separate, so it is stated in both.
+   */
+  const DEFAULT_VALIDITY_DAYS = 90;
+
+  /**
+   * The expiry to store for a prescription, as an ISO string. The web form
+   * leaves it optional; an absent one falls back to `DEFAULT_VALIDITY_DAYS`
+   * after the prescribing moment, matching what mobile writes.
+   */
+  export function resolveExpirationDate(
+    expirationDate: unknown,
+    prescribedAt: unknown,
+  ): string {
+    if (expirationDate) return toSafeDateString(expirationDate);
+
+    return addDays(
+      new Date(toSafeDateString(prescribedAt)),
+      DEFAULT_VALIDITY_DAYS,
+    ).toISOString();
   }
 
   export namespace API {
@@ -379,11 +403,10 @@ namespace Prescription {
                 filled_by: prescription.filled_by || null,
                 visit_id: visitId,
                 priority: prescription.priority,
-                expiration_date: prescription.expiration_date
-                  ? sql`${toSafeDateString(
-                      prescription.expiration_date,
-                    )}::timestamp with time zone`
-                  : null,
+                expiration_date: sql`${resolveExpirationDate(
+                  prescription.expiration_date,
+                  prescription.prescribed_at,
+                )}::timestamp with time zone`,
                 prescribed_at: sql`${toSafeDateString(
                   prescription.prescribed_at,
                 )}::timestamp with time zone`,

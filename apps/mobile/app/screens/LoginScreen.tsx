@@ -156,8 +156,8 @@ export const LoginScreen: FC<LoginScreenProps> = ({ navigation }) => {
       return
     }
 
-    // Cloud login flow — verify a cloud peer is registered
-    const cloudUrl = await Peer.getActiveUrl()
+    // Cloud login flow; the hub branch above already returned.
+    const cloudUrl = await Peer.getCloudApiUrl()
     if (!cloudUrl) {
       Alert.alert(translate("login:invalidQRMessage"))
       return
@@ -168,7 +168,7 @@ export const LoginScreen: FC<LoginScreenProps> = ({ navigation }) => {
     try {
       // Use User.signIn from the User module
       // This now handles updating the provider store and storing credentials
-      await User.signIn(creds.email, creds.password)
+      await User.signIn(creds.email, creds.password, cloudUrl)
       setIsLoading(false)
     } catch (e) {
       Logger.error({ msg: "[Login] Login error: ", e })

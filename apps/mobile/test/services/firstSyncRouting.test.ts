@@ -19,7 +19,7 @@ const mockGetLastPulledAt = jest.fn()
 const mockSignIn = jest.fn()
 const mockSignOut = jest.fn()
 const mockDeactivate = jest.fn()
-let mockActivePeers: { id: string; peerType: string }[] = []
+let mockActivePeers: { id: string; peerType: string; metadata?: { url: string } }[] = []
 let mockPeerCalls = 0
 
 jest.mock("@/db", () => ({ __esModule: true, default: {} }))
@@ -56,6 +56,9 @@ jest.mock("@/models/Peer", () => ({
       },
       deactivatePeersById: (...a: unknown[]) => mockDeactivate(...a),
     },
+    // Mirrors the real `Peer.getUrl`: the backfill authenticates against the
+    // peer it was handed, so sign-in needs this to resolve.
+    getUrl: (peer: { metadata?: { url?: string } }) => peer?.metadata?.url ?? null,
   },
 }))
 
@@ -111,8 +114,12 @@ const backfillReturning = (result: unknown, delayMs = 0) =>
 
 const OK_RESULT = { ok: true, recordsPushed: 0, recordsApplied: 5_000, rejected: {} }
 
-const CLOUD_PEER = { id: "cloud-1", peerType: "cloud_server" }
-const HUB_PEER = { id: "hub-1", peerType: "sync_hub" }
+const CLOUD_PEER = {
+  id: "cloud-1",
+  peerType: "cloud_server",
+  metadata: { url: "https://cloud.example.org" },
+}
+const HUB_PEER = { id: "hub-1", peerType: "sync_hub", metadata: { url: "http://192.168.1.9:4001" } }
 
 beforeEach(() => {
   jest.clearAllMocks()
@@ -131,6 +138,16 @@ describe("first sync routing", () => {
 
     expect(mockRunManualSync).toHaveBeenCalledTimes(1)
     expect(mockRunManualSync.mock.calls[0][0]).toMatchObject({ peerId: "cloud-1", since: 0 })
+  })
+
+  // Sign-in used to resolve its host from the active peer, which prefers a
+  // hub — so a dual-paired device authenticated against a host with no /api
+  // routes while syncing the cloud. The host comes from the peer being synced.
+  it("authenticates against the cloud peer's own url", async () => {
+    await startSync("provider@example.com")
+
+    expect(mockSignIn).toHaveBeenCalledTimes(1)
+    expect(mockSignIn.mock.calls[0][2]).toBe("https://cloud.example.org")
   })
 
   // The fallback is a second chance, not a replacement. A device whose backfill

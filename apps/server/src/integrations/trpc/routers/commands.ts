@@ -153,11 +153,9 @@ export const commandProcedures = {
     .input(z.object({ email: z.string(), password: z.string() }))
     .mutation(async ({ input }) => {
       try {
-        const { user, token } = await User.signIn(
-          input.email,
-          input.password,
-          24,
-        );
+        // No explicit lifetime: the 2-hour default is standard across every
+        // login path. This one used to mint 24-hour tokens.
+        const { user, token } = await User.signIn(input.email, input.password);
         return {
           token,
           user_id: user.id,

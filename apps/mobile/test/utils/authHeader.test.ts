@@ -9,13 +9,22 @@
 const mockGetItemAsync = jest.fn()
 const mockSetItemAsync = jest.fn()
 
+jest.mock("@hikmahealth/js-utils", () => ({
+  Logger: { log: jest.fn(), error: jest.fn(), warn: jest.fn() },
+}))
+
 jest.mock("expo-secure-store", () => ({
   __esModule: true,
   getItemAsync: (key: string) => mockGetItemAsync(key),
   setItemAsync: (key: string, value: string) => mockSetItemAsync(key, value),
 }))
 
-import { getBearerToken, getProviderAuthHeader, refreshBearerToken } from "@/utils/authHeader"
+import {
+  getBearerToken,
+  getProviderAuthHeader,
+  refreshBearerToken,
+  refreshProviderToken,
+} from "@/utils/authHeader"
 
 /** Back the mocked SecureStore with a plain map. */
 const store = (entries: Record<string, string | null>) => {
@@ -118,5 +127,107 @@ describe("refreshBearerToken", () => {
 
     await expect(refreshBearerToken(t as never)).resolves.toBe(false)
     expect(entries.provider_token).toBe("stale")
+  })
+})
+
+describe("refreshProviderToken", () => {
+  const mockFetch = jest.fn()
+  const realFetch = global.fetch
+
+  beforeEach(() => {
+    mockFetch.mockReset()
+    ;(global as { fetch: unknown }).fetch = mockFetch
+  })
+  afterAll(() => {
+    ;(global as { fetch: unknown }).fetch = realFetch
+  })
+
+  const responds = (status: number, body: unknown) =>
+    mockFetch.mockResolvedValue({ status, json: async () => body })
+
+  // The fix for the reported bug: a session minted two hours ago is replaced
+  // rather than reported to the provider as "please sign in again".
+  it("mints a fresh token from stored credentials and caches it", async () => {
+    const entries = store({
+      provider_token: "stale",
+      provider_email: "a@b.c",
+      provider_password: "pw",
+    })
+    responds(200, { token: "fresh" })
+
+    await expect(refreshProviderToken("https://api.test")).resolves.toBe("Bearer fresh")
+
+    expect(entries.provider_token).toBe("fresh")
+    await expect(getProviderAuthHeader()).resolves.toBe("Bearer fresh")
+  })
+
+  it("posts the credentials to the login endpoint of the given host", async () => {
+    store({ provider_email: "a@b.c", provider_password: "pw" })
+    responds(200, { token: "fresh" })
+
+    await refreshProviderToken("https://api.test")
+
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe("https://api.test/api/login")
+    expect(init.method).toBe("POST")
+    expect(JSON.parse(init.body)).toEqual({ email: "a@b.c", password: "pw" })
+  })
+
+  it("reports failure without calling the server when no credentials are stored", async () => {
+    store({ provider_token: "stale" })
+
+    await expect(refreshProviderToken("https://api.test")).resolves.toBeNull()
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  // Every failure below must leave the cached token alone, or a transient
+  // outage becomes a forced re-login mid-shift.
+  it("leaves the cached token alone when the server refuses", async () => {
+    const entries = store({
+      provider_token: "stale",
+      provider_email: "a@b.c",
+      provider_password: "pw",
+    })
+    responds(401, { error: "Invalid credentials" })
+
+    await expect(refreshProviderToken("https://api.test")).resolves.toBeNull()
+    expect(entries.provider_token).toBe("stale")
+  })
+
+  it("treats a 200 carrying no token as a failure", async () => {
+    const entries = store({
+      provider_token: "stale",
+      provider_email: "a@b.c",
+      provider_password: "pw",
+    })
+    responds(200, {})
+
+    await expect(refreshProviderToken("https://api.test")).resolves.toBeNull()
+    expect(entries.provider_token).toBe("stale")
+  })
+
+  // The device is offline, which is the normal state for this app.
+  it("returns null rather than throwing when the request fails outright", async () => {
+    const entries = store({
+      provider_token: "stale",
+      provider_email: "a@b.c",
+      provider_password: "pw",
+    })
+    mockFetch.mockRejectedValue(new Error("Network request failed"))
+
+    await expect(refreshProviderToken("https://api.test")).resolves.toBeNull()
+    expect(entries.provider_token).toBe("stale")
+  })
+
+  it("returns null rather than throwing when the body is not JSON", async () => {
+    store({ provider_token: "stale", provider_email: "a@b.c", provider_password: "pw" })
+    mockFetch.mockResolvedValue({
+      status: 200,
+      json: async () => {
+        throw new Error("Unexpected token < in JSON")
+      },
+    })
+
+    await expect(refreshProviderToken("https://api.test")).resolves.toBeNull()
   })
 })

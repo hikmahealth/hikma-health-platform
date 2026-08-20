@@ -8,7 +8,12 @@ import { useSelector } from "@xstate/react"
 import { format, isSameDay, isToday, startOfDay } from "date-fns"
 import { Option } from "effect"
 import { upperFirst } from "es-toolkit"
-import { LucideListTodo, LucideSearch } from "lucide-react-native"
+import {
+  LucideChevronDown,
+  LucideChevronUp,
+  LucideListTodo,
+  LucideSearch,
+} from "lucide-react-native"
 import DropDownPicker from "react-native-dropdown-picker"
 import { catchError, of as of$ } from "rxjs"
 
@@ -57,8 +62,24 @@ export const PharmacyViewScreen: FC<PharmacyViewScreenProps> = ({ route, navigat
 
   const { clinics: clinicsList, isLoading: isLoadingClinics } = useDBClinicsList()
 
-  const { prescriptions, clearFilters, filters, handleFiltersChange, loadMore } =
+  const { groups, isTruncated, clearFilters, filters, handleFiltersChange, loadMore } =
     useDBPrescriptionsFilter(propsClinicId, clinicsList)
+
+  // Only groups the user explicitly toggled; absent means "use the default",
+  // so a group appearing later does not inherit a stale entry.
+  const [openOverrides, setOpenOverrides] = useState<Record<string, boolean>>({})
+
+  const toggleGroup = (patientId: string, isOpen: boolean) => {
+    setOpenOverrides((previous) => ({ ...previous, [patientId]: !isOpen }))
+  }
+
+  // A change to any filter is a different set of groups, so overrides reset —
+  // including when the day turns over on its own.
+  const filtersKey = `${filters.status}_${filters.clinicId}_${filters.country}_${filters.city}_${filters.searchQuery}__${filters.date.toDateString()}`
+
+  useEffect(() => {
+    setOpenOverrides((previous) => (Object.keys(previous).length === 0 ? previous : {}))
+  }, [filtersKey])
 
   const handlePrescriptionPress = (prescription: Prescription.T) => {
     navigation.navigate("PrescriptionView", {
@@ -75,6 +96,11 @@ export const PharmacyViewScreen: FC<PharmacyViewScreenProps> = ({ route, navigat
     )
   }
 
+  // LegendList memoizes rows against extraData, so open state has to be in it.
+  const openOverridesKey = Object.entries(openOverrides)
+    .map(([patientId, isOpen]) => `${patientId}:${isOpen ? 1 : 0}`)
+    .join("|")
+
   return (
     <LegendList
       ListHeaderComponent={
@@ -87,33 +113,61 @@ export const PharmacyViewScreen: FC<PharmacyViewScreenProps> = ({ route, navigat
         />
       }
       // ItemSeparatorComponent={ItemSeparatorComponent}
-      data={prescriptions}
+      data={groups}
       // data={[]}
       renderItem={({ item }) => {
+        const isOpen = openOverrides[item.patientId] ?? isOpenByDefault(item)
         return (
           <View px={10}>
-            <PrescriptionListItem
-              onPress={() => handlePrescriptionPress(item)}
-              prescription={item}
+            <PatientPrescriptionsGroup
+              group={item}
+              patientId={item.patientId}
+              isOpen={isOpen}
+              onToggle={() => toggleGroup(item.patientId, isOpen)}
+              onPrescriptionPress={handlePrescriptionPress}
             />
           </View>
         )
       }}
       recycleItems={false}
-      // Re-render items if the prescription status changes
-      keyExtractor={(item) => `${item.id}_${item.updatedAt}`}
+      // Re-render groups if a prescription status changes
+      keyExtractor={(item) => `${item.patientId}_${groupRevision(item)}`}
       ListEmptyComponent={
         <View justifyContent="center" px={10} alignItems="center" pt={"40%"}>
           <LucideListTodo size={120} color={theme.colors.textDim} />
           <Text text="No prescriptions found" size="xl" />
         </View>
       }
-      ListFooterComponent={<View mb={64}></View>}
+      ListFooterComponent={
+        <View mb={64} px={10} pt={10}>
+          {isTruncated && (
+            <Text
+              testID="pharmacy-prescriptions-truncated"
+              text="Too many prescriptions for this day to show them all. Narrow the filters to see the rest."
+              size="xxs"
+              color={theme.colors.textDim}
+            />
+          )}
+        </View>
+      }
       onEndReached={loadMore}
       onEndReachedThreshold={0.5}
-      extraData={`${filters.status}_${filters.clinicId}_${filters.country}_${filters.city}_${filters.searchQuery}__${filters.date.toDateString()}`}
+      extraData={`${filtersKey}__${openOverridesKey}`}
     />
   )
+}
+
+/** A single prescription has nothing to summarise, so it opens. */
+const isOpenByDefault = (group: Prescription.PatientGroup): boolean =>
+  group.prescriptions.length === 1
+
+/** Changes whenever the group's membership or any of its prescriptions change. */
+const groupRevision = (group: Prescription.PatientGroup): string => {
+  let latestUpdateMs = 0
+  for (const prescription of group.prescriptions) {
+    latestUpdateMs = Math.max(latestUpdateMs, prescription.updatedAt?.getTime() ?? 0)
+  }
+  return `${group.prescriptions.length}_${latestUpdateMs}`
 }
 
 type PrescriptionListHeaderProps = {
@@ -328,7 +382,79 @@ const PrescriptionsListHeader: FC<PrescriptionListHeaderProps> = ({
   )
 }
 
-// this one should be enhanced!
+// Keyed on `patientId` rather than `group`: grouping mints a fresh group object
+// on every emit, which would resubscribe the patient each time.
+const enhancePatientGroup = withObservables(
+  ["patientId"],
+  ({ patientId }: { patientId: string }) => ({
+    patient: db
+      .get<Patient.DB.T>("patients")
+      .findAndObserve(patientId)
+      .pipe(catchError(() => of$(null))),
+  }),
+)
+
+/** One patient's prescriptions for the day, behind a name/count/status header. */
+const PatientPrescriptionsGroup = enhancePatientGroup(
+  ({
+    group,
+    patient,
+    isOpen,
+    onToggle,
+    onPrescriptionPress,
+  }: {
+    group: Prescription.PatientGroup
+    patientId: string
+    patient: Patient.DB.T | null
+    isOpen: boolean
+    onToggle: () => void
+    onPrescriptionPress: (prescription: Prescription.T) => void
+  }) => {
+    const { theme, themed } = useAppTheme()
+    const Chevron = isOpen ? LucideChevronUp : LucideChevronDown
+
+    // A prescription can outlive its patient row, and reading a name off
+    // nothing would take down the whole group.
+    const title = patient ? Patient.displayName(patient) : "Patient does not exist anymore."
+
+    return (
+      <View style={themed($patientGroup)}>
+        <Pressable testID={`pharmacy-patient-group-${group.patientId}`} onPress={onToggle}>
+          <View direction="row" alignItems="center" gap={8} px={16} py={12}>
+            <Chevron size={20} color={theme.colors.textDim} />
+
+            <View flex={1}>
+              <Text testID={`pharmacy-patient-name-${group.patientId}`} text={title} size={"lg"} />
+              <Text
+                testID={`pharmacy-patient-status-summary-${group.patientId}`}
+                text={Prescription.describeStatusCounts(group.statusCounts)}
+                size={"xxs"}
+                color={theme.colors.textDim}
+              />
+            </View>
+
+            <View
+              testID={`pharmacy-patient-prescription-count-${group.patientId}`}
+              style={themed($countBadge)}
+            >
+              <Text text={String(group.prescriptions.length)} size={"xs"} />
+            </View>
+          </View>
+        </Pressable>
+
+        {isOpen &&
+          group.prescriptions.map((prescription) => (
+            <PrescriptionListItem
+              key={prescription.id}
+              prescription={prescription}
+              onPress={() => onPrescriptionPress(prescription)}
+            />
+          ))}
+      </View>
+    )
+  },
+)
+
 const enhance = withObservables(
   ["prescription"],
   ({ prescription }: { prescription: Prescription.T }) => ({
@@ -336,32 +462,22 @@ const enhance = withObservables(
       .get<Prescription.DB.T>("prescriptions")
       .findAndObserve(prescription.id)
       .pipe(catchError(() => of$(null))),
-    patient: db
-      .get("patients")
-      .findAndObserve(prescription.patientId)
-      .pipe(catchError(() => of$(null))),
-    // pharmacy: db.get("pharmacies").findAndObserve(prescription.pharmacyId),
   }),
 )
 
 const PrescriptionListItem = enhance(
-  ({
-    prescription,
-    patient,
-    onPress,
-  }: {
-    prescription: Prescription.DB.T
-    patient: Patient.DB.T
-    onPress: () => void
-  }) => {
+  ({ prescription, onPress }: { prescription: Prescription.DB.T | null; onPress: () => void }) => {
     const { themed } = useAppTheme()
 
     const [prescribedDrugs, setPrescribedDrugs] = useState<DrugCatalogue.DB.T[]>([])
+    const prescriptionId = prescription?.id
 
     useEffect(() => {
+      if (!prescriptionId) return
+
       const sub = database
         .get<DrugCatalogue.DB.T>(DrugCatalogue.DB.table_name)
-        .query(Q.on("prescription_items", "prescription_id", prescription.id))
+        .query(Q.on("prescription_items", "prescription_id", prescriptionId))
         .observe()
         .subscribe((drugs) => {
           setPrescribedDrugs(drugs)
@@ -370,15 +486,7 @@ const PrescriptionListItem = enhance(
       return () => {
         sub.unsubscribe()
       }
-    }, [prescription.id])
-
-    if (!patient) {
-      return (
-        <View>
-          <Text text="Patient does not exist anymore." />
-        </View>
-      )
-    }
+    }, [prescriptionId])
 
     if (!prescription) {
       return (
@@ -393,12 +501,6 @@ const PrescriptionListItem = enhance(
     return (
       <Pressable testID={`pharmacy-prescription-item-${prescription.id}`} onPress={onPress}>
         <View style={themed($prescriptionListItem)}>
-          <Text
-            testID={`pharmacy-patient-name-${prescription.id}`}
-            text={Patient.displayName(patient)}
-            size={"lg"}
-          />
-
           <View direction="row" py={2}>
             <View
               testID={`pharmacy-prescription-status-${prescription.id}`}
@@ -450,8 +552,26 @@ const $prescriptionListItem: ThemedStyle<ViewStyle> = ({ spacing, colors }) => (
   paddingVertical: spacing.md,
   paddingHorizontal: spacing.md,
   backgroundColor: colors.palette.neutral200,
-  borderBottomWidth: 1,
-  borderBottomColor: colors.border,
+  borderTopWidth: 1,
+  borderTopColor: colors.border,
+})
+
+const $patientGroup: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
+  marginBottom: spacing.sm,
+  borderWidth: 1,
+  borderColor: colors.border,
+  borderRadius: 8,
+  backgroundColor: colors.palette.neutral200,
+  overflow: "hidden",
+})
+
+const $countBadge: ThemedStyle<ViewStyle> = ({ spacing, colors }) => ({
+  minWidth: 28,
+  alignItems: "center",
+  paddingVertical: 2,
+  paddingHorizontal: spacing.xs,
+  borderRadius: 12,
+  backgroundColor: colors.palette.neutral300,
 })
 
 const $root: ViewStyle = {

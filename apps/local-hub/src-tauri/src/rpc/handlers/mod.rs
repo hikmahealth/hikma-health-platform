@@ -93,7 +93,7 @@ pub fn dispatch_command(
                 "[rpc_command] rejected \"{}\": no token provided",
                 cmd.command
             );
-            return serde_json::json!({ "error": "Authentication required" });
+            return auth_error("Authentication required");
         }
     };
     let auth_ctx = match crate::rpc::auth::authenticate(token, jwt_key, conn) {
@@ -103,7 +103,7 @@ pub fn dispatch_command(
                 "[rpc_command] rejected \"{}\": auth failed — {e}",
                 cmd.command
             );
-            return serde_json::json!({ "error": e });
+            return auth_error(e);
         }
     };
 
@@ -310,14 +310,14 @@ pub fn dispatch_query(
         Some(t) => t,
         None => {
             eprintln!("[rpc_query] rejected \"{}\": no token provided", qry.query);
-            return serde_json::json!({ "error": "Authentication required" });
+            return auth_error("Authentication required");
         }
     };
     let auth_ctx = match crate::rpc::auth::authenticate(token, jwt_key, conn) {
         Ok(ctx) => ctx,
         Err(e) => {
             eprintln!("[rpc_query] rejected \"{}\": auth failed — {e}", qry.query);
-            return serde_json::json!({ "error": e });
+            return auth_error(e);
         }
     };
 
@@ -494,6 +494,15 @@ pub fn dispatch_query(
     result
 }
 
+/// An auth rejection, tagged so the client refreshes its token instead of
+/// stranding the user. The message is still what gets logged and shown.
+fn auth_error(message: impl Into<String>) -> serde_json::Value {
+    serde_json::json!({
+        "error": message.into(),
+        "error_code": crate::rpc::ERROR_CODE_AUTH_FAILED,
+    })
+}
+
 /// Runs a fallible handler, converting errors to a JSON error object.
 fn try_handle<F>(f: F) -> serde_json::Value
 where
@@ -609,6 +618,74 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Authentication required"));
+    }
+
+    // Only one of these two is worth a retry, so they must be distinguishable.
+    #[test]
+    fn dispatch_unauthenticated_command_is_tagged_auth_failed() {
+        let conn = setup_test_db();
+        let cmd = RpcCommandPayload {
+            command: "register_patient".to_string(),
+            data: serde_json::json!({}),
+            token: None,
+        };
+        let result = dispatch_command(&cmd, &conn, Some(TEST_JWT_KEY));
+        assert_eq!(result["error_code"], crate::rpc::ERROR_CODE_AUTH_FAILED);
+    }
+
+    #[test]
+    fn dispatch_unauthenticated_query_is_tagged_auth_failed() {
+        let conn = setup_test_db();
+        let qry = RpcQueryPayload {
+            query: "get_patients".to_string(),
+            params: serde_json::json!({}),
+            token: None,
+        };
+        let result = dispatch_query(&qry, &conn, Some(TEST_JWT_KEY));
+        assert_eq!(result["error_code"], crate::rpc::ERROR_CODE_AUTH_FAILED);
+    }
+
+    // An expired token means "refresh and retry", not "sign in again".
+    #[test]
+    fn dispatch_expired_token_is_tagged_auth_failed() {
+        let conn = setup_test_db();
+        let expired = crate::crypto::jwt::JwtClaims {
+            sub: "u1".into(),
+            clinic_id: "c1".into(),
+            role: "admin".into(),
+            iat: 1000,
+            exp: 1001,
+        };
+        let token = crate::crypto::jwt::sign(&expired, TEST_JWT_KEY).unwrap();
+        let qry = RpcQueryPayload {
+            query: "get_patients".to_string(),
+            params: serde_json::json!({}),
+            token: Some(token),
+        };
+        let result = dispatch_query(&qry, &conn, Some(TEST_JWT_KEY));
+
+        assert_eq!(result["error_code"], crate::rpc::ERROR_CODE_AUTH_FAILED);
+        assert!(result["error"].as_str().unwrap().contains("expired"));
+    }
+
+    // A non-auth failure must not be tagged, or the client refreshes forever.
+    // Authenticated on purpose, or auth rejects before the unknown-query branch.
+    #[test]
+    fn dispatch_unknown_query_is_not_tagged_auth_failed() {
+        let conn = setup_test_db();
+        insert_test_user_and_permissions(&conn, "u1", "c1");
+        let qry = RpcQueryPayload {
+            query: "no_such_query".to_string(),
+            params: serde_json::json!({}),
+            token: Some(make_test_token("u1", "c1")),
+        };
+        let result = dispatch_query(&qry, &conn, Some(TEST_JWT_KEY));
+
+        assert!(result["error"]
+            .as_str()
+            .unwrap()
+            .contains("Unknown query"));
+        assert!(result.get("error_code").is_none());
     }
 
     #[test]

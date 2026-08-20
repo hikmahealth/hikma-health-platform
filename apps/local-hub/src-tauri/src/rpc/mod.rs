@@ -138,7 +138,16 @@ pub struct RpcResponse {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Machine-readable classification of `error`.
+    ///
+    /// Errors travel as HTTP 200 with a plaintext `error`, so this is the only
+    /// thing a client can branch on. Optional, so older clients are unaffected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
 }
+
+/// `error_code` value for a request whose token is missing, malformed, or expired.
+pub const ERROR_CODE_AUTH_FAILED: &str = "AUTH_FAILED";
 
 impl RpcResponse {
     pub fn success(payload: String) -> Self {
@@ -146,6 +155,7 @@ impl RpcResponse {
             payload,
             success: true,
             error: None,
+            error_code: None,
         }
     }
 
@@ -154,6 +164,17 @@ impl RpcResponse {
             payload: String::new(),
             success: false,
             error: Some(msg.into()),
+            error_code: None,
+        }
+    }
+
+    /// An error the client is expected to recognise and handle.
+    pub fn error_with_code(msg: impl Into<String>, code: impl Into<String>) -> Self {
+        Self {
+            payload: String::new(),
+            success: false,
+            error: Some(msg.into()),
+            error_code: Some(code.into()),
         }
     }
 }

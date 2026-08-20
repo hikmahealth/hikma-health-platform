@@ -436,6 +436,15 @@ fn rpc_handshake(Json(req): Json<rpc::HandshakeRequest>) -> Result<impl IntoResp
     }))
 }
 
+/// Wire response for a dispatch-level error, preserving any `error_code` the
+/// handler attached — without it the client can only string-match the message.
+fn error_response(message: &str, result: &serde_json::Value) -> rpc::RpcResponse {
+    match result.get("error_code").and_then(|v| v.as_str()) {
+        Some(code) => rpc::RpcResponse::error_with_code(message, code),
+        None => rpc::RpcResponse::error(message),
+    }
+}
+
 #[handler]
 fn rpc_command(Json(req): Json<rpc::RpcRequest>) -> Result<impl IntoResponse> {
     let client_id = rpc::ClientId(req.client_id);
@@ -476,7 +485,7 @@ fn rpc_command(Json(req): Json<rpc::RpcRequest>) -> Result<impl IntoResponse> {
 
     // Check for dispatch-level errors before encrypting
     if let Some(err) = result.get("error").and_then(|v| v.as_str()) {
-        return Ok(Json(rpc::RpcResponse::error(err)));
+        return Ok(Json(error_response(err, &result)));
     }
 
     // Encrypt successful response
@@ -531,7 +540,7 @@ fn rpc_query(Json(req): Json<rpc::RpcRequest>) -> Result<impl IntoResponse> {
 
     // Check for dispatch-level errors before encrypting
     if let Some(err) = result.get("error").and_then(|v| v.as_str()) {
-        return Ok(Json(rpc::RpcResponse::error(err)));
+        return Ok(Json(error_response(err, &result)));
     }
 
     // Encrypt successful response

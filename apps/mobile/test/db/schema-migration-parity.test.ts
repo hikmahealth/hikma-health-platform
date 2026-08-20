@@ -393,3 +393,92 @@ describe("repairSchemaDrift emits what WatermelonDB itself would emit", () => {
     },
   )
 })
+
+/**
+ * `type` and `isOptional` are invisible to SQLite — `encodeCreateTable` emits
+ * typeless, constraint-free columns — so they may differ between the paths.
+ *
+ * `isIndexed` is the exception: it emits a real `create index`, so a mismatch
+ * ships two populations running the same query against different plans.
+ * `schema.ts` is the fresh-install truth, the replay is the upgraded device.
+ *
+ * `repairSchemaDrift` only adds columns, so a new entry here is a migration to
+ * write, not a runtime repair.
+ */
+function replayIndexes(): Map<string, Map<string, boolean>> {
+  const shape = new Map<string, Map<string, boolean>>()
+
+  for (const migration of schemaMigrations.sortedMigrations) {
+    for (const step of migration.steps) {
+      if (step.type === "create_table") {
+        const s = step as Extract<Step, { type: "create_table" }>
+        shape.set(
+          s.schema.name,
+          new Map(Object.values(s.schema.columns).map((c) => [c.name, !!c.isIndexed])),
+        )
+      } else if (step.type === "add_columns") {
+        const s = step as Extract<Step, { type: "add_columns" }>
+        const columns = shape.get(s.table) ?? new Map<string, boolean>()
+        for (const column of s.columns) columns.set(column.name, !!column.isIndexed)
+        shape.set(s.table, columns)
+      }
+    }
+  }
+  return shape
+}
+
+/**
+ * The index drift that already shipped: upgraded devices and fresh installs
+ * disagree about one index each. Nothing here changes a result, only its plan.
+ *
+ * New index drift is a missing migration — do not add a row without that check.
+ */
+const KNOWN_INDEX_DRIFT: Readonly<Record<string, readonly string[]>> = {
+  // Indexed by the migration, not by schema.ts: upgraded devices carry an index
+  // fresh installs do not, so writes cost slightly more there.
+  patient_vitals: ["visit_id", "timestamp"],
+  patient_problems: ["visit_id", "clinical_status"],
+  // The other direction: `schema.ts` indexes it and the v9 `createTable` did
+  // not, so upgraded devices scan where fresh installs seek.
+  peers: ["peer_id"],
+}
+
+describe("migrations reproduce schema.ts's indexes", () => {
+  const indexed = replayIndexes()
+
+  const drift = (): Record<string, string[]> => {
+    const found: Record<string, string[]> = {}
+    for (const [table, columns] of indexed) {
+      const declared = appSchema.tables[table]?.columns
+      if (!declared) continue
+      const mismatched = [...columns]
+        .filter(([column, wasIndexed]) => {
+          const declaredColumn = declared[column]
+          return declaredColumn && !!declaredColumn.isIndexed !== wasIndexed
+        })
+        .map(([column]) => column)
+      if (mismatched.length > 0) found[table] = mismatched
+    }
+    return found
+  }
+
+  it("has tables to check", () => {
+    // A refactor that broke the replay would make the assertion below pass by
+    // finding nothing rather than by finding nothing wrong.
+    expect(indexed.size).toBeGreaterThan(10)
+  })
+
+  it("no table gains or loses an index without a migration", () => {
+    expect(drift()).toEqual(KNOWN_INDEX_DRIFT)
+  })
+
+  it("every allow-listed column is still declared in schema.ts", () => {
+    // Drop one from schema.ts and it drops out of `drift()` silently, leaving a
+    // stale entry that widens the allow-list for a future re-added column.
+    const undeclared = Object.entries(KNOWN_INDEX_DRIFT).flatMap(([table, columns]) =>
+      columns.filter((column) => !appSchema.tables[table]?.columns[column]),
+    )
+
+    expect(undeclared).toEqual([])
+  })
+})

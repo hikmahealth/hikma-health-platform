@@ -2,6 +2,7 @@ import { Buffer } from "buffer"
 import * as SecureStore from "expo-secure-store"
 
 import type { LoginResponse, RpcResult } from "@/rpc/types"
+import { Logger } from "@hikmahealth/js-utils"
 
 /**
  * Authorization header for provider-authenticated requests, or null when no
@@ -60,4 +61,41 @@ export const refreshBearerToken = async (transport: {
 
   await SecureStore.setItemAsync("provider_token", result.data.token)
   return true
+}
+
+/**
+ * Mint a fresh session token over REST and cache it, for callers recovering
+ * from a 401. Tokens expire after two hours while a tablet stays signed in all
+ * shift, and `getProviderAuthHeader` falls back to Basic only when there is no
+ * token at all — so a dead one shadows credentials that would still work.
+ *
+ * Separate from `refreshBearerToken`, which needs a tRPC transport the upload
+ * and download paths never build.
+ *
+ * Returns null without touching the cached token when refresh fails.
+ */
+export const refreshProviderToken = async (apiUrl: string): Promise<string | null> => {
+  const [email, password] = await Promise.all([
+    SecureStore.getItemAsync("provider_email"),
+    SecureStore.getItemAsync("provider_password"),
+  ])
+  if (!email || !password) return null
+
+  try {
+    const response = await fetch(`${apiUrl}/api/login`, {
+      method: "POST",
+      headers: { "Accept": "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    })
+    if (response.status !== 200) return null
+
+    const body = (await response.json()) as { token?: string } | null
+    if (!body?.token) return null
+
+    await SecureStore.setItemAsync("provider_token", body.token)
+    return `Bearer ${body.token}`
+  } catch (error) {
+    Logger.warn({ msg: "Session refresh failed", error })
+    return null
+  }
 }

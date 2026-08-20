@@ -136,6 +136,9 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
       fulfilledVisitId: null,
       // If its a walk-in, it means the patient is already here and should be checked-in.
       status: submission.isWalkIn ? "checked_in" : "pending",
+      // Stamped at save, not when the toggle flipped: a form left open past
+      // midnight would otherwise file under the previous day.
+      timestamp: submission.isWalkIn ? new Date() : submission.timestamp,
       createdAt: new Date(),
       updatedAt: new Date(),
     }

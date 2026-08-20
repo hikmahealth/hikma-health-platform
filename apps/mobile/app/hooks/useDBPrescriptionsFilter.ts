@@ -4,6 +4,7 @@ import { useDebounceValue } from "usehooks-ts"
 
 import database from "@/db"
 import PrescriptionModel from "@/db/model/Prescription"
+import { useFollowCurrentDay } from "@/hooks/useFollowCurrentDay"
 import Clinic from "@/models/Clinic"
 import Prescription from "@/models/Prescription"
 import { Logger } from "@hikmahealth/js-utils"
@@ -28,7 +29,16 @@ const initialFilters: PrescriptionsFilters = {
   searchQuery: "",
 }
 
-const PAGE_SIZE = 50
+/** How many more patient groups each `loadMore` reveals. */
+const GROUP_PAGE_SIZE = 20
+
+/**
+ * Upper bound on the prescriptions read for one day.
+ *
+ * The per-patient counts must describe the whole day, so the query cannot be
+ * paged by row. `isTruncated` reports when this ceiling bites.
+ */
+const DAY_ROW_CEILING = 2000
 
 export function useDBPrescriptionsFilter(
   clinicId: string,
@@ -38,7 +48,10 @@ export function useDBPrescriptionsFilter(
   filters: PrescriptionsFilters
   handleFiltersChange: (newFilters: Partial<PrescriptionsFilters>) => void
   clearFilters: () => void
-  prescriptions: Prescription.T[]
+  /** Patient groups revealed so far, each carrying that patient's full day. */
+  groups: Prescription.PatientGroup[]
+  /** True when the day held more prescriptions than `DAY_ROW_CEILING`. */
+  isTruncated: boolean
   loadMore: () => Promise<void>
   isLoading: boolean
 } {
@@ -48,13 +61,11 @@ export function useDBPrescriptionsFilter(
     date: date && isValid(new Date(date)) ? startOfDay(new Date(date)) : startOfDay(new Date()),
   })
 
-  const [pagination, setPagination] = useState({
-    offset: 0,
-    limit: PAGE_SIZE,
-  })
+  const [visibleGroupCount, setVisibleGroupCount] = useState(GROUP_PAGE_SIZE)
 
   const [loading, setLoading] = useState(true)
-  const [prescriptionResults, setPrescriptionResults] = useState<Prescription.T[]>([])
+  const [dayGroups, setDayGroups] = useState<Prescription.PatientGroup[]>([])
+  const [isTruncated, setIsTruncated] = useState(false)
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useDebounceValue(filters.searchQuery, 500)
 
   useEffect(() => {
@@ -92,34 +103,29 @@ export function useDBPrescriptionsFilter(
       clinicIds,
       statusFilter,
       date,
-      pagination,
+      { offset: 0, limit: DAY_ROW_CEILING },
     )
 
-    // Execute query subscription
+    // `observe()` alone misses a status change that keeps the row in the set,
+    // leaving the breakdown claiming a status the row no longer has.
     const sub = database
       .get<PrescriptionModel>("prescriptions")
       .query(...conditions)
-      .observe()
+      .observeWithColumns(["status"])
       .subscribe((prescriptions) => {
         const results = prescriptions.map(Prescription.DB.rawToT)
-        setPrescriptionResults(results)
+        setDayGroups(Prescription.groupByPatient(results))
+        setIsTruncated(results.length >= DAY_ROW_CEILING)
         setLoading(false)
       })
 
     return () => {
       sub.unsubscribe()
     }
-  }, [
-    clinicIdsKey,
-    filters.status,
-    dateString,
-    debouncedSearchQuery,
-    pagination.limit,
-    pagination.offset,
-  ])
+  }, [clinicIdsKey, filters.status, dateString, debouncedSearchQuery])
 
   const handleFiltersChange = (newFilters: Partial<PrescriptionsFilters>) => {
-    setPagination({ offset: 0, limit: PAGE_SIZE })
+    setVisibleGroupCount(GROUP_PAGE_SIZE)
 
     // Prune only on a location change. On every change it would clear a clinic
     // the user never chose to clear: the provider's own clinic is absent from
@@ -143,8 +149,10 @@ export function useDBPrescriptionsFilter(
     })
   }
 
+  useFollowCurrentDay(filters.date, (today) => handleFiltersChange({ date: today }))
+
   const clearFilters = () => {
-    setPagination({ offset: 0, limit: PAGE_SIZE })
+    setVisibleGroupCount(GROUP_PAGE_SIZE)
     setFilters({
       ...initialFilters,
       clinicId,
@@ -152,26 +160,27 @@ export function useDBPrescriptionsFilter(
     })
   }
 
-  /**
-   * This handles infinite scroll, so we just increase the limit and re-run
-   */
+  /** Infinite scroll: the day is already in memory, so this widens the slice. */
   const loadMore = async () => {
-    // Check if we've received fewer results than requested
-    // This indicates we've reached the end of available data
-    if (prescriptionResults.length < pagination.limit) {
+    if (visibleGroupCount >= dayGroups.length) {
       Logger.log("Reached end of prescription data")
       return
     }
 
-    const nextPageLimit = pagination.limit + PAGE_SIZE
-    setPagination((prev) => ({ ...prev, limit: nextPageLimit }))
+    setVisibleGroupCount((previous) => previous + GROUP_PAGE_SIZE)
   }
+
+  const groups = useMemo(
+    () => dayGroups.slice(0, visibleGroupCount),
+    [dayGroups, visibleGroupCount],
+  )
 
   return {
     filters,
     handleFiltersChange,
     clearFilters,
-    prescriptions: prescriptionResults,
+    groups,
+    isTruncated,
     isLoading: loading,
     loadMore,
   }

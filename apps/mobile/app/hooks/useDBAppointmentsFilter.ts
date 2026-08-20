@@ -3,6 +3,7 @@ import { isValid, startOfDay } from "date-fns"
 import { useDebounceValue } from "usehooks-ts"
 
 import database from "@/db"
+import { useFollowCurrentDay } from "@/hooks/useFollowCurrentDay"
 import Appointment from "@/models/Appointment"
 import Clinic from "@/models/Clinic"
 
@@ -180,6 +181,8 @@ export function useDBAppointmentsFilter(
       return { ...next, ...location }
     })
   }
+
+  useFollowCurrentDay(filters.date, (today) => handleFiltersChange({ date: today }))
 
   const clearFilters = () => {
     setFilters({ ...initialFilters, clinicId, date: startOfDay(new Date()) })

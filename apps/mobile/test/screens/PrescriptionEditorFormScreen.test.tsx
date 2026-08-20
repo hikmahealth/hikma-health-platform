@@ -1,7 +1,9 @@
 import React from "react"
 import { fireEvent, waitFor } from "@testing-library/react-native"
+import { differenceInCalendarDays } from "date-fns"
 import { render } from "../helpers/renderWithProviders"
 import { PrescriptionEditorFormScreen } from "../../app/screens/PrescriptionEditorFormScreen"
+import Prescription from "@/models/Prescription"
 
 jest.mock("react-native-keyboard-controller", () => {
   const RN = require("react-native")
@@ -118,12 +120,20 @@ jest.mock("@nozbe/watermelondb/react", () => ({
 jest.mock("@/db", () => ({
   __esModule: true,
   default: {
-    get: jest.fn(() => ({
+    // Only the clinic inventory emits, and only what a test put in
+    // `__INVENTORY__`. Every other collection keeps the silent subscription
+    // the rest of this file was written against.
+    get: jest.fn((table: string) => ({
       find: jest.fn(() => (global as any).__RX_FIND__()),
       findAndObserve: jest.fn(),
       query: jest.fn(() => ({
         observe: jest.fn(() => ({
-          subscribe: jest.fn(() => ({ unsubscribe: jest.fn() })),
+          subscribe: jest.fn((next?: (rows: unknown[]) => void) => {
+            if (table === "clinic_inventory" && next) {
+              next((global as any).__INVENTORY__ ?? [])
+            }
+            return { unsubscribe: jest.fn() }
+          }),
           pipe: jest.fn(() => ({
             subscribe: jest.fn(() => ({ unsubscribe: jest.fn() })),
           })),
@@ -296,7 +306,10 @@ beforeEach(() => {
   ;(global as any).__PERM_GUARD__ = allowAll()
   ;(global as any).__RX_FIND__ = () => Promise.resolve(existingPrescription)
   ;(global as any).__RX_ITEMS__ = []
+  ;(global as any).__INVENTORY__ = []
 })
+
+const stockedDrug = { id: "inventory-1", drugId: "drug-1", quantityAvailable: 20 }
 
 describe("PrescriptionEditorFormScreen", () => {
   it("renders without crashing", () => {
@@ -444,5 +457,92 @@ describe("PrescriptionEditorFormScreen — editing", () => {
     await waitFor(() => {
       expect(mockNavigation.goBack).toHaveBeenCalled()
     })
+  })
+})
+
+/**
+ * `prescribed_at` is what the pharmacy day view buckets on, so a stale one
+ * files a prescription under the wrong day. It has no control on this form —
+ * the only place it can be set correctly is at save.
+ */
+describe("PrescriptionEditorFormScreen — prescribing time", () => {
+  const OPENED_AT = new Date(2019, 2, 14, 23, 40)
+  const SAVED_AT = new Date(2019, 2, 15, 9, 15)
+
+  let create: jest.SpyInstance
+
+  beforeEach(() => {
+    create = jest
+      .spyOn(Prescription.DB, "create")
+      .mockResolvedValue({ prescriptionId: "rx-new", visitId: "visit-1" })
+  })
+
+  afterEach(() => {
+    create.mockRestore()
+    jest.useRealTimers()
+  })
+
+  const savedPrescription = () => create.mock.calls[0][1] as Prescription.T
+
+  it("stamps a new prescription with the day it was saved, not the day it was opened", async () => {
+    ;(global as any).__INVENTORY__ = [stockedDrug]
+
+    jest.useFakeTimers()
+    jest.setSystemTime(OPENED_AT)
+
+    const { getByTestId } = render(
+      <PrescriptionEditorFormScreen navigation={mockNavigation} route={mockRoute} />,
+    )
+
+    fireEvent.press(getByTestId("open-add-prescription-item-form"))
+    await waitFor(() => expect(getByTestId("clinic-inventory-search")).toBeTruthy())
+    fireEvent.press(getByTestId("inventory-item-drug-1"))
+    await waitFor(() => expect(getByTestId("submit-prescription")).toBeTruthy())
+
+    // The form has now been open across midnight, which is where a default
+    // captured at mount — or at import — files the prescription a day early.
+    jest.setSystemTime(SAVED_AT)
+    fireEvent.press(getByTestId("submit-prescription"))
+
+    await waitFor(() => expect(create).toHaveBeenCalled())
+    const { prescribedAt } = savedPrescription()
+    expect(differenceInCalendarDays(prescribedAt, SAVED_AT)).toBe(0)
+    expect(prescribedAt.getTime()).toBeGreaterThanOrEqual(SAVED_AT.getTime())
+  })
+
+  it("gives a new prescription a future expiry", async () => {
+    ;(global as any).__INVENTORY__ = [stockedDrug]
+
+    const { getByTestId } = render(
+      <PrescriptionEditorFormScreen navigation={mockNavigation} route={mockRoute} />,
+    )
+
+    fireEvent.press(getByTestId("open-add-prescription-item-form"))
+    await waitFor(() => expect(getByTestId("clinic-inventory-search")).toBeTruthy())
+    fireEvent.press(getByTestId("inventory-item-drug-1"))
+
+    await waitFor(() => expect(getByTestId("submit-prescription")).toBeTruthy())
+    fireEvent.press(getByTestId("submit-prescription"))
+
+    await waitFor(() => expect(create).toHaveBeenCalled())
+    const saved = savedPrescription()
+    expect(saved.expirationDate).toEqual(Prescription.defaultExpirationDate(saved.prescribedAt))
+    expect(saved.expirationDate.getTime()).toBeGreaterThan(saved.prescribedAt.getTime())
+  })
+
+  it("keeps the original prescribing moment when an existing one is edited", async () => {
+    ;(global as any).__RX_ITEMS__ = [existingItem()]
+
+    const { getByTestId } = render(
+      <PrescriptionEditorFormScreen navigation={mockNavigation} route={editRoute()} />,
+    )
+
+    await waitFor(() => expect(getByTestId("submit-prescription")).toBeTruthy())
+    fireEvent.press(getByTestId("submit-prescription"))
+
+    await waitFor(() => expect(create).toHaveBeenCalled())
+    const saved = savedPrescription()
+    expect(saved.prescribedAt).toEqual(existingPrescription.prescribedAt)
+    expect(saved.expirationDate).toEqual(existingPrescription.expirationDate)
   })
 })

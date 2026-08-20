@@ -12,7 +12,7 @@ import { useFocusEffect } from "@react-navigation/native"
 import { NativeStackScreenProps } from "@react-navigation/native-stack"
 import { useSelector } from "@xstate/react"
 import { Option } from "effect"
-import { cloneDeep, groupBy, sortBy, upperFirst } from "es-toolkit"
+import { groupBy, sortBy, upperFirst } from "es-toolkit"
 import { LucidePlus, LucideX } from "lucide-react-native"
 import { Controller, useForm } from "react-hook-form"
 import Toast from "react-native-root-toast"
@@ -94,7 +94,7 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
     watch,
   } = useForm<Prescription.T>({
     defaultValues: {
-      ...cloneDeep(Prescription.empty),
+      ...Prescription.empty(),
       providerId,
       visitId: visitId || undefined,
       pickupClinicId: providerClinicId,
@@ -289,8 +289,16 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
       return
     }
 
+    // Stamped at save: a form default is captured at mount and backdates
+    // anything saved later. An edit keeps the moment already on the record.
+    const prescribedAt = isEditing ? submission.prescribedAt : new Date()
+
     const data: Prescription.T = {
       ...submission,
+      prescribedAt,
+      expirationDate: isEditing
+        ? submission.expirationDate
+        : Prescription.defaultExpirationDate(prescribedAt),
       createdAt: new Date(),
       updatedAt: new Date(),
     }

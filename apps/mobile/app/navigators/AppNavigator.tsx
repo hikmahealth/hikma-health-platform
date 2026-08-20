@@ -192,13 +192,15 @@ const AppStack = () => {
       const hasCloudPeer = cloudPeers.length > 0
 
       const reachableCloudServer = hasCloudPeer ? await Peer.isAnyCloudReachable() : null
-      if (reachableCloudServer?.reachable) {
+      if (reachableCloudServer?.reachable && reachableCloudServer.url) {
         const email = await SecureStore.getItemAsync("provider_email")
         const password = await SecureStore.getItemAsync("provider_password")
 
         if (email && password) {
           try {
-            await User.signIn(email, password)
+            // The cloud peer this block just proved reachable — the active
+            // peer on a hub-paired device is the hub, which has no /api routes.
+            await User.signIn(email, password, reachableCloudServer.url)
           } catch (err) {
             Logger.error("[Login] Error logging in with email and password")
             Sentry.captureException(err, {

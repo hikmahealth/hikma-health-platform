@@ -12,6 +12,8 @@ import * as Sentry from "@sentry/react-native"
 import { getResultData } from "../../types/data"
 
 import Peer from "@/models/Peer"
+import type { RpcResult } from "@/rpc/types"
+import type { RpcTransport } from "@/rpc/transport"
 import User from "@/models/User"
 import { logger } from "@/utils/logger"
 
@@ -38,10 +40,7 @@ type SyncPullResponse = {
   timestamp: number
 }
 
-/**
- * Exported so the first-sync backfill reads credentials the same way this module
- * does, rather than growing a second definition of where they live.
- */
+/** Exported so the first-sync backfill reads credentials the same way. */
 export const getCredentials = async (): Promise<{ email: string; password: string }> => {
   const email = await EncryptedStorage.getItem("provider_email")
   const password = await EncryptedStorage.getItem("provider_password")
@@ -56,20 +55,22 @@ const buildBasicAuthHeaders = (email: string, password: string): Headers => {
   return headers
 }
 
-const getSyncApiUrl = async (): Promise<string> => {
-  const url = await Peer.getActiveUrl()
+/** `/api/v2/sync` is cloud-only; the hub serves no such route. */
+const getCloudBaseUrl = (peer: Peer.T): string => {
+  const url = Peer.getUrl(peer)
   if (!url) throw new Error("HH API URL not found")
-  return `${url}/api/v2/sync`
+  return url
 }
 
 const syncCloud = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> => {
   const { email, password } = await getCredentials()
+  const cloudUrl = getCloudBaseUrl(peer)
+  const SYNC_API = `${cloudUrl}/api/v2/sync`
 
   // Refreshes clinic and roles, which the pull below depends on.
-  await User.signIn(email, password)
+  await User.signIn(email, password, cloudUrl)
 
   const headers = buildBasicAuthHeaders(email, password)
-  const SYNC_API = await getSyncApiUrl()
 
   callbacks.setSyncStart()
 
@@ -129,20 +130,45 @@ const syncCloud = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> 
 const syncHub = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> => {
   callbacks.setSyncStart()
 
-  const transport = await Peer.Hub.getTransport()
+  let transport = await Peer.Hub.getTransport()
   if (!transport) {
     throw new Error("Hub not connected — pair with a hub first")
   }
 
   const lastPulledAt = peer.lastSyncedAt ?? 0
-  const token_res = await Peer.Session.getTokenByPeerId(peer.peerId)
-  const token = getResultData(token_res, undefined)
-  logger.log("[HUB SYNC]", { lastPulledAt, peer: JSON.stringify(peer, null, 2), token })
+  const readToken = async (): Promise<string | undefined> =>
+    getResultData(await Peer.Session.getTokenByPeerId(peer.peerId), undefined)
+  let token = await readToken()
+  // The token is deliberately absent from this log: it is a credential.
+  logger.log("[HUB SYNC]", { lastPulledAt, peer: JSON.stringify(peer, null, 2) })
 
-  const pullResult = await transport.sendQuery<SyncPullResponse>(
-    "sync_pull",
-    { lastPulledAt },
-    token,
+  /**
+   * Run one hub call, refreshing the session token if the hub rejects it.
+   *
+   * Scoped to a single call, not the whole sync: by the time a push fails the
+   * pull has already applied remote changes, so rerunning it is a second write.
+   *
+   * The transport is rebuilt after a refresh because it captures the token at
+   * construction and would otherwise keep sending the dead one.
+   */
+  const authed = async <T>(
+    run: (t: RpcTransport, tok: string | undefined) => Promise<RpcResult<T>>,
+  ): Promise<RpcResult<T>> => {
+    const first = await run(transport!, token)
+    if (first.ok || first.error.code !== "AUTH_FAILED") return first
+
+    Logger.warn({ msg: "[Sync] hub rejected the session token, refreshing once" })
+    if (!(await Peer.Hub.refreshToken())) return first
+
+    const refreshed = await Peer.Hub.getTransport()
+    if (!refreshed) return first
+    transport = refreshed
+    token = await readToken()
+    return run(transport, token)
+  }
+
+  const pullResult = await authed((t, tok) =>
+    t.sendQuery<SyncPullResponse>("sync_pull", { lastPulledAt }, tok),
   )
   logger.log("[Sync] After pullResult: ", pullResult)
   if (!pullResult.ok) {
@@ -161,10 +187,9 @@ const syncHub = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> =>
   callbacks.setPushStart(pushCount)
 
   if (pushCount > 0) {
-    const pushResult = await transport.sendCommand("sync_push", {
-      changes: localChanges,
-      lastPulledAt,
-    })
+    const pushResult = await authed((t, tok) =>
+      t.sendCommand("sync_push", { changes: localChanges, lastPulledAt }, tok),
+    )
     if (!pushResult.ok) {
       throw new Error(`sync_push failed: ${pushResult.error.message}`)
     }

@@ -3,7 +3,6 @@ import { CommonActions } from "@react-navigation/native"
 import { Option } from "effect"
 
 import { navigationRef } from "@/navigators/navigationUtilities"
-import Peer from "@/models/Peer"
 import { providerStore } from "@/store/provider"
 import UserClinicPermissions from "./UserClinicPermissions"
 import database from "@/db"
@@ -62,14 +61,19 @@ namespace User {
   }
 
   /**
-   * Sign into the application as a provider or admin
-   * @param email - The email of the provider or admin
-   * @param password - The password of the provider or admin
-   * @returns A promise that resolves to the provider or admin
+   * Sign in against a cloud server. Hub-paired devices go through
+   * `setFromHubLogin` instead.
+   *
+   * `apiUrl` is a parameter because the only lookup available,
+   * `Peer.getActiveUrl()`, prefers the hub — which serves no `/api` routes —
+   * and deactivates the cloud peer on the way past.
    */
-  export const signIn = async (email: string, password: string): Promise<Provider> => {
-    const HIKMA_API = await Peer.getActiveUrl()
-    if (!HIKMA_API) {
+  export const signIn = async (
+    email: string,
+    password: string,
+    apiUrl: string,
+  ): Promise<Provider> => {
+    if (!apiUrl) {
       throw new Error("Invalid API URL")
     }
 
@@ -78,8 +82,8 @@ namespace User {
     }
 
     try {
-      const endpoint = `${HIKMA_API}/api/login`
-      Logger.log({ email, password, endpoint })
+      const endpoint = `${apiUrl}/api/login`
+      Logger.log({ email, endpoint })
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
