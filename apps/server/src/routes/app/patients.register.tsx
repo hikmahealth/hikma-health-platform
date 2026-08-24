@@ -70,7 +70,7 @@ type RegisterPatientInput = {
 };
 
 export const createPatient = createServerFn({ method: "POST" })
-  .inputValidator((data: RegisterPatientInput) => data)
+  .validator((data: RegisterPatientInput) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const token = getCookie("token");
@@ -123,8 +123,7 @@ function RouteComponent() {
     mode: "onSubmit",
   });
 
-  // Rules engine wiring: pre-filter by static admin flags; rule-driven
-  // visibility layers on top.
+  // Static admin flags pre-filter; rule-driven visibility layers on top.
   const fields = useMemo(
     () =>
       (patientRegistrationForm?.fields ?? []).filter(
@@ -133,9 +132,8 @@ function RouteComponent() {
     [patientRegistrationForm?.fields],
   );
 
-  // RHF keys values by `field.column` (legacy); the engine references
-  // fields by `field.id`. Translate at the scope boundary so the engine
-  // contract stays uniform with mobile.
+  // RHF keys by `field.column` (legacy), the engine by `field.id`. Translate
+  // at the scope boundary so the engine contract matches mobile's.
   const watchedValues = useWatch({ control }) as
     Record<string, unknown> | undefined;
   const valuesById = useMemo(() => {
@@ -146,9 +144,8 @@ function RouteComponent() {
     return out;
   }, [fields, watchedValues]);
 
-  // Compile once per field-list reference. The store creates fresh
-  // arrays on every form edit, so the closure re-parses when any rule
-  // slot changes.
+  // The store hands out a fresh array on every edit, so this re-parses
+  // whenever any rule slot changes.
   const evaluator = useMemo(() => {
     const ruleFields: fieldWithRules[] = fields.map((f) => ({
       id: f.id,
@@ -158,9 +155,8 @@ function RouteComponent() {
       validators: f.validators,
       computedValue: f.computedValue,
     }));
-    // `fields` is already pre-filtered to `visible && !deleted`, so the
-    // live set is just its ids; this drops rule references pointing at
-    // fields that were filtered out.
+    // `fields` is already `visible && !deleted`, so its ids are the live set;
+    // this drops rule references to fields that were filtered out.
     const liveFieldIds = ruleFields.map((f) => f.id);
     return compileRules(pruneRulesForLiveFields(ruleFields, liveFieldIds));
   }, [fields]);
@@ -193,10 +189,9 @@ function RouteComponent() {
     return m;
   }, [ruleEvaluation]);
 
-  // Clear-on-hide. Registration is a NEW patient — no DB record to
-  // protect — so we use the simpler event-form policy: clear on every
-  // visible→hidden transition (no first-render baseline skip like
-  // PatientRecordEditorScreen needs).
+  // Clear-on-hide. A new patient has no DB record to protect, so this clears
+  // on every visible→hidden transition — no first-render baseline skip like
+  // PatientRecordEditorScreen needs.
   const previouslyHiddenRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const { nowHidden, newlyHidden } =
@@ -214,8 +209,8 @@ function RouteComponent() {
     previouslyHiddenRef.current = nowHidden;
   }, [ruleEvaluation, fields, setValue]);
 
-  // Computed-value writeback. Structural equality short-circuit so a
-  // rule producing a fresh array/object every eval doesn't loop.
+  // Structural equality, so a rule returning a fresh array each eval
+  // doesn't loop.
   useEffect(() => {
     if (computedCount(ruleEvaluation) === 0) return;
     for (const [fieldId, computed] of computedEntries(ruleEvaluation)) {
@@ -229,11 +224,9 @@ function RouteComponent() {
   }, [ruleEvaluation, fields, setValue, getValues]);
 
   const onSubmit = async (data: any) => {
-    // Rule-driven submit gate. RHF's built-in `required` catches
-    // statically-required-and-empty; this catches conditionally
-    // required-and-empty (`requiredIf` rules) and validator-failed
-    // fields, in one consolidated alert (two alerts in sequence
-    // clobber each other on most browsers).
+    // RHF's `required` covers statically-required fields; this covers
+    // `requiredIf` and failed validators. One consolidated alert, because two
+    // in sequence clobber each other on most browsers.
     const missingRequired = PatientRegistrationForm.getMissingRequiredFields({
       fields,
       values: valuesById,
@@ -284,10 +277,8 @@ function RouteComponent() {
 
     patientRegistrationForm?.fields
       .filter((field) => field.deleted !== true && field.visible)
-      // Defense-in-depth: skip rule-hidden fields. Clear-on-hide
-      // should already have wiped their values, but the same-tick
-      // race where the user submits in the frame a field hides
-      // wouldn't fire the effect yet.
+      // Clear-on-hide should already have wiped these, but submitting in the
+      // same frame a field hides beats the effect.
       .filter((field) => ruleEvaluation.isVisible(field.id))
       .forEach((field) => {
         if (!field.baseField) {
@@ -349,9 +340,8 @@ function RouteComponent() {
     setValue(field.column, value as never, { shouldValidate: true });
   };
 
-  // Visible field set, pre-filtered the same way the rendered list is.
-  // Computed fields stay in this array so `testIndex` keeps counting them
-  // (the e2e fills inputs by positional `register-patient-N`).
+  // Computed fields stay in this array so `testIndex` keeps counting them —
+  // the e2e fills inputs by positional `register-patient-N`.
   const visibleFields = (patientRegistrationForm?.fields ?? [])
     .filter((field) => field.visible && field.deleted !== true)
     .filter((field) => ruleEvaluation.isVisible(field.id));

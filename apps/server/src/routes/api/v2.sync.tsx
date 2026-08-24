@@ -49,18 +49,16 @@ export const Route = createFileRoute("/api/v2/sync")({
           );
           return match(authenticatedCaller)
             .with({ ok: false }, () => {
-              // not a valid caller
               return new Response(JSON.stringify({ error: "Unauthorized" }), {
                 headers: { "Content-Type": "application/json" },
                 status: 401,
               });
             })
             .with({ ok: true }, async ({ data: caller }) => {
-              // Ignore the device check for now, many of the users are actually not authenticated. this should only be checked for sync against the local hub syncs
-              // Capture timestamp before running queries so the client's next sync
+              // Stamped before the queries run, so the client's next sync covers
+              // anything written while they execute.
               const syncTimestamp = Date.now();
 
-              // covers any records created/modified while these queries execute.
               const dbChangeSet = await Sync.getDeltaRecords(
                 last_synced_at,
                 peerType,
@@ -130,17 +128,14 @@ export const Route = createFileRoute("/api/v2/sync")({
 
           return match(authenticatedCaller)
             .with({ ok: false }, () => {
-              // not a valid caller
               return new Response(JSON.stringify({ error: "Unauthorized" }), {
                 headers: { "Content-Type": "application/json" },
                 status: 401,
               });
             })
             .with({ ok: true }, async ({ data: caller }) => {
-              // { [s in 'events' | 'patients' | ....]: { "created": Array<dict[str, any]>, "updated": Array<dict[str, any]>, deleted: []str }}
               const body = (await request.json()) as Sync.PushRequest;
 
-              // expected body structure
               await Sync.persistClientChanges(body, peerType, caller);
               return new Response(JSON.stringify({ success: true }), {
                 headers: { "Content-Type": "application/json" },
@@ -194,9 +189,8 @@ const authenticateRequest = createServerOnlyFn(
         });
       }
 
-      // if the sync is coming from a sync_hub, then we must validate that its a valid device
       if (isBearerToken && peerType === Device.DEVICE_TYPE.SYNC_HUB) {
-        // token is the secret API Key that we can validate with the server to make sure its valid.
+        // The bearer credential here is the device API key, not a session token.
         const deviceResult = await Device.API.getByApiKey(encodedCredentials);
         if (!deviceResult) {
           return Result.err({
@@ -220,15 +214,14 @@ const authenticateRequest = createServerOnlyFn(
         await getAuthenticatedUserFromCredentials(decodedCredentials);
       let clinic: Option<Clinic.EncodedT> = Option.none;
 
-      if (user && user.user && user.user.clinic_id) {
-        const userClinicResult = await Clinic.getById(user.user.clinic_id);
+      if (user.clinic_id) {
+        const userClinicResult = await Clinic.getById(user.clinic_id);
         clinic = Option.some(userClinicResult);
       }
 
       return Result.ok({
-        user: user.user,
+        user,
         clinic,
-        token: user.token,
       });
     } catch (error: any) {
       Logger.error({
@@ -243,6 +236,11 @@ const authenticateRequest = createServerOnlyFn(
   },
 );
 
+/**
+ * Authenticate one sync request from Basic credentials. Verifies rather than
+ * signing in — every pull and push carries these credentials, so `signIn`
+ * would mint a token per request that no client receives.
+ */
 const getAuthenticatedUserFromCredentials = createServerOnlyFn(
   async (credentials: string) => {
     const [email, password] = credentials.split(":");
@@ -250,13 +248,7 @@ const getAuthenticatedUserFromCredentials = createServerOnlyFn(
       throw new Error("Invalid credentials format");
     }
 
-    // Authenticate user with email and password
-    const userResult = await User.signIn(email, password);
-    if (!userResult) {
-      throw new Error("Invalid credentials");
-    }
-
-    return userResult;
+    return await User.verifyCredentials(email, password);
   },
 );
 

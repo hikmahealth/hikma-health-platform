@@ -15,12 +15,9 @@ import { logAuditEvent } from "./audit";
 import { Result } from "@/lib/result";
 import { adminMiddleware } from "@/middleware/auth";
 
-/**
- * Get all events by form id with pagination
- * @returns {Promise<{ events: Event.EncodedT[], pagination: { total: number, offset: number, limit: number, hasMore: boolean } }>} - The list of events and pagination info
- */
+/** Events for one form, paginated. */
 export const getEventsByFormId = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: { form_id: string; limit?: number; offset?: number }) => data,
   )
   .middleware([adminMiddleware])
@@ -56,13 +53,9 @@ export const getEventsByFormId = createServerFn({ method: "GET" })
     },
   );
 
-/**
- * Get all non-deleted events for a visit, ordered by most recent first.
- * This is an online-mode endpoint — the existing sync system continues to work independently.
- * @returns Array of events belonging to the visit
- */
+/** Non-deleted events for a visit, most recent first. Online mode only. */
 export const getVisitEvents = createServerFn({ method: "GET" })
-  .inputValidator((data: { visitId: string }) => data)
+  .validator((data: { visitId: string }) => data)
   .handler(
     async ({
       data,
@@ -97,13 +90,11 @@ export const getVisitEvents = createServerFn({ method: "GET" })
   );
 
 /**
- * Create a new event within an existing visit. The visitId is required — the client
- * must create a visit first before adding events to it.
- * This is an online-mode endpoint — the existing sync system continues to work independently.
- * @returns The new event ID on success
+ * Create an event inside an existing visit — the client must create the visit
+ * first. Online mode only. Returns the new event id.
  */
 export const createEvent = createServerFn({ method: "POST" })
-  .inputValidator((data: CreateEventInput) => data)
+  .validator((data: CreateEventInput) => data)
   .middleware([permissionsMiddleware])
   .handler(
     async ({
@@ -167,14 +158,9 @@ export const createEvent = createServerFn({ method: "POST" })
     },
   );
 
-/**
- * Update the form data and optionally metadata for an existing event.
- * Only form_data and metadata fields are updated — all other fields remain unchanged.
- * This is an online-mode endpoint — the existing sync system continues to work independently.
- * @returns Success status
- */
+/** Update an event's `form_data` and `metadata`, nothing else. Online mode only. */
 export const updateEvent = createServerFn({ method: "POST" })
-  .inputValidator((data: UpdateEventInput) => data)
+  .validator((data: UpdateEventInput) => data)
   .middleware([permissionsMiddleware])
   .handler(
     async ({

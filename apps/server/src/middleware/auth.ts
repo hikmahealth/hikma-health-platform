@@ -79,7 +79,7 @@ export const adminMiddleware = createMiddleware({
 });
 
 export const authMiddleware = createMiddleware({ type: "function" })
-  .inputValidator(
+  .validator(
     (data: { capabilities?: (typeof User.CapabilitySchema.Type)[] }) => data,
   )
   .server(async ({ next, data, context }) => {

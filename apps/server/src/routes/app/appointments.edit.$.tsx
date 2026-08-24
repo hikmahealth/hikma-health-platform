@@ -45,7 +45,7 @@ import { Logger } from "@hikmahealth/js-utils";
 import { adminMiddleware } from "@/middleware/auth";
 
 const saveAppointment = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       appointment: Appointment.EncodedT;
       id: string | null;
@@ -106,7 +106,6 @@ export const Route = createFileRoute("/app/appointments/edit/$")({
   },
 });
 
-// Duration options
 const durationOptions = [
   { label: "Unknown", value: 0 },
   { label: "15 minutes", value: 15 },
@@ -118,7 +117,6 @@ const durationOptions = [
   { label: "8 hours", value: 60 * 8 },
 ];
 
-// Reason options
 const reasonOptions = [
   // { label: "Walk-in", value: "walk-in" },
   { label: "Doctor's Visit", value: "doctor-visit" },
@@ -132,7 +130,6 @@ const reasonOptions = [
   { label: "Other", value: "other" },
 ];
 
-// Status options
 const statusOptions = [
   { label: "Pending", value: "pending" },
   { label: "Confirmed", value: "confirmed" },
@@ -193,7 +190,6 @@ function RouteComponent() {
     } as Appointment.EncodedT,
   });
 
-  // Handle form submission
   const onSubmit = async (values: Appointment.EncodedT) => {
     if (!currentUser || submitting) return;
     setSubmitting(true);
@@ -224,12 +220,10 @@ function RouteComponent() {
     }
   };
 
-  // print out the selected clinic
   Logger.log({ mgs: "Selected Clinic:", clinicId: form.watch("clinic_id") });
 
   const selectedClinic = form.watch("clinic_id");
 
-  // Fetch departments when clinic changes
   useEffect(() => {
     const handleDepartmentsUpdate = async () => {
       if (selectedClinic) {
@@ -240,7 +234,6 @@ function RouteComponent() {
           if (clinicResponse.ok && clinicResponse.data.departments) {
             setAvailableDepartments(clinicResponse.data.departments);
 
-            // Update form field with departments if they don't already have values
             const currentDepartments = form.getValues("departments");
             if (!currentDepartments || currentDepartments.length === 0) {
               // Don't auto-populate departments, let user select them
@@ -351,7 +344,6 @@ function RouteComponent() {
                   render={({ field }) => {
                     const selectedDepartments = field.value || [];
 
-                    // Create options from available departments
                     const departmentOptions = availableDepartments.map(
                       (dept) => ({
                         value: dept.id,
@@ -360,7 +352,6 @@ function RouteComponent() {
                       }),
                     );
 
-                    // Map current value to options format
                     const currentValue = selectedDepartments.map((dept) => ({
                       value: dept.id,
                       label:

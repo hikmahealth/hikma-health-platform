@@ -4,16 +4,15 @@ import type Device from "./models/device";
 import type User from "./models/user";
 
 /**
- * The Caller that made a request.
- * Contains the user information, their token and the device they called from - all derived from the database based on the requests
+ * The caller that made a request: the user, or the device for trusted peers.
+ * Both branches are resolved from the database.
  */
 export type RequestCaller =
   | {
       user: User.EncodedT;
       clinic: Option<Clinic.EncodedT>; // There is a slight chance that the user has no clinic
-      token: string;
     }
   | {
-      // This is for trusted devices like servers and/or local sync_hubs
+      // Trusted peers: other servers and local sync hubs.
       device: Device.Table.Devices;
     };

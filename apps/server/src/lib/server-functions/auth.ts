@@ -5,12 +5,8 @@ import { Option, Schema } from "effect";
 import User from "@/models/user";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 
-/**
- * Get the current user's ID
- * @returns {Promise<string | null>} - The user's ID or null if not authenticated
- */
 export const getCurrentUserId = createServerFn({ method: "GET" })
-  .inputValidator(() => ({}))
+  .validator(() => ({}))
   .handler(async () => {
     const tokenCookie = getCookie("token");
     if (!tokenCookie) return null;
@@ -22,12 +18,9 @@ export const getCurrentUserId = createServerFn({ method: "GET" })
     });
   });
 
-/**
- * Get the current user all masked details
- * @returns {Promise<User.EncodedT | null>} - The user or null if not authenticated
- */
+/** The current user with secrets masked, or null if not authenticated. */
 export const getCurrentUser = createServerFn({ method: "GET" })
-  .inputValidator(() => ({}))
+  .validator(() => ({}))
   .handler(async () => {
     const tokenCookie = getCookie("token");
     if (!tokenCookie) return null;
@@ -49,14 +42,9 @@ export const getCurrentUser = createServerFn({ method: "GET" })
     return user;
   });
 
-/**
- * Check if the current user has all specified permissions for a clinic
- * @param {string} clinicId - The clinic ID to check permissions for
- * @param {Array<keyof Pick<UserClinicPermissions.T, 'can_register_patients' | 'can_view_history' | 'can_edit_records' | 'can_delete_records' | 'is_clinic_admin'>>} permissions - Array of permissions to check
- * @returns {Promise<boolean>} - True if user has all specified permissions, false otherwise
- */
+/** Whether the current user holds *every* listed permission on `clinicId`. */
 export const currentUserHasPermissions = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (input: {
       clinicId: string;
       permissions: Array<
@@ -74,7 +62,6 @@ export const currentUserHasPermissions = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const { clinicId, permissions } = data;
 
-    // Get current user ID
     const tokenCookie = getCookie("token");
     if (!tokenCookie) return false;
 
@@ -86,14 +73,12 @@ export const currentUserHasPermissions = createServerFn({ method: "GET" })
 
     if (!userId) return false;
 
-    // Get user's permissions for the clinic
     const userPermissions = await UserClinicPermissions.API.getByUserAndClinic(
       userId,
       clinicId,
     );
     if (!userPermissions) return false;
 
-    // Check if all requested permissions are true
     return permissions.every(
       (permission) => userPermissions[permission] === true,
     );

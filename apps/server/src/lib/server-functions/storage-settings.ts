@@ -104,19 +104,13 @@ const toFieldView = (
 
 /**
  * Backends whose credentials must be kept: the active one, plus any that still
- * owns a `resources` row. Dropping a credential for a backend that owns rows
- * makes those files unreadable — which for form attachments means PHI a
- * clinician can no longer retrieve.
+ * owns a `resources` row. Dropping one makes those files unreadable — for form
+ * attachments, PHI a clinician can no longer retrieve. Soft-deleted rows count,
+ * since the read routes serve a resource without checking `deleted_at`.
  *
- * Soft-deleted rows count. The read routes serve a resource without checking
- * `deleted_at`, and a stuck credential is a far cheaper mistake than an
- * unreadable one.
- *
- * One `LIMIT 1` seek per candidate against `store_type_ix`, not
- * `SELECT DISTINCT store`: `resources` holds every attachment ever uploaded
- * and grows without bound, while `store` has five values — Postgres will not
- * skip-scan that, so a distinct is a full scan. This runs in the settings-page
- * loader, so it has to stay logarithmic.
+ * One `LIMIT 1` seek per candidate against `store_type_ix` rather than
+ * `SELECT DISTINCT store`: `store` has five values over an unbounded table, so
+ * Postgres full-scans the distinct, and this runs in a page loader.
  */
 const storesInUse = async (
   active: StoreType,
@@ -237,7 +231,7 @@ const secretValuesOf = (
     .filter((value): value is string => value !== undefined && value !== "");
 
 export const saveStorageSettings = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { storeType: string; values: SubmittedValues }) => data,
   )
   .middleware([superAdminMiddleware])
@@ -299,7 +293,7 @@ export const saveStorageSettings = createServerFn({ method: "POST" })
   });
 
 export const testStorageConnection = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { storeType: string; values: SubmittedValues }) => data,
   )
   .middleware([superAdminMiddleware])
@@ -376,7 +370,7 @@ export const testStorageConnection = createServerFn({ method: "POST" })
   });
 
 export const deleteStorageSecret = createServerFn({ method: "POST" })
-  .inputValidator((data: { key: string }) => data)
+  .validator((data: { key: string }) => data)
   .middleware([superAdminMiddleware])
   .handler(async ({ data, context }): Promise<{ ok: true }> => {
     const owningStores = storesOwningSecret(data.key);

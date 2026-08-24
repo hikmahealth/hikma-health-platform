@@ -12,10 +12,6 @@ import UserClinicPermissions from "@/models/user-clinic-permissions";
 import { Result } from "@/lib/result";
 import { Logger } from "@hikmahealth/js-utils";
 
-/**
- * Get all clinics
- * @returns {Promise<Clinic.T[]>} - The list of clinics
- */
 export const getAllClinics = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
   .handler(async ({ context }) => {
@@ -49,7 +45,7 @@ export const getAllClinics = createServerFn({ method: "GET" })
 export const getClinicById = createServerFn({
   method: "GET",
 })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const clinicId = data.id;
@@ -75,7 +71,7 @@ export const getClinicById = createServerFn({
   });
 
 export const createDepartment = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       clinicId: string;
       name: string;
@@ -105,7 +101,7 @@ export const createDepartment = createServerFn({ method: "POST" })
   });
 
 export const toggleDepartmentCapability = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       clinicId: string;
       departmentId: string;
@@ -134,7 +130,7 @@ export const toggleDepartmentCapability = createServerFn({ method: "POST" })
   });
 
 export const deleteDepartment = createServerFn({ method: "POST" })
-  .inputValidator((data: { clinicId: string; departmentId: string }) => data)
+  .validator((data: { clinicId: string; departmentId: string }) => data)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
     if (!context.userId) {

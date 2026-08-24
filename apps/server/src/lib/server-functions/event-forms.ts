@@ -3,12 +3,8 @@ import EventForm from "@/models/event-form";
 import { safeJSONParse } from "../utils";
 import { adminMiddleware } from "@/middleware/auth";
 
-/**
- * Get all event forms
- * @returns {Promise<EventForm.EncodedT[]>} - The list of event forms
- */
 export const getEventForms = createServerFn({ method: "GET" })
-  .inputValidator((data: { includeDeleted?: boolean } = {}) => data)
+  .validator((data: { includeDeleted?: boolean } = {}) => data)
   .middleware([adminMiddleware])
   .handler(
     async ({
@@ -24,7 +20,8 @@ export const getEventForms = createServerFn({ method: "GET" })
           let data;
           if (typeof form.form_fields === "string") {
             data = safeJSONParse(form.form_fields, []);
-            // on error, just return the original string. usually we would return an empty []. But I want to allow the client side code one more chance to fix without throwing an error.
+            // Hand the raw string back rather than [] so the client gets one
+            // more chance to salvage it.
             if (data.length === 0) {
               data = form.form_fields;
             }
@@ -32,8 +29,7 @@ export const getEventForms = createServerFn({ method: "GET" })
             data = form.form_fields;
           }
 
-          // process the array to make sure all fields are formatted from older versions of data to new ones.
-          // also act as an ongoing robustness measure
+          // Normalise fields written by older versions.
           if (Array.isArray(data)) {
             data.forEach((field) => {
               // migrate text area to text input with long length
@@ -41,7 +37,6 @@ export const getEventForms = createServerFn({ method: "GET" })
                 field.inputType = "text";
                 field.length = "long";
               }
-              // Add a _tag to each field
               field._tag = EventForm.getFieldTag(field.fieldType);
             });
           }

@@ -28,7 +28,7 @@ import { MoreHorizontal } from "lucide-react";
 import { Logger } from "@hikmahealth/js-utils";
 import { ConnectMobileAppCard } from "@/components/connect-mobile-app-card";
 
-// ── Server functions ──────────────────────────────────────────────
+// SERVER FUNCTIONS
 
 const getAllDevices = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
@@ -40,7 +40,7 @@ const getAllDevices = createServerFn({ method: "GET" })
   });
 
 const deleteDevice = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string }) => d)
+  .validator((d: { id: string }) => d)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
     if (context.role !== User.ROLES.SUPER_ADMIN) {
@@ -53,7 +53,7 @@ const deleteDevice = createServerFn({ method: "POST" })
   });
 
 const updateDeviceStatus = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string; status: Device.StatusT }) => d)
+  .validator((d: { id: string; status: Device.StatusT }) => d)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
     if (context.role !== User.ROLES.SUPER_ADMIN) {
@@ -66,7 +66,7 @@ const updateDeviceStatus = createServerFn({ method: "POST" })
   });
 
 const resetPinAttempts = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string }) => d)
+  .validator((d: { id: string }) => d)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
     if (context.role !== User.ROLES.SUPER_ADMIN) {
@@ -78,7 +78,7 @@ const resetPinAttempts = createServerFn({ method: "POST" })
     return Device.API.resetFailedPinAttempts(data.id);
   });
 
-// ── Route ─────────────────────────────────────────────────────────
+// ROUTE
 
 export const Route = createFileRoute("/app/settings/devices/")({
   component: RouteComponent,
@@ -93,7 +93,7 @@ export const Route = createFileRoute("/app/settings/devices/")({
   },
 });
 
-// ── Helpers ───────────────────────────────────────────────────────
+// HELPERS
 
 const STATUS_BADGE_VARIANT: Record<
   Device.StatusT,
@@ -126,17 +126,15 @@ function formatDate(d: string | Date | null | undefined): string {
   return new Date(d).toLocaleDateString();
 }
 
-// ── Component ─────────────────────────────────────────────────────
+// COMPONENT
 
 function RouteComponent() {
   const { devices, isSuperAdmin } = Route.useLoaderData();
   const router = useRouter();
   const [loadingId, setLoadingId] = useState<string | null>(null);
 
-  // The QR sits above the gate on purpose: scanning it only writes a peer URL
-  // on the phone and grants nothing server-side, and it was previously reachable
-  // on an ungated route. Gating it here would quietly take the capability away
-  // from every non-super-admin.
+  // The QR sits above the gate on purpose: scanning it writes a peer URL on
+  // the phone and grants nothing server-side, and it used to be ungated.
   if (!isSuperAdmin) {
     return (
       <div className="container py-6">

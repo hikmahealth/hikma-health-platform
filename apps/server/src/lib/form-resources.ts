@@ -174,10 +174,8 @@ export type UploadClaimVerdict =
  * idempotent replay or a conflicting claim.
  *
  * First writer owns the id: only the original uploader re-sending
- * byte-identical content is honoured. Everything else conflicts and must leave
- * the stored bytes and scope untouched — otherwise a client that knows an id
- * (they travel in synced form_data) could overwrite another patient's
- * attachment, or pre-empt an id to permanently block the real upload.
+ * byte-identical content is honoured. Resource ids travel in synced form_data,
+ * so anything else must leave the stored bytes and scope untouched.
  */
 export const classifyExistingResourceClaim = (
   existing: ExistingResourceClaim,
@@ -220,12 +218,10 @@ const callerForToken = async (
 
 /**
  * Resolve the caller from a Bearer session token, HTTP Basic "email:password",
- * or the portal's `token` session cookie, in that order. Basic is last because
- * `User.signIn` runs bcrypt *and* writes a new token row on every call, where
- * the other two are one indexed lookup. The cookie path lets a same-origin
- * portal `<img>`/`<a>` carry its session automatically — safe because the
- * cookie is httpOnly + SameSite=Lax, so it is not attached to cross-site
- * subresource loads.
+ * or the portal's `token` session cookie, in that order — Basic is last
+ * because it runs bcrypt. The cookie path lets a same-origin portal
+ * `<img>`/`<a>` carry its session automatically, safe because the cookie is
+ * httpOnly + SameSite=Lax.
  *
  * Returns null for any missing/invalid credential without distinguishing which.
  */
@@ -248,8 +244,8 @@ export const authenticateCaller = createServerOnlyFn(
         const password = decoded.slice(separator + 1);
         if (!email || !password) return null;
 
-        const result = await User.signIn(email, password);
-        return { id: result.user.id };
+        const user = await User.verifyCredentials(email, password);
+        return { id: user.id };
       }
 
       const cookieToken = readCookie(request, "token");

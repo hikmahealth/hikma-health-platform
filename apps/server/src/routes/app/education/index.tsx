@@ -40,7 +40,7 @@ const getEducationContent = createServerFn({ method: "GET" })
   });
 
 const deleteEducationContent = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     await db

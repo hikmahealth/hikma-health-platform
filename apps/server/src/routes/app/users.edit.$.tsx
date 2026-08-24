@@ -48,7 +48,7 @@ import If from "@/components/if";
 import { useImmerReducer } from "use-immer";
 
 const updateUser = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       id: string;
       user: Omit<
@@ -81,7 +81,7 @@ const updateUser = createServerFn({ method: "POST" })
   });
 
 const registerUser = createServerFn({ method: "POST" })
-  .inputValidator((data: { user: User.EncodedT; creatorId: string }) => ({
+  .validator((data: { user: User.EncodedT; creatorId: string }) => ({
     user: data.user,
     creatorId: data.creatorId,
   }))
@@ -99,8 +99,7 @@ const registerUser = createServerFn({ method: "POST" })
       "is_clinic_admin",
     );
 
-    // If the user is not super admin, they cannot create a super admin user
-    // this if says: if the current user (in context) does not have the role of super admin, and they are trying to register a user with the role super admin, reject.
+    // Only a super admin may create a super admin.
     if (
       context.role !== User.ROLES.SUPER_ADMIN &&
       data.user.role === User.ROLES.SUPER_ADMIN
@@ -145,7 +144,6 @@ function RouteComponent() {
   const isEditMode = Boolean(userId && user);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Initialize form with user data if in edit mode
   const form = useForm<UserFormValues>({
     // resolver: userFormSchema.resolve(userFormSchema),
     defaultValues: {

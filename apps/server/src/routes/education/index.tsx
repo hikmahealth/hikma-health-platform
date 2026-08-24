@@ -13,7 +13,7 @@ import type EducationContent from "@/models/education-content";
 type ContentRow = EducationContent.Serialized;
 
 const getPublicContent = createServerFn({ method: "GET" })
-  .inputValidator((data: { search?: string }) => data)
+  .validator((data: { search?: string }) => data)
   .handler(async ({ data }): Promise<ContentRow[]> => {
     let query = db
       .selectFrom("education_content")

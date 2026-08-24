@@ -26,7 +26,7 @@ import { toast } from "sonner";
 import { useImmerReducer } from "use-immer";
 
 const saveConfiguration = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       // TODO: set this to the type of a namespace from the AppConfig module
       namespace: string;
@@ -69,14 +69,14 @@ const getAllConfigurations = createServerFn({ method: "GET" })
   });
 
 const getServerVariable = createServerFn({ method: "GET" })
-  .inputValidator((data: { key: string }) => data)
+  .validator((data: { key: string }) => data)
   .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return await ServerVariable.get(data.key);
   });
 
 const upsertServerVariable = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       key: string;
       value_type: string;

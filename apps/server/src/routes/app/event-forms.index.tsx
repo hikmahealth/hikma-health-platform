@@ -33,14 +33,14 @@ import { safeJSONParse } from "@/lib/utils";
 import { truncate } from "es-toolkit/compat";
 
 const deleteForm = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string }) => d)
+  .validator((d: { id: string }) => d)
   .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return EventForm.API.softDelete(data.id);
   });
 
 const duplicateForm = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string }) => d)
+  .validator((d: { id: string }) => d)
   .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     const source = await EventForm.API.getById(data.id);
@@ -61,8 +61,7 @@ const duplicateForm = createServerFn({ method: "POST" })
       ),
     });
 
-    // Only the authored columns: `insert` mints the id and stamps every
-    // timestamp itself, which is what the cast covers.
+    // Authored columns only — `insert` mints the id and the timestamps.
     const created = await EventForm.API.insert({
       name: `${source.name || "Untitled form"}${COPY_NAME_SUFFIX}`,
       description: source.description,
@@ -80,7 +79,7 @@ const duplicateForm = createServerFn({ method: "POST" })
   });
 
 const toggleFormDetail = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (d: { id: string; field: "snapshot" | "editable"; value: boolean }) => d,
   )
   .middleware([superAdminMiddleware])

@@ -45,9 +45,8 @@ import {
 import { Logger } from "@hikmahealth/js-utils";
 import { adminMiddleware } from "@/middleware/auth";
 
-// Create a save prescription server function
 const savePrescription = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       prescription: PrescriptionFormValues;
       items: PrescriptionItemValues[];
@@ -71,9 +70,8 @@ const savePrescription = createServerFn({ method: "POST" })
     );
   });
 
-// Get prescription by ID server function
 const getPrescriptionById = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const { id } = data;
@@ -115,7 +113,6 @@ export const Route = createFileRoute("/app/prescriptions/edit/$")({
   },
 });
 
-// Priority options
 const priorityOptions = [
   { label: "Normal", value: "normal" },
   { label: "Low", value: "low" },
@@ -123,7 +120,6 @@ const priorityOptions = [
   { label: "Emergency", value: "emergency" },
 ];
 
-// Status options
 const statusOptions = [
   { label: "Pending", value: "pending" },
   { label: "Prepared", value: "prepared" },
@@ -171,7 +167,6 @@ function RouteComponent() {
     },
   });
 
-  // Handle form submission
   const onSubmit = async (
     prescription: PrescriptionFormValues,
     items: PrescriptionItemValues[],

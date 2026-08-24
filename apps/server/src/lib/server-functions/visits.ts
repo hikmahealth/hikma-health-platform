@@ -20,13 +20,9 @@ export type VisitWithEvents = Visit.EncodedT & {
   events: Event.EncodedT[];
 };
 
-/**
- * Get paginated visits for a patient, ordered by most recent first.
- * This is an online-mode endpoint — the existing sync system continues to work independently.
- * @returns Paginated list of visits
- */
+/** A patient's visits, most recent first, paginated. Online mode only. */
 export const getPatientVisits = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       patientId: string;
       offset?: number;
@@ -101,13 +97,9 @@ export const getPatientVisits = createServerFn({ method: "GET" })
     },
   );
 
-/**
- * Create a new visit record for a patient.
- * This is an online-mode endpoint — the existing sync system continues to work independently.
- * @returns The new visit ID on success
- */
+/** Create a visit for a patient. Online mode only. Returns the new visit id. */
 export const createVisit = createServerFn({ method: "POST" })
-  .inputValidator((data: CreateVisitInput) => data)
+  .validator((data: CreateVisitInput) => data)
   .middleware([permissionsMiddleware])
   .handler(
     async ({

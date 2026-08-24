@@ -27,7 +27,7 @@ jobs:
   # matrix and upload.
   test:
     name: Test
-    runs-on: ubuntu-22.04
+    runs-on: warp-ubuntu-2204-x64-8x
     permissions:
       contents: read
     steps:
@@ -79,13 +79,13 @@ jobs:
       matrix:
         platform:
           - name: macOS
-            os: macos-latest
+            os: warp-macos-15-arm64-6x
             args: '--target universal-apple-darwin'
           - name: Linux
-            os: ubuntu-22.04
+            os: warp-ubuntu-2204-x64-8x
             args: ''
           - name: Windows
-            os: windows-latest
+            os: warp-windows-2025-x64-4x
             args: ''
     runs-on: ${{ matrix.platform.os }}
     defaults:

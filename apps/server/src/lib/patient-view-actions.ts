@@ -53,19 +53,15 @@ const isEntryShape = (
 
 /**
  * Coerce arbitrary input into the canonical entry list: drop anything that is
- * not `{id: string}`, drop unknown ids, then append any known action the input
- * left out as `{id, visible: true}`. The result always covers every entry in
- * PATIENT_VIEW_ACTIONS exactly once, in the input's order, and is freshly
- * allocated so callers may hold it as mutable state.
+ * not `{id: string}`, drop unknown ids, then append the known actions the
+ * input left out as `{id, visible: true}`. The result covers every entry in
+ * PATIENT_VIEW_ACTIONS exactly once, in the input's order, freshly allocated.
  *
- * Takes `unknown` on purpose: both callers handle untrusted input — the loader
- * reads `parseValue`'s `any` (the generic configurations screen can write any
- * value to any namespace/key) and the save handler's `inputValidator` is a
- * passthrough. Guarding here is what keeps the two paths from drifting.
+ * Takes `unknown` because both callers pass untrusted input — the loader reads
+ * `parseValue`'s `any`, and the save handler's `validator` is a passthrough.
  *
- * Appending the missing actions matters because mobile's resolver appends them
- * anyway, so without it the admin's saved state and the device's rendered state
- * differ in a way the admin cannot see.
+ * The append matters: mobile's resolver appends the missing actions anyway, so
+ * without it the admin's saved state and the device's differ invisibly.
  */
 export function canonicalizePatientViewActions(
   raw: unknown,

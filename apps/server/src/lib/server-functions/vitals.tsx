@@ -8,7 +8,7 @@ import { Logger } from "@hikmahealth/js-utils";
 export const getPatientVitals = createServerFn({
   method: "GET",
 })
-  .inputValidator((data: { patientId: string }) => data)
+  .validator((data: { patientId: string }) => data)
   .handler(async ({ data }): Promise<PatientVital.EncodedT[]> => {
     return Sentry.startSpan({ name: "getPatientVitals" }, async () => {
       const authorized = await userRoleTokenHasCapability([
@@ -37,7 +37,7 @@ export const getPatientVitals = createServerFn({
 export const getMostRecentVital = createServerFn({
   method: "GET",
 })
-  .inputValidator((data: { patientId: string }) => data)
+  .validator((data: { patientId: string }) => data)
   .handler(async ({ data }) => {
     return Sentry.startSpan({ name: "getMostRecentVital" }, async () => {
       const authorized = await userRoleTokenHasCapability([
@@ -66,7 +66,7 @@ export const getMostRecentVital = createServerFn({
 export const getVitalsByDateRange = createServerFn({
   method: "GET",
 })
-  .inputValidator(
+  .validator(
     (data: { patientId: string; startDate: string; endDate: string }) => data,
   )
   .handler(async ({ data }) => {
@@ -101,7 +101,7 @@ export const getVitalsByDateRange = createServerFn({
 export const createPatientVital = createServerFn({
   method: "POST",
 })
-  .inputValidator((data: PatientVital.Table.NewPatientVitals) => data)
+  .validator((data: PatientVital.Table.NewPatientVitals) => data)
   .handler(async ({ data }) => {
     return Sentry.startSpan({ name: "createPatientVital" }, async () => {
       const authorized = await userRoleTokenHasCapability([

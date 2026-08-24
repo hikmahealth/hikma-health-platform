@@ -28,14 +28,14 @@ import { Link } from "@tanstack/react-router";
 import { Logger } from "@hikmahealth/js-utils";
 
 const deleteClinic = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return Clinic.softDelete(data.id);
   });
 
 export const archiveClinic = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string; isArchived: boolean }) => data)
+  .validator((data: { id: string; isArchived: boolean }) => data)
   .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return Clinic.API.setArchivedStatus(data.id, data.isArchived);

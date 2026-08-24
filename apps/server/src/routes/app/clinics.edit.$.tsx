@@ -26,7 +26,6 @@ import Clinic from "@/models/clinic";
 import { Logger } from "@hikmahealth/js-utils";
 import { adminMiddleware, superAdminMiddleware } from "@/middleware/auth";
 
-// Define the form schema
 const formSchema = z.object({
   name: z.string().min(1, "Clinic name is required"),
   country: z.string().optional(),
@@ -34,12 +33,10 @@ const formSchema = z.object({
   address: z.string().optional(),
 });
 
-// Type for the form values
 type FormValues = z.infer<typeof formSchema>;
 
-// Server function to get a clinic by ID
 const getClinicById = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const clinic = await db
@@ -52,9 +49,8 @@ const getClinicById = createServerFn({ method: "GET" })
     return clinic;
   });
 
-// Server function to create or update a clinic
 const saveClinic = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       id?: string;
       name: string;
@@ -92,7 +88,6 @@ function RouteComponent() {
   const clinicId = params._splat;
   const isEditing = !!clinicId && clinicId !== "new";
 
-  // Initialize form
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -103,7 +98,6 @@ function RouteComponent() {
     },
   });
 
-  // Handle form submission
   const onSubmit = async (values: FormValues) => {
     try {
       await saveClinic({

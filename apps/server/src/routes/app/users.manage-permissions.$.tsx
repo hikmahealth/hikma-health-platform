@@ -38,7 +38,7 @@ import User from "@/models/user";
 import { Logger } from "@hikmahealth/js-utils";
 
 const addClinicPermissions = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { userId: string; clinicId: string; currentUserId: string }) => data,
   )
   .middleware([permissionsMiddleware])
@@ -67,7 +67,7 @@ const addClinicPermissions = createServerFn({ method: "POST" })
   });
 
 const togglePermission = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       userId: string;
       clinicId: string;
@@ -84,7 +84,6 @@ const togglePermission = createServerFn({ method: "POST" })
       throw new Error("Unauthorized");
     }
 
-    // Get existing permissions
     const existingPermissions =
       await UserClinicPermissions.API.getByUserAndClinic(userId, clinicId);
     if (!existingPermissions) {
@@ -205,7 +204,6 @@ function RouteComponent() {
   const handleAddClinic = async () => {
     if (!selectedClinicId) return;
 
-    // Check if clinic already has permissions
     const existingPermission = permissions.find(
       (p) => p.clinic_id === selectedClinicId,
     );

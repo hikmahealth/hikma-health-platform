@@ -5,7 +5,7 @@ import * as Sentry from "@sentry/tanstackstart-react";
 import { adminMiddleware, superAdminMiddleware } from "@/middleware/auth";
 
 export const saveDrug = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { drug: Partial<DrugCatalogue.ApiDrug>; isEdit: boolean }) => data,
   )
   .middleware([superAdminMiddleware])
@@ -24,7 +24,7 @@ export const saveDrug = createServerFn({ method: "POST" })
   });
 
 export const updateDrug = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { id: string; drug: Partial<DrugCatalogue.ApiDrug> }) => data,
   )
   .middleware([superAdminMiddleware])
@@ -49,7 +49,7 @@ export const updateDrug = createServerFn({ method: "POST" })
   });
 
 export const deleteDrug = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan(
@@ -74,7 +74,7 @@ export const deleteDrug = createServerFn({ method: "POST" })
   });
 
 export const getDrugById = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan({ name: "Get drug by id" }, async () => {
@@ -91,7 +91,7 @@ export const getDrugById = createServerFn({ method: "GET" })
   });
 
 export const getAllDrugs = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (params: { limit?: number; offset?: number; isActive?: boolean }) => params,
   )
   .middleware([adminMiddleware])
@@ -123,7 +123,7 @@ export const getAllDrugs = createServerFn({ method: "GET" })
   });
 
 export const searchDrugs = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (params: { searchTerm: string; limit?: number; offset?: number }) => params,
   )
   .middleware([adminMiddleware])
@@ -145,7 +145,6 @@ export const searchDrugs = createServerFn({ method: "GET" })
     });
   });
 
-// Server function to get drug stats
 export const getDrugStats = createServerFn({ method: "GET" })
   .middleware([adminMiddleware])
   .handler(async () => {

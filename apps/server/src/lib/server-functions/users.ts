@@ -10,15 +10,12 @@ import { adminMiddleware } from "@/middleware/auth";
 // import Patient from "@/models/patient";
 
 /**
- * Authorization gate for `getAllUsers`. Exported so unit tests can verify
- * the capability check without spinning up the createServerFn middleware
- * chain. Treat as private — production callers should use `getAllUsers`.
+ * Authorization gate for `getAllUsers`, exported only so tests can reach it
+ * without the createServerFn middleware chain.
  *
- * Returns an empty list when the caller lacks READ_USER (unauthenticated
- * sessions, registrars). Failing closed with `[]` keeps existing loaders
- * (prescriptions/appointments edit forms) from crashing while still
- * preventing the staff list from leaking to unauthorized callers. This
- * parallels the gate in `searchPatients`.
+ * Fails closed with `[]` rather than throwing, matching `searchPatients`: the
+ * prescriptions and appointments edit loaders call this and would otherwise
+ * crash for registrars.
  */
 export const getAllUsersImpl = async (): Promise<User.EncodedT[]> => {
   const authorized = await userRoleTokenHasCapability([
@@ -28,10 +25,7 @@ export const getAllUsersImpl = async (): Promise<User.EncodedT[]> => {
   return await User.API.getAll();
 };
 
-/**
- * Retrieves all users from the database, gated on READ_USER.
- * @returns Promise containing array of encoded user objects, or [] if unauthorized.
- */
+/** All users, or `[]` when the caller lacks READ_USER. */
 export const getAllUsers = createServerFn({ method: "GET" }).handler(
   getAllUsersImpl,
 );
@@ -43,7 +37,7 @@ export const getAllUsers = createServerFn({ method: "GET" }).handler(
  * @returns Array of clinic IDs where the user has the specified permission
  */
 export const getClinicIdsWithUserPermission = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       userId: string;
       permission: UserClinicPermissions.UserPermissionsT;
@@ -62,17 +56,12 @@ export const getClinicIdsWithUserPermission = createServerFn({ method: "GET" })
   });
 
 /**
- * Retrieves a user by their ID
- *
- * @param data.id - Optional user ID to retrieve
- * @returns User object if found and authorized, null if ID not provided
- * @throws {Object} Rejection object with message and source if user lacks SUPER_ADMIN role
- * @requires SUPER_ADMIN role for access
- * @param data.id - Optional user ID to retrieve
- * @returns User object if found and authorized, null if ID not provided, rejects if unauthorized
+ * Retrieve a user by id. Returns null when no id is given or the user has no
+ * clinic; rejects unless the caller is a super admin or an admin of that
+ * user's clinic.
  */
 export const getUserById = createServerFn({ method: "GET" })
-  .inputValidator((data: { id?: string | null } = {}) => data)
+  .validator((data: { id?: string | null } = {}) => data)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
     if (!context.userId) {
@@ -103,13 +92,9 @@ export const getUserById = createServerFn({ method: "GET" })
     }
   });
 
-/**
- * Checks if the current user has a specific role
- * @param data.role - The role to check against the current user
- * @returns True if current user has the specified role, false otherwise
- */
+/** Whether the session cookie's user holds `data.role`. */
 export const currentUserHasRole = createServerFn({ method: "GET" })
-  .inputValidator((data: { role: User.RoleT }) => data)
+  .validator((data: { role: User.RoleT }) => data)
   .handler(async ({ data }) => {
     const tokenCookie = getCookie("token");
     if (!tokenCookie) return false;
@@ -124,28 +109,17 @@ export const currentUserHasRole = createServerFn({ method: "GET" })
     return user.role === data.role;
   });
 
-/**
- * Gets all clinic permissions for a specific user
- * @param data.userId - The ID of the user to get clinic permissions for
- * @returns User's clinic permissions
- */
+/** All clinic permissions for `data.userId`. */
 export const getUserClinicPermissions = createServerFn({ method: "GET" })
-  .inputValidator((data: { userId: string }) => data)
+  .validator((data: { userId: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return await UserClinicPermissions.API.getByUser(data.userId);
   });
 
-/**
- * Resets a user's password
- * @param data.userId - The ID of the user whose password should be reset
- * @param data.password - The new password to set
- * @returns Updated user object
- * @throws {Object} Rejection object with message and source if user lacks SUPER_ADMIN role
- * @requires SUPER_ADMIN role for access
- */
+/** Reset a user's password. Rejects unless the caller is a super admin. */
 export const resetUserPassword = createServerFn({ method: "POST" })
-  .inputValidator((data: { userId: string; password: string }) => data)
+  .validator((data: { userId: string; password: string }) => data)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
     if (context.role !== User.ROLES.SUPER_ADMIN) {

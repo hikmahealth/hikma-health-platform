@@ -27,7 +27,7 @@ type Pagination = {
 export const getAllPatients = createServerFn({
   method: "GET",
 })
-  .inputValidator((data?: { offset?: number; limit?: number }) => data || {})
+  .validator((data?: { offset?: number; limit?: number }) => data || {})
   .handler(
     async ({
       data,
@@ -70,7 +70,7 @@ export const getAllPatients = createServerFn({
 
 // Search patients with text query and optional date filters
 export const searchPatients = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       searchQuery: string;
       offset?: number;
@@ -160,7 +160,7 @@ export const searchPatients = createServerFn({ method: "GET" })
 export const getPatientById = createServerFn({
   method: "GET",
 })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([adminMiddleware])
   .handler(
     async ({
@@ -184,7 +184,7 @@ export const getPatientById = createServerFn({
 export const softDeletePatientsByIds = createServerFn({
   method: "POST",
 })
-  .inputValidator((data: { ids: string[] }) => data)
+  .validator((data: { ids: string[] }) => data)
   .middleware([permissionsMiddleware])
   .handler(
     async ({
@@ -201,7 +201,6 @@ export const softDeletePatientsByIds = createServerFn({
         });
       }
 
-      // Soft delete each patient by ID
       await Patient.API.softDelete(data.ids);
 
       return {
@@ -212,12 +211,11 @@ export const softDeletePatientsByIds = createServerFn({
   );
 
 /**
- * Create a new patient with optional additional attributes in an atomic transaction.
- * This is an online-mode endpoint — the existing sync system continues to work independently.
- * @returns The new patient ID on success
+ * Create a patient and its additional attributes in one transaction. Online
+ * mode only. Returns the new patient id.
  */
 export const createPatient = createServerFn({ method: "POST" })
-  .inputValidator((data: CreatePatientInput) => data)
+  .validator((data: CreatePatientInput) => data)
   .middleware([permissionsMiddleware])
   .handler(
     async ({
@@ -328,13 +326,9 @@ export const createPatient = createServerFn({ method: "POST" })
     },
   );
 
-/**
- * Update an existing patient's fields. Only provided fields are updated.
- * This is an online-mode endpoint — the existing sync system continues to work independently.
- * @returns Success status
- */
+/** Update only the patient fields present in `data`. Online mode only. */
 export const updatePatient = createServerFn({ method: "POST" })
-  .inputValidator((data: UpdatePatientInput) => data)
+  .validator((data: UpdatePatientInput) => data)
   .middleware([permissionsMiddleware])
   .handler(
     async ({
@@ -353,7 +347,6 @@ export const updatePatient = createServerFn({ method: "POST" })
           const updateSet: Record<string, any> = {};
           const { fields } = data;
 
-          // Build update set from provided fields
           if (fields.given_name !== undefined)
             updateSet.given_name = fields.given_name;
           if (fields.surname !== undefined) updateSet.surname = fields.surname;
@@ -382,7 +375,6 @@ export const updatePatient = createServerFn({ method: "POST" })
           if (fields.primary_clinic_id !== undefined)
             updateSet.primary_clinic_id = fields.primary_clinic_id;
 
-          // Always update timestamps
           updateSet.updated_at = sql`now()::timestamp with time zone`;
           updateSet.last_modified = sql`now()::timestamp with time zone`;
           updateSet.last_modified_by = context.userId;

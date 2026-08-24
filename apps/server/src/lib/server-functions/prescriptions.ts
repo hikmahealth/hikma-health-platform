@@ -35,7 +35,7 @@ const getAllPrescriptionsWithDetails = createServerFn({
   );
 
 const togglePrescriptionStatus = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string; status: string }) => data)
+  .validator((data: { id: string; status: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<void> => {
     await Prescription.API.toggleStatus(data.id, data.status);
@@ -45,7 +45,7 @@ const togglePrescriptionStatus = createServerFn({ method: "POST" })
  * Get paginated prescriptions for a patient.
  */
 const getPatientPrescriptions = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: { patientId: string; offset?: number; limit?: number }) => data,
   )
   .handler(

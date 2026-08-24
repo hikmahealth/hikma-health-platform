@@ -35,10 +35,10 @@ import { adminMiddleware } from "@/middleware/auth";
 
 type ContentRow = EducationContent.Serialized;
 
-// ── Server Functions ──────────────────────────────────────────────────
+// SERVER FUNCTIONS
 
 const getContentById = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<ContentRow | null> => {
     const row = await db
@@ -51,7 +51,7 @@ const getContentById = createServerFn({ method: "GET" })
   });
 
 const saveContent = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       id: string | null;
       title: string;
@@ -129,12 +129,12 @@ const saveContent = createServerFn({ method: "POST" })
 
 /** Upload a file and create a Resource entry. Returns the resource row. */
 const uploadFile = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { fileName: string; mimetype: string; fileBase64: string }) => data,
   )
   .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<{ id: string }> => {
-    // Validate mimetype server-side before storing — client-supplied values are untrusted
+    // Client-supplied mimetypes are untrusted.
     if (!isAllowedMimetype(data.mimetype)) {
       throw new Error(`File type not allowed: ${data.mimetype}`);
     }
@@ -165,8 +165,7 @@ const uploadFile = createServerFn({ method: "POST" })
         store: adapter.name,
         store_version: adapter.version,
         uri: result.uri,
-        // Server-computed, matching the event-form path: a provider ETag is
-        // not comparable across backends.
+        // Server-computed: a provider ETag is not comparable across backends.
         hash: sha256Hex(bytes),
         mimetype: data.mimetype,
         description: data.fileName.slice(0, 255),
@@ -176,7 +175,7 @@ const uploadFile = createServerFn({ method: "POST" })
     return { id: row.id };
   });
 
-// ── Route ─────────────────────────────────────────────────────────────
+// ROUTE
 
 export const Route = createFileRoute("/app/education/$id/editor")({
   component: RouteComponent,
@@ -187,7 +186,7 @@ export const Route = createFileRoute("/app/education/$id/editor")({
   },
 });
 
-// ── Component ─────────────────────────────────────────────────────────
+// COMPONENT
 
 type ContentFormState = {
   title: string;

@@ -102,15 +102,13 @@ import {
   readExportAttachments,
 } from "@/lib/export-attachment-links";
 
-// Function to get all patients for export (no pagination)
 const getAllPatientsForExport = createServerFn({ method: "GET" })
-  .inputValidator((data: { includeDeletedForms: boolean }) => data)
+  .validator((data: { includeDeletedForms: boolean }) => data)
   .handler(async ({ data }) => {
     const currentUser = await getCurrentUser();
     if (!currentUser || currentUser.role !== User.ROLES.SUPER_ADMIN) {
       throw new Error("Unauthorized");
     }
-    // Use getAllWithAttributes with no limit to get all patients
     const { patients } = await Patient.API.getAllWithAttributes({
       includeCount: false,
     });
@@ -123,10 +121,9 @@ const getAllPatientsForExport = createServerFn({ method: "GET" })
     return { patients, exportEvents, eventForms, vitals, problems };
   });
 
-// Function to get all patients matching search filters for export (no pagination)
-// Returns the same shape as getAllPatientsForExport, but scoped to matching patients
+// Same shape as getAllPatientsForExport, scoped to the search filters.
 const getFilteredPatientsForExport = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: {
       searchQuery: string;
       registrationDateStart?: string;
@@ -312,13 +309,11 @@ function RouteComponent() {
 
   const [selectedPatients, actions] = useMap<string, string>(); // [patientId, patientName]
 
-  // Sync local state when loader data changes (e.g. after invalidation)
   useEffect(() => {
     setPatientsList(patients);
     setPaginationResults({ pagination });
   }, [patients, pagination]);
 
-  // on mount page, invalidate the data
   useEffect(() => {
     route.invalidate({ sync: true });
   }, []);
@@ -326,7 +321,6 @@ function RouteComponent() {
   const fields = patientRegistrationForm?.fields.filter((f) => !f.deleted);
   const headers = fields?.map((f) => f.label.en) || [];
 
-  // Calculate pagination values using functional approach
   const pageSize = Option.getOrElse(
     Option.fromNullable(paginationResults.pagination.limit),
     () => 10,
@@ -347,7 +341,6 @@ function RouteComponent() {
     searchState.visitsInDateRange[0] !== null ||
     searchState.visitsInDateRange[1] !== null;
 
-  // Function to handle search with pagination
   const handleSearch = (page = 1) => {
     setLoading(true);
     const offset = (page - 1) * pageSize;
@@ -382,26 +375,22 @@ function RouteComponent() {
       });
   };
 
-  // Handle page change in a pure function way
   const handlePageChange = (page: number) => {
     if (page >= 1 && page <= totalPages && page !== currentPage) {
       handleSearch(page);
     }
   };
 
-  // Generate page numbers to display using functional approach
+  // First page, last page, and up to three around the current one.
   const getPageNumbers = () => {
-    // Always include first and last page
     const firstPage = 1;
     const lastPage = totalPages;
 
-    // Include pages around current page
     const nearbyPages = Array.from(
       { length: 3 },
       (_, i) => Math.max(2, currentPage - 1) + i,
     ).filter((page) => page > firstPage && page < lastPage);
 
-    // Combine and sort pages
     return Array.from(new Set([firstPage, ...nearbyPages, lastPage])).sort(
       (a, b) => a - b,
     );
@@ -644,9 +633,8 @@ function RouteComponent() {
       );
 
       // A cell holds at most one hyperlink, so a file field spans as many
-      // columns as the widest answer here. Planned before the header is built.
-      // Left empty without a link context, which falls file fields back to
-      // printing their raw resource ids.
+      // columns as its widest answer. Left empty without a link context, which
+      // falls file fields back to printing raw resource ids.
       const attachmentLayouts = new Map<string, AttachmentColumnLayout>();
       if (linkContext) {
         eventFormFields?.forEach((field) => {
@@ -1225,7 +1213,6 @@ function RouteComponent() {
             </PaginationItem>
 
             {pageNumbers?.map((pageNumber, index) => {
-              // Add ellipsis if there's a gap between page numbers
               const shouldShowEllipsis =
                 index > 0 && pageNumber > pageNumbers[index - 1] + 1;
 

@@ -10,7 +10,7 @@ import { sql } from "kysely";
  * Fetch a single report with its components by ID.
  */
 export const getReport = createServerFn({ method: "GET" })
-	.inputValidator((data: { id: string }) => data)
+	.validator((data: { id: string }) => data)
 	.middleware([superAdminMiddleware])
 	.handler(async ({ data }) => {
 		return await Report.API.getById(data.id);
@@ -20,7 +20,7 @@ export const getReport = createServerFn({ method: "GET" })
  * Upsert a report and its components.
  */
 export const saveReport = createServerFn({ method: "POST" })
-	.inputValidator(
+	.validator(
 		(data: { report: Parameters<typeof Report.API.update>[0] }) => data,
 	)
 	.middleware([superAdminMiddleware])
@@ -32,7 +32,7 @@ export const saveReport = createServerFn({ method: "POST" })
  * Soft delete a report and its components by ID.
  */
 export const deleteReport = createServerFn({ method: "POST" })
-	.inputValidator((data: { id: string }) => data)
+	.validator((data: { id: string }) => data)
 	.middleware([superAdminMiddleware])
 	.handler(async ({ data }) => {
 		await Report.API.softDelete(data.id);
@@ -43,7 +43,7 @@ export const deleteReport = createServerFn({ method: "POST" })
  * Uses PREPARE/DEALLOCATE to validate syntax and schema before persisting.
  */
 export const updateComponentSql = createServerFn({ method: "POST" })
-	.inputValidator((data: { componentId: string; compiledSql: string }) => data)
+	.validator((data: { componentId: string; compiledSql: string }) => data)
 	.middleware([superAdminMiddleware])
 	.handler(async ({ data }) => {
 		const { componentId, compiledSql } = data;

@@ -34,7 +34,7 @@ import { z } from "zod";
 import { sql, type TableMetadata } from "kysely";
 import { adminMiddleware } from "@/middleware/auth";
 
-// ── AI Response Types (snake_case from the AI service) ─────
+// AI RESPONSE TYPES — snake_case, as the AI service sends them
 
 type AIDisplayConfig = {
   type: string;
@@ -51,7 +51,7 @@ type AIReportComponent = {
   position: { x: number; y: number; w: number; h: number };
 };
 
-// ── Parsing ────────────────────────────────────────────────
+// PARSING
 
 const parseFormat = (f: unknown) => {
   if (f === "number") return "Number" as const;
@@ -186,7 +186,7 @@ export const parseAIResponse = (
     return parsed ? [...acc, parsed] : acc;
   }, []);
 
-// ── SQL Execution ──────────────────────────────────────────
+// SQL EXECUTION
 
 // Patterns that should never appear in compiled SQL.
 const DANGEROUS_SQL_PATTERNS = [
@@ -267,7 +267,7 @@ const fetchAllComponentDataInternal = async (
   );
 
 export const fetchAllComponentData = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { components: reportComponent[]; startAt: string; endAt: string }) =>
       data,
   )
@@ -285,7 +285,7 @@ export type ReportWithData = {
   data: ComponentData[];
 };
 
-// TABLE DATA TO INCLUDE IN REPORTING
+// TABLES THE REPORTING QUERIES MAY READ
 const INCLUDED_TABLES = [
   PatientAdditionalAttribute.Table.name,
   Patient.Table.name,
@@ -312,7 +312,7 @@ type ManagerReportRequest = {
   ai_api_key: string;
 };
 
-// ── Shared input type for report endpoints ──────────────────
+// SHARED INPUT TYPE FOR REPORT ENDPOINTS
 
 export type ReportInput = {
   report_id?: string;
@@ -338,7 +338,7 @@ export type component_request = {
   };
 };
 
-// ── Prompt refinement response schema ──────────────────────
+// PROMPT REFINEMENT RESPONSE SCHEMA
 
 const prompt_suggestion_schema = z.object({
   refined_prompt: z.string(),
@@ -350,7 +350,7 @@ export const prompt_refine_response_schema = z.object({
 });
 
 export const refineReportPrompt = createServerFn({ method: "POST" })
-  .inputValidator((data: ReportInput) => data)
+  .validator((data: ReportInput) => data)
   .handler(
     async ({
       data,
@@ -435,12 +435,9 @@ export const refineReportPrompt = createServerFn({ method: "POST" })
     },
   );
 
-/**
- * Update (or create) a report using the hh ai service
- *  * @returns {Promise<Report>} - The updated report
- */
+/** Update (or create) a report using the hh ai service. */
 export const editReport = createServerFn({ method: "POST" })
-  .inputValidator((data: component_request) => data)
+  .validator((data: component_request) => data)
   .handler(
     async ({ data }): Promise<{ status: "ok"; component: reportComponent }> => {
       // TODO: replace with only super_admin permission role
@@ -539,7 +536,6 @@ export const editReport = createServerFn({ method: "POST" })
         parsedComponents,
       );
 
-      // Persist the report
       const userId = await getCurrentUserId();
       const savedReport = await ReportModel.API.update({
         report,
@@ -558,12 +554,11 @@ export const editReport = createServerFn({ method: "POST" })
   );
 
 /**
- * Update (or create) a single report component using the hh ai service.
- * Sends the existing component context to POST /reports/update-component
- * and returns the updated parsed component.
+ * Update (or create) a single report component via POST /reports/update-component,
+ * sending the existing component as context.
  */
 export const editReportComponent = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       report_id: string;
       user_prompt: string;
@@ -663,9 +658,7 @@ export const editReportComponent = createServerFn({ method: "POST" })
     return parsed;
   });
 
-/**
- * Helper function that just gets all the needed variables and needed data from the database
- */
+/** Schema and sample data the AI service needs to author a report. */
 const getAIReportingInfo = createServerFn().handler(async () => {
   const isAdmin = await isUserSuperAdmin();
   if (!isAdmin) {

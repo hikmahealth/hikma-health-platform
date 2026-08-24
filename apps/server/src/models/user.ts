@@ -303,19 +303,15 @@ namespace User {
   }
 
   /**
-   * Authenticate a user by signing them in using an email and password
-   * The method also creates a token for the user, with an expiry date 2 hours in the future
-   * @param {string} email - The user's email
-   * @param {string} password - The user's password
-   * @param {number} validHours - The number of hours the token is valid for
-   * @returns {Promise<{ user: User.EncodedT; token: string }>} - The user if authentication is successful, null otherwise
+   * Verify an email and password without establishing a session. Paths that
+   * authenticate a single request — HTTP Basic on the sync and file-resource
+   * routes — use this rather than `signIn`, which would mint a token per
+   * request that no client receives.
+   *
+   * @throws if the user does not exist, the password is wrong, or the row fails to parse
    */
-  export const signIn = createServerOnlyFn(
-    async (
-      email: string,
-      password: string,
-      validHours: number = 2,
-    ): Promise<{ user: User.EncodedT; token: string }> => {
+  export const verifyCredentials = createServerOnlyFn(
+    async (email: string, password: string): Promise<User.EncodedT> => {
       const user = await db
         .selectFrom(Table.name)
         .where("email", "=", email)
@@ -337,23 +333,34 @@ namespace User {
         throw new Error("Failed to parse user data");
       }
 
+      return Schema.encodeSync(UserSchema)(userEntry.right);
+    },
+  );
+
+  /**
+   * Verify credentials and mint a session token for the caller.
+   *
+   * @param {number} validHours - How long the token stays valid; keep at 2 (see session-lifetime.test.ts)
+   * @throws if the credentials are invalid
+   */
+  export const signIn = createServerOnlyFn(
+    async (
+      email: string,
+      password: string,
+      validHours: number = 2,
+    ): Promise<{ user: User.EncodedT; token: string }> => {
+      const user = await verifyCredentials(email, password);
+
       const token = await Token.create(
         user.id,
         new Date(Date.now() + validHours * 60 * 60 * 1000),
       );
 
-      return {
-        user: Schema.encodeSync(UserSchema)(userEntry.right),
-        token,
-      };
+      return { user, token };
     },
   );
 
-  /**
-   * Signs a user out and invalidates their token
-   * @param {string} token - The user's token
-   * @returns {Promise<void>} - Resolves when the token is invalidated
-   */
+  /** Signs a user out and invalidates their token. */
   export const signOut = createServerOnlyFn(
     async (token: string): Promise<void> => {
       await Token.invalidate(token);
@@ -361,11 +368,7 @@ namespace User {
   );
 
   export namespace API {
-    /**
-     * Create a new user / registration
-     * @param {User.EncodedT} user - The user to create
-     * @returns {Promise<User.EncodedT["id"] | null>} - The created user
-     */
+    /** Create a new user. `hashed_password` is hashed here, so pass the plaintext. Returns null if the input fails to decode. */
     export const create = createServerOnlyFn(
       async (
         user: User.EncodedT,
@@ -424,10 +427,6 @@ namespace User {
         return userId;
       },
     );
-    /**
-     * Get all users
-     * @returns {Promise<User.EncodedT[]>} - The list of users
-     */
     export const getAll = createServerOnlyFn(
       async (): Promise<User.EncodedT[]> => {
         const users = await db
@@ -438,18 +437,13 @@ namespace User {
 
         const entries = users.map(User.fromDbEntry);
 
-        // Throws an error if encoding fails. Something to keep in mind!
+        // encodeSync throws if a row fails to encode.
         return entries
           .filter(Either.isRight)
           .map((e) => Schema.encodeSync(UserSchema)(e.right));
       },
     );
 
-    /**
-     * get a user by their id
-     * @param {string} id - The id of the user
-     * @returns {Promise<User.EncodedT | null>} - The user
-     */
     export const getById = createServerOnlyFn(
       async (id: string): Promise<User.EncodedT | null> => {
         const user = await db
@@ -468,11 +462,7 @@ namespace User {
       },
     );
 
-    /**
-     * retrieve all users with a first name "james"
-     * @param {string} name - The first name of the user
-     * @returns {Promise<User.EncodedT[]>} - The list of users
-     */
+    /** Exact match on the full `name` column. */
     export const getByName = createServerOnlyFn(
       async (name: string): Promise<User.EncodedT[]> => {
         const users = await db
@@ -521,7 +511,6 @@ namespace User {
       },
     );
 
-    // Specific methods to update passwords
     export const updatePassword = createServerOnlyFn(
       async (id: string, password: string): Promise<User.EncodedT["id"]> => {
         const saltRounds = 10;

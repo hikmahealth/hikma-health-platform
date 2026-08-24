@@ -20,9 +20,10 @@ const read = (...parts: string[]) => readFileSync(join(SRC, ...parts), "utf8");
 const LOGIN_CALL_SITES = [
   "integrations/trpc/routers/commands.ts",
   "lib/auth/sign-in.ts",
-  "lib/form-resources.ts",
-  "routes/api/v2.sync.tsx",
 ];
+
+/** Paths that authenticate a single request and must never mint a token. */
+const VERIFY_ONLY_CALL_SITES = ["lib/form-resources.ts", "routes/api/v2.sync.tsx"];
 
 describe("session lifetime", () => {
   it("User.signIn defaults to 2 hours", () => {
@@ -39,6 +40,23 @@ describe("session lifetime", () => {
       const arity = args.trim() === "" ? 0 : args.split(",").filter((a) => a.trim()).length;
       expect(arity).toBeLessThanOrEqual(2);
     }
+  });
+
+  it.each(VERIFY_ONLY_CALL_SITES)("%s verifies credentials without minting", (file) => {
+    const source = read(...file.split("/"));
+
+    expect(source).toContain("User.verifyCredentials(");
+    expect(source).not.toContain("User.signIn(");
+  });
+
+  it("verifyCredentials writes no token", () => {
+    const source = read("models", "user.ts");
+    const body = source.slice(
+      source.indexOf("export const verifyCredentials"),
+      source.indexOf("export const signIn"),
+    );
+
+    expect(body).not.toContain("Token.create(");
   });
 
   // Guards the guard: if `User.signIn` is renamed, the rule above matches

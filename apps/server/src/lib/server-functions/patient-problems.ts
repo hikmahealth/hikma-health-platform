@@ -10,7 +10,7 @@ import { Result } from "@/lib/result";
  * Get paginated problems for a patient, most recently updated first.
  */
 const getPatientProblems = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (data: { patientId: string; offset?: number; limit?: number }) => data,
   )
   .handler(

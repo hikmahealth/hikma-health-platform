@@ -45,7 +45,7 @@ import { Logger } from "@hikmahealth/js-utils";
 import { adminMiddleware, superAdminMiddleware } from "@/middleware/auth";
 
 const getFormById = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     const res = await EventForm.API.getById(data.id);
@@ -55,7 +55,8 @@ const getFormById = createServerFn({ method: "GET" })
       let data;
       if (typeof res.form_fields === "string") {
         data = safeJSONParse(res.form_fields, []);
-        // on error, just return the original string. usually we would return an empty []. But I want to allow the client side code one more chance to fix without throwing an error.
+        // Hand the raw string back rather than [] so the client gets one more
+        // chance to salvage it.
         if (data.length === 0) {
           data = res.form_fields;
         }
@@ -63,8 +64,7 @@ const getFormById = createServerFn({ method: "GET" })
         data = res.form_fields;
       }
 
-      // process the array to make sure all fields are formatted from older versions of data to new ones.
-      // also act as an ongoing robustness measure
+      // Normalise fields written by older versions.
       if (Array.isArray(data)) {
         data.forEach((field) => {
           // migrate text area to text input with long length
@@ -72,7 +72,6 @@ const getFormById = createServerFn({ method: "GET" })
             field.inputType = "text";
             field.length = "long";
           }
-          // Add a _tag to each field
           field._tag = EventForm.getFieldTag(field.fieldType);
         });
       }
@@ -88,7 +87,7 @@ const getFormById = createServerFn({ method: "GET" })
   });
 
 const saveForm = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (d: { form: EventForm.EncodedT; updateFormId: null | string }) => d,
   )
   .middleware([superAdminMiddleware])
@@ -118,10 +117,8 @@ export const Route = createFileRoute("/app/event-forms/edit/$")({
   },
 });
 
-// Only fields allowed to be added mupltiple times - these are exempt from the "findDuplicatesStrings" check
+// Exempt from the findDuplicatesStrings check.
 const ALLOWED_MULTIPLE_FIELD_ENTRIES = ["separator", "text"];
-
-// form title, form language, form description, is editable checkbox, is snapshot checkbox, (inputs custom component)m add form input buttoms
 
 function RouteComponent() {
   const { form: initialForm, clinics } = Route.useLoaderData();
@@ -134,12 +131,10 @@ function RouteComponent() {
   const formState = useSelector(eventFormStore, (state) => state.context);
 
   useEffect(() => {
-    // Scroll to top and prevent scrolling.
-    // This screen has two panels that need to scroll independelty
+    // Lock the document so only the two panels scroll.
     window.scrollTo(0, 0);
     document.body.style.overflow = "hidden";
     return () => {
-      // Reset scroll and allow scrolling.
       window.scrollTo(0, 0);
       document.body.style.overflow = "auto";
     };
@@ -177,10 +172,8 @@ function RouteComponent() {
       return;
     }
 
-    // Author-time guardrail: refuse to save a form whose computedValue
-    // rules form a dependency cycle. The mobile runtime suppresses
-    // writebacks on cycle, but the form would still appear broken to
-    // the end user — catch it here where the author can fix it.
+    // Mobile suppresses writebacks on a computedValue cycle, but the form
+    // still looks broken — catch it here, where the author can fix it.
     const computedCycles = detectComputedValueCycles(
       formState.form_fields.map((f) => ({
         id: f.id,
@@ -202,7 +195,7 @@ function RouteComponent() {
       return;
     }
 
-    // for the medicine fields, remove the empty strings that might be added or after the semicolon
+    // Medicine fields accumulate empty options around the semicolons.
     let cleanedFields = formState.form_fields.map((field) => {
       if (field.options) {
         let cleanedOptions = field.options.map(
@@ -244,10 +237,9 @@ function RouteComponent() {
       return field;
     });
 
-    // Ensure all field options have IDs for translation keying
+    // Option ids are the translation keys.
     cleanedFields = EventForm.ensureOptionIds(cleanedFields);
 
-    // Update the store with cleaned fields
     eventFormStore.send({ type: "set-form-fields", payload: cleanedFields });
 
     const updateFormId = (() => {

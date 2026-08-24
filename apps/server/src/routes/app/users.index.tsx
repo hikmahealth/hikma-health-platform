@@ -44,7 +44,7 @@ import { Logger } from "@hikmahealth/js-utils";
 // });
 
 const deleteUser = createServerFn({ method: "POST" })
-  .inputValidator((d: { id: string }) => d)
+  .validator((d: { id: string }) => d)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
     if (context.role !== User.ROLES.SUPER_ADMIN) {

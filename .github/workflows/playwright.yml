@@ -8,7 +8,7 @@ jobs:
   test:
     if: false # Temporarily disabled
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

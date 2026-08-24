@@ -57,7 +57,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { superAdminMiddleware } from "@/middleware/auth";
 
 const saveForm = createServerFn({ method: "POST" })
-  .inputValidator((data: PatientRegistrationForm.EncodedT) => data)
+  .validator((data: PatientRegistrationForm.EncodedT) => data)
   .middleware([superAdminMiddleware])
   .handler(async ({ data }) => {
     return await PatientRegistrationForm.upsertPatientRegistrationForm(data);
@@ -182,8 +182,7 @@ function reducer(state: State, action: Action) {
   switch (action.type) {
     case "set-form-state": {
       const { form } = action.payload;
-      // due to immutable data structures not triggering the reload, have to set each field
-      // manually
+      // Immer drafts don't trigger a reload on whole-object assignment; set each field.
       state.name = form.name;
       state.created_at = form.created_at;
       state.id = form.id;
@@ -194,7 +193,6 @@ function reducer(state: State, action: Action) {
       break;
     }
     case "add-field": {
-      // do something
       const position = state.fields.length + 1;
       const newField: PatientRegistrationForm.Field = {
         id: uuidv1(),
@@ -234,7 +232,6 @@ function reducer(state: State, action: Action) {
           }
         }
 
-        //update the column name
         // FIXME: Should you be able to update the column name for even base fields?? Probably not!
         // FIXME: Are the column names even needed for the additional fields???
         // field.column = getTranslation(field.label, translation)
@@ -347,11 +344,10 @@ function reducer(state: State, action: Action) {
     case "remove-field": {
       const { id } = action.payload;
       const field = state.fields.find((f) => f.id === id);
-      // if there is no field
       if (field === undefined) return;
 
       // state.fields = state.fields.filter((field) => field.id !== id);
-      // simply marking the field as deleted
+      // Soft delete: the field stays in the array so its position is preserved.
       state.fields = state.fields.map((field) => {
         if (field.id === id) {
           return { ...field, deleted: true };
@@ -365,10 +361,8 @@ function reducer(state: State, action: Action) {
     case "restore-field": {
       const { id } = action.payload;
       const field = state.fields.find((f) => f.id === id);
-      // if there is no field
       if (field === undefined) return;
 
-      // simply marking the field as *NOT* deleted
       state.fields = state.fields.map((field) => {
         if (field.id === id) {
           return { ...field, deleted: false };
@@ -382,22 +376,16 @@ function reducer(state: State, action: Action) {
     case "change-position": {
       const { id, position } = action.payload;
 
-      // no position is lower than 0
       if (position <= 0) return;
-
-      // no position is greated than the length of the fields
       if (position > state.fields.length) return;
 
       const field = state.fields.find((f) => f.id === id);
 
       if (field) {
-        // sort all the items in order of their position
         const sorted = sortBy(state.fields, ["position"]);
 
-        // array without the moving field
         const remainingSorted = sorted.filter((f) => f.id !== id);
 
-        // place the field in the new position
         remainingSorted.splice(position - 1, 0, field);
         state.fields = remainingSorted.map((field, idx) => ({
           ...field,
@@ -458,10 +446,7 @@ function reducer(state: State, action: Action) {
       const { id, slots } = action.payload;
       const field = state.fields.find((f) => f.id === id);
       if (!field) return;
-      // Atomic write of all four rule slots. Caller passes the *new*
-      // slots; undefined entries clear the slot. The panel's own
-      // validation already guarantees each slot is structurally valid
-      // JSONLogic before we get here.
+      // Atomic write of all four slots; an undefined entry clears its slot.
       field.visibleIf = slots.visibleIf;
       field.requiredIf = slots.requiredIf;
       field.validators = slots.validators;
@@ -488,8 +473,6 @@ const defaultEmptyForm: PatientRegistrationForm.EncodedT = {
 
 function RouteComponent() {
   const { patientRegistrationForm } = Route.useLoaderData();
-  // initial state is either loaded from the DB or on first deployment its loaded from a local state
-
   const loadedForm =
     (patientRegistrationForm as PatientRegistrationForm.EncodedT) ??
     defaultEmptyForm;
@@ -530,10 +513,8 @@ function RouteComponent() {
     }),
   );
 
-  // Reorder via the existing `change-position` action: drop the dragged
-  // field at the target field's stored position. Positions live in
-  // full-array (incl. deleted) coordinates, so use the over field's
-  // position rather than its index in the filtered render list.
+  // Positions are full-array (incl. deleted) coordinates, so use the over
+  // field's stored position, not its index in the filtered render list.
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
@@ -548,8 +529,7 @@ function RouteComponent() {
   };
 
   useEffect(() => {
-    // Two independently-scrolling panes; lock the document so only the
-    // panes scroll (matches the event-form builder layout).
+    // Lock the document so only the two panes scroll.
     window.scrollTo(0, 0);
     document.body.style.overflow = "hidden";
     return () => {
@@ -567,7 +547,6 @@ function RouteComponent() {
     if (!result.success) {
       Logger.error(result.error);
       if (result.error.issues.find((err) => err.path.includes("options"))) {
-        // ther eis an error with one of the options supported for a select field
         return alert(
           "Please make sure all select fields have at least one option",
         );
@@ -578,11 +557,8 @@ function RouteComponent() {
       }
     }
 
-    // Author-time guardrail: refuse to save a form whose computedValue
-    // rules form a dependency cycle. Mobile runtime suppresses
-    // writebacks on cycle (defensive backstop), but the form would
-    // appear broken to the end user — catch it here where the author
-    // can fix it.
+    // Mobile suppresses writebacks on a computedValue cycle, but the form
+    // still looks broken — catch it here, where the author can fix it.
     const computedCycles = detectComputedValueCycles(
       state.fields.map((f) => ({
         id: f.id,
@@ -1016,11 +992,9 @@ function FieldFlagsEditor({
     fieldType,
   } = field;
 
-  // Uniqueness compares against a single stored value. It is only offered for
-  // scalar text/number fields: a unique `boolean` would cap the table at two
-  // patients, select/checkbox values are multi-value and fragile to compare,
-  // and date values round-trip through storage representations that make exact
-  // equality unreliable.
+  // Scalar text/number only: a unique boolean caps the table at two patients,
+  // select/checkbox values are multi-value, and dates round-trip through
+  // representations that make exact equality unreliable.
   const uniqueEligible = fieldType === "text" || fieldType === "number";
 
   return (
@@ -1267,13 +1241,6 @@ function DeletedFieldsList({
   );
 }
 
-/**
-Given a translation object, create options for a dropdown
-
-@param {TranslationObject[]} translations
-@param {LanguageKey} language
-@returns {Array<{label: string, value: string}>}
-*/
 function translationObjectOptions(
   translations: Language.TranslationObject[],
   language: Language.LanguageKey,

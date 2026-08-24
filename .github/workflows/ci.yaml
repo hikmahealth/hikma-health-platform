@@ -19,7 +19,7 @@ jobs:
   # Tauri/Rust compilation pulls in GTK system libs and minutes of build time;
   # we only pay that cost when `apps/local-hub/src-tauri/**` actually moves.
   changes:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     permissions:
       contents: read
       pull-requests: read
@@ -35,7 +35,7 @@ jobs:
               - 'apps/local-hub/src-tauri/**'
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     permissions:
       contents: read
     steps:
@@ -63,7 +63,7 @@ jobs:
   # still matches its recorded tree_sha. See vendor/README.md for the policy.
   # Cheap to run on every PR; no paths filter so ff-v3's gating stays simple.
   vendor-check:
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-4x
     permissions:
       contents: read
     steps:
@@ -93,7 +93,7 @@ jobs:
   test-tauri:
     needs: changes
     if: needs.changes.outputs.tauri == 'true'
-    runs-on: ubuntu-latest
+    runs-on: warp-ubuntu-latest-x64-8x
     permissions:
       contents: read
     steps:
@@ -127,7 +127,7 @@ jobs:
             libglib2.0-dev \
             libgtk-3-dev
 
-      # Rust itself is preinstalled on ubuntu-latest; only nextest is missing.
+      # Rust itself is preinstalled on the runner image; only nextest is missing.
       - name: Install cargo-nextest
         uses: taiki-e/install-action@nextest
 
@@ -145,7 +145,7 @@ jobs:
   build-tauri:
     needs: changes
     if: needs.changes.outputs.tauri == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: warp-ubuntu-2204-x64-8x
     permissions:
       contents: read
     steps:
@@ -202,6 +202,8 @@ jobs:
       needs.vendor-check.result == 'success' &&
       (needs.test-tauri.result == 'success' || needs.test-tauri.result == 'skipped') &&
       (needs.build-tauri.result == 'success' || needs.build-tauri.result == 'skipped')
+    # Deliberately not a WarpBuild runner: one updateRef call, and failing to
+    # acquire a runner leaves v3 behind next — recoverable only by hand.
     runs-on: ubuntu-latest
     permissions:
       contents: write

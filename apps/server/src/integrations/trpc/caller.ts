@@ -35,31 +35,21 @@ export async function callerFromContext(
     }
   }
 
-  return { user, clinic, token: "" };
+  return { user, clinic };
 }
 
 /**
  * The peer type a sync request may actually be served as.
  *
- * `peer_type` arrives in the request body, and `sync_hub` is not a label — it
- * selects a wider entity set in both directions. Server → client it adds
- * `users`, `devices` and `device_pin_codes`; client → server it adds
- * `clinic_departments`, `drug_catalogue` and `device_pin_codes`. Worse, both
- * scoping paths key off `"device" in caller`: a hub claim from a caller with no
- * device record yields `clinicIds = null`, which turns `applyClinicScope` and
- * the per-record clinic check into no-ops. So an unchecked claim reads every
- * clinic's users and devices, and `device_pin_codes.pin_hash` is an unsalted
- * SHA-256 of a six-digit PIN — a keyspace of 10^6, recoverable instantly.
+ * `peer_type` is caller-supplied, and `sync_hub` widens the entity set in both
+ * directions (users, devices, device_pin_codes). Both scoping paths key off
+ * `"device" in caller`, so a hub claim from a caller with no device record
+ * yields `clinicIds = null` and turns clinic scoping into a no-op — an
+ * unchecked claim would read every clinic. Mirrors the rule `/api/v2/sync`
+ * already enforces.
  *
- * `/api/v2/sync` already refuses this: a `sync_hub` claim there must present a
- * device API key, and the caller it builds is the resolved device. This is the
- * same rule for the RPC surface, which had none.
- *
- * Today it always denies, because `callerFromContext` authenticates a JWT user
- * and never attaches a device — and the real hub syncs over `/api/v2/sync`, not
- * over tRPC, so nothing legitimate is refused. It is written as a capability
- * check rather than an unconditional throw so it stays correct if a
- * device-authenticated caller ever reaches these procedures.
+ * Written as a capability check rather than an unconditional throw so it stays
+ * correct if a device-authenticated caller ever reaches these procedures.
  */
 export function resolvePeerType(
   requested: string | undefined,
@@ -73,9 +63,7 @@ export function resolvePeerType(
     caller.device?.device_type === Device.DEVICE_TYPE.SYNC_HUB;
 
   if (!isHubDevice) {
-    // Logged rather than left to the error path: the TRPCError is thrown before
-    // the procedures' try blocks, so nothing else records it — and a caller
-    // asking to be served as a hub is worth seeing.
+    // Thrown before the procedures' try blocks, so nothing else records it.
     Logger.warn({
       msg: "[sync] Refused a sync_hub peer_type claim from a non-device caller",
       caller: "user" in caller ? caller.user.id : "device",

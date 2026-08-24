@@ -38,7 +38,7 @@ const getUserFromToken = async (token: string): Promise<User | null> => {
 
 // Create the authentication middleware
 export const authMiddleware = createMiddleware({ type: "function" })
-  .inputValidator(zodValidator(authSchema))
+  .validator(zodValidator(authSchema))
   .server(async ({ next, data }) => {
     // Extract the authorization header
     const authHeader = data.headers?.authorization;

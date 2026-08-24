@@ -22,7 +22,7 @@ type ContentResult = {
 };
 
 const getPublicContentById = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .handler(async ({ data }): Promise<ContentResult | null> => {
     const content = await db
       .selectFrom("education_content")

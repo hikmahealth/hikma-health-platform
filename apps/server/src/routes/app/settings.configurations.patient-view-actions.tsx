@@ -48,16 +48,15 @@ const getPatientViewActions = createServerFn({ method: "GET" })
   });
 
 const savePatientViewActions = createServerFn({ method: "POST" })
-  .inputValidator((data: { entries: unknown }) => data)
+  .validator((data: { entries: unknown }) => data)
   .middleware([superAdminMiddleware])
   .handler(async ({ data, context }) => {
     // The request body is untrusted; canonicalization is the validation, and it
     // is total, so a malformed body stores the defaults rather than throwing.
     const entries = canonicalizePatientViewActions(data.entries);
 
-    // Never DELETE the row to "reset" — app_config has no tombstones (sync
-    // hardcodes `deleted: []` for it), so a deleted row is invisible to sync
-    // and every device keeps the stale value. Always write.
+    // Never DELETE the row to "reset": app_config has no tombstones, so a
+    // deleted row is invisible to sync and devices keep the stale value.
     return await AppConfig.API.set(
       PATIENT_VIEW_ACTIONS_NAMESPACE,
       PATIENT_VIEW_ACTIONS_KEY,
@@ -65,8 +64,7 @@ const savePatientViewActions = createServerFn({ method: "POST" })
       entries,
       "array",
       context.userId,
-      // Passed explicitly rather than omitted because this screen owns the
-      // row's scope. null = applies to all clinics.
+      // Explicit because this screen owns the row's scope. null = all clinics.
       null,
     );
   });

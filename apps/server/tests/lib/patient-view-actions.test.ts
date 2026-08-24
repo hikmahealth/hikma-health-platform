@@ -10,7 +10,7 @@ const REGISTRY_IDS = PATIENT_VIEW_ACTIONS.map((a) => a.id);
 
 describe("canonicalizePatientViewActions", () => {
   it("returns the defaults for input that carries no usable entries", () => {
-    // The save handler's inputValidator is a passthrough and the loader reads
+    // The save handler's validator is a passthrough and the loader reads
     // parseValue's `any`, so every one of these can arrive over the wire.
     for (const raw of [
       null,

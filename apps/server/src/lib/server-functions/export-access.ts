@@ -32,7 +32,7 @@ const callerId = (context: { userId: string | null }): string => {
 /** One grant per export, not one per file, so a single revocation kills a leaked workbook. */
 export const createAttachmentExportGrant = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
-  .inputValidator((data: { expiryDays: number }) => data)
+  .validator((data: { expiryDays: number }) => data)
   .handler(async ({ data, context }) => {
     const userId = callerId(context);
 
@@ -78,7 +78,7 @@ export const listAttachmentExportGrants = createServerFn({ method: "GET" })
  */
 export const revokeAttachmentExportGrant = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
-  .inputValidator((data: { grantId: string }) => data)
+  .validator((data: { grantId: string }) => data)
   .handler(async ({ data, context }) => {
     const userId = callerId(context);
 

@@ -3,10 +3,6 @@ import Appointment from "@/models/appointment";
 import type User from "@/models/user";
 import { adminMiddleware } from "@/middleware/auth";
 
-/**
- * Get all appointments
- * @returns {Promise<Appointment.EncodedT[]>} - The list of appointments
- */
 export const getAllAppointments = createServerFn({ method: "GET" })
   .middleware([adminMiddleware])
   .handler(async (): Promise<Appointment.EncodedT[]> => {
@@ -14,13 +10,8 @@ export const getAllAppointments = createServerFn({ method: "GET" })
     return res;
   });
 
-/**
- * Get an appointment by ID
- * @param {string} id - The ID of the appointment
- * @returns {Promise<Appointment.EncodedT | null>} - The appointment or null if not found
- */
 export const getAppointmentById = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<Appointment.EncodedT | null> => {
     const res = await Appointment.API.getById(data.id);
@@ -28,13 +19,9 @@ export const getAppointmentById = createServerFn({ method: "GET" })
     return res;
   });
 
-/**
- * Get all a patient's appointments
- * @param {string} patientId - the ID of the patient
- * @returns {Promise<Appointment.EncodedT[]>} - the list of appointments for the patient, sorted by date from earliest to latest
- */
+/** A patient's appointments, earliest first. */
 export const getAppointmentsByPatientId = createServerFn({ method: "GET" })
-  .inputValidator((data: { patientId: string }) => data)
+  .validator((data: { patientId: string }) => data)
   .middleware([adminMiddleware])
   .handler(
     async ({
@@ -64,10 +51,7 @@ export const getAppointmentsByPatientId = createServerFn({ method: "GET" })
     },
   );
 
-/**
- * Get all appointments with their patients, clinics, and providers information
- * @returns {Promise<{appointment: Appointment.EncodedT, patient: Patient.EncodedT, clinic: Clinic.EncodedT, provider: User.EncodedT | null}[]>} - The list of appointments with their patients, clinics, and providers information
- */
+/** Every appointment joined to its patient, clinic and provider. */
 export const getAllAppointmentsWithDetails = createServerFn({
   method: "GET",
 })
@@ -86,14 +70,8 @@ export const getAllAppointmentsWithDetails = createServerFn({
     },
   );
 
-/**
- * Toggle the status of an appointment
- * @param {string} id - The ID of the appointment
- * @param {string} status - The new status of the appointment
- * @returns {Promise<void>}
- */
 export const toggleAppointmentStatus = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string; status: string }) => data)
+  .validator((data: { id: string; status: string }) => data)
   .middleware([adminMiddleware])
   .handler(async ({ data }): Promise<void> => {
     await Appointment.API.toggleStatus(data.id, data.status);

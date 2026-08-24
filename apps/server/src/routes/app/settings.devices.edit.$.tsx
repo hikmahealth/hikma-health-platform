@@ -35,10 +35,10 @@ import upperFirst from "lodash/upperFirst";
 import Creatable from "react-select/creatable";
 import { Logger } from "@hikmahealth/js-utils";
 
-// ── Server functions ──────────────────────────────────────────────
+// SERVER FUNCTIONS
 
 const registerDevice = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       name: string;
       device_type: Device.DeviceTypeT;
@@ -63,7 +63,7 @@ const registerDevice = createServerFn({ method: "POST" })
   });
 
 const updateDevice = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: { id: string; input: Device.UpdateDeviceInput }) => data,
   )
   .middleware([permissionsMiddleware])
@@ -78,7 +78,7 @@ const updateDevice = createServerFn({ method: "POST" })
   });
 
 const regenerateDeviceApiKey = createServerFn({ method: "POST" })
-  .inputValidator((data: { id: string }) => data)
+  .validator((data: { id: string }) => data)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
     if (context.role !== User.ROLES.SUPER_ADMIN) {
@@ -91,7 +91,7 @@ const regenerateDeviceApiKey = createServerFn({ method: "POST" })
   });
 
 const getDeviceById = createServerFn({ method: "GET" })
-  .inputValidator((data: { id: string | null }) => data)
+  .validator((data: { id: string | null }) => data)
   .middleware([permissionsMiddleware])
   .handler(async ({ data, context }) => {
     if (context.role !== User.ROLES.SUPER_ADMIN) {
@@ -104,7 +104,7 @@ const getDeviceById = createServerFn({ method: "GET" })
     return Device.API.getById(data.id);
   });
 
-// ── Route ─────────────────────────────────────────────────────────
+// ROUTE
 
 export const Route = createFileRoute("/app/settings/devices/edit/$")({
   component: RouteComponent,
@@ -121,7 +121,7 @@ export const Route = createFileRoute("/app/settings/devices/edit/$")({
   },
 });
 
-// ── Types ─────────────────────────────────────────────────────────
+// TYPES
 
 type DeviceFormValues = {
   name: string;
@@ -184,7 +184,7 @@ const HARDWARE_ID_TYPE_LABELS: Record<Device.HardwareIdTypeT, string> = {
   custom: "Custom",
 };
 
-// ── API Key Display ───────────────────────────────────────────────
+// API KEY DISPLAY
 
 function ApiKeyDisplay({
   apiKey,
@@ -242,7 +242,7 @@ function ApiKeyDisplay({
   );
 }
 
-// ── Component ─────────────────────────────────────────────────────
+// COMPONENT
 
 function RouteComponent() {
   const { device, clinics, isSuperAdmin } = Route.useLoaderData();
@@ -253,7 +253,7 @@ function RouteComponent() {
   const [apiKey, setApiKey] = useState<string | null>(null);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
-  // Parse clinic_ids from device — could be string[] or need parsing
+  // `clinic_ids` arrives as string[] or as a JSON string.
   const existingClinicIds: string[] = Array.isArray(device?.clinic_ids)
     ? (device.clinic_ids as string[])
     : [];
@@ -365,7 +365,8 @@ function RouteComponent() {
     }
   };
 
-  // If we just created a device and have an API key to show, block navigation
+  // Post-registration screen. `!isEditMode` keeps a regenerated key from
+  // replacing the edit form.
   if (apiKey && !isEditMode) {
     return (
       <div className="container py-6 max-w-xl space-y-6">

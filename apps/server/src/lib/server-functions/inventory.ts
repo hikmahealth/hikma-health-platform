@@ -8,7 +8,7 @@ import { Result } from "@/lib/result";
 import { adminMiddleware } from "@/middleware/auth";
 
 export const getClinicInventory = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (params: {
       clinicId: string;
       searchQuery?: string;
@@ -32,8 +32,7 @@ export const getClinicInventory = createServerFn({ method: "GET" })
             },
           );
 
-          // We don't know the exact total, so we estimate based on whether we got a full page
-          // This avoids an extra query and is more efficient
+          // Estimated from whether the page came back full, to avoid a count query.
           const hasMore = items.length === (data.limit ?? 100);
 
           return Result.ok({ items, hasMore });
@@ -52,7 +51,7 @@ export const getClinicInventory = createServerFn({ method: "GET" })
   });
 
 export const getClinicInventoryById = createServerFn({ method: "GET" })
-  .inputValidator((params: { id: string }) => params)
+  .validator((params: { id: string }) => params)
   .middleware([adminMiddleware])
   .handler(async ({ data }) => {
     return Sentry.startSpan(
@@ -76,7 +75,7 @@ export const getClinicInventoryById = createServerFn({ method: "GET" })
   });
 
 export const getBatchesByDrug = createServerFn({ method: "GET" })
-  .inputValidator(
+  .validator(
     (params: {
       drugId: string;
       onlyAvailable?: boolean;
@@ -106,7 +105,7 @@ export const getBatchesByDrug = createServerFn({ method: "GET" })
   });
 
 export const saveClinicInventory = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       id: string | null;
       clinicId: string;
@@ -127,7 +126,7 @@ export const saveClinicInventory = createServerFn({ method: "POST" })
       async () => {
         try {
           if (data.isNew) {
-            // For new items, use the updateQuantity API which handles creation
+            // updateQuantity creates the row when it is missing.
             const result = await ClinicInventory.API.updateQuantity({
               clinicId: data.clinicId,
               drugId: data.drugId,
@@ -141,7 +140,6 @@ export const saveClinicInventory = createServerFn({ method: "POST" })
             });
             return { success: true, data: result };
           } else {
-            // For existing items, we need to calculate the quantity change
             const existing = await ClinicInventory.API.getById(data.id!);
             if (!existing) {
               throw new Error("Inventory item not found");
@@ -174,7 +172,7 @@ export const saveClinicInventory = createServerFn({ method: "POST" })
   });
 
 export const createDrugBatch = createServerFn({ method: "POST" })
-  .inputValidator(
+  .validator(
     (data: {
       drugId: string;
       clinicId: string;
@@ -216,7 +214,6 @@ export const createDrugBatch = createServerFn({ method: "POST" })
 
         const batchResult = await DrugBatches.API.upsert(batchData);
 
-        // Automatically create inventory entry for this batch in the specified clinic
         if (batchResult && data.clinicId) {
           await ClinicInventory.API.updateQuantity({
             clinicId: data.clinicId,
