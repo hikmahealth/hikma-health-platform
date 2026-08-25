@@ -119,6 +119,23 @@ namespace AppConfig {
     );
 
     /**
+     * Get a parsed configuration value, honouring the row's clinic scope.
+     * Null when no row exists or the row does not apply — flags fail closed.
+     */
+    export const getScopedValue = createServerOnlyFn(
+      async <T>(
+        namespace: string,
+        key: string,
+        clinicId: string | null,
+      ): Promise<T | null> => {
+        const row = await get(namespace, key);
+        if (!row) return null;
+        if (!Utils.appliesToClinic(row.clinic_ids, clinicId)) return null;
+        return Utils.parseValue(row);
+      },
+    );
+
+    /**
      * Get all configuration values for a namespace
      * @param {string} namespace - The namespace to retrieve configurations for
      * @returns {Promise<AppConfig.EncodedT[]>} - All configurations in the namespace
@@ -406,6 +423,21 @@ namespace AppConfig {
       if (!item) return null;
 
       return parseValue(item);
+    };
+
+    /**
+     * Whether a row's `clinic_ids` scope covers a given clinic.
+     * null -> every clinic (also every row predating the column). [] -> none.
+     *
+     * INVERSE of `event_forms.clinic_ids`, where empty means "all".
+     * Mirrors `app/utils/appConfigScope.ts` on mobile.
+     */
+    export const appliesToClinic = (
+      clinicIds: readonly string[] | null,
+      clinicId: string | null,
+    ): boolean => {
+      if (clinicIds === null) return true;
+      return clinicId !== null && clinicIds.includes(clinicId);
     };
   }
 }

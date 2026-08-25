@@ -255,7 +255,7 @@ namespace User {
      * If set to true, this table is always pushed regardless of the the last sync date times. All sync events push to mobile the latest table.
      * IMPORTANT: If ALWAYS_PUSH_TO_MOBILE is true, content of the table should never be edited on the client or pushed to the server from mobile. its one way only.
      * */
-    export const ALWAYS_PUSH_TO_MOBILE = false;
+    export const ALWAYS_PUSH_TO_MOBILE = true;
     export const name = "users";
     /** The name of the table in the mobile database */
     export const mobileName = "users";

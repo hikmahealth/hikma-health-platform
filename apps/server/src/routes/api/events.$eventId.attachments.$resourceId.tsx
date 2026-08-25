@@ -9,6 +9,7 @@ import {
 import Resource from "@/models/resource";
 import Event from "@/models/event";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
+import { callerHasClinicPermission } from "@/lib/mobile-permissions";
 import { getAdapterForStore } from "@/storage/factory";
 import { ResourceStoreUnavailableError } from "@/storage/errors";
 import { isStoreType } from "@/storage/types";
@@ -42,8 +43,8 @@ const json = (body: unknown, status: number): Response =>
  * given event or resource id exists.
  *
  * A caller with no session may present an access-grant token instead, which is
- * how links in an exported workbook resolve. The grant supplies only an
- * identity; the clinic guard below runs unchanged.
+ * how links in an exported workbook resolve. The grant supplies only an identity
+ * and never gets the admin permissions override.
  */
 export const Route = createFileRoute(
   "/api/events/$eventId/attachments/$resourceId",
@@ -89,15 +90,19 @@ export const Route = createFileRoute(
 
           // Clinic-level guard, checked per request so revoking a user's clinic
           // access immediately revokes their ability to read its attachments.
-          const permittedClinicIds =
-            await UserClinicPermissions.API.getClinicIdsWithPermission(
-              caller.id,
-              UserClinicPermissions.userPermissions.CAN_VIEW_HISTORY,
-            );
-          if (
-            !resource.clinic_id ||
-            !permittedClinicIds.includes(resource.clinic_id)
-          ) {
+          if (!resource.clinic_id) {
+            return json({ error: "Not found" }, 404);
+          }
+
+          // Session callers only: a grant token rides inside an exported file,
+          // so extending the override there would make every link unrestricted.
+          const permitted = await callerHasClinicPermission({
+            userId: caller.id,
+            clinicId: resource.clinic_id,
+            permission: UserClinicPermissions.userPermissions.CAN_VIEW_HISTORY,
+            allowMobileOverride: session !== null,
+          });
+          if (!permitted) {
             return json({ error: "Not found" }, 404);
           }
 

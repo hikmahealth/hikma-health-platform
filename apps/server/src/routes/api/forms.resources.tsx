@@ -9,6 +9,7 @@ import {
 import Resource from "@/models/resource";
 import Patient from "@/models/patient";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
+import { callerHasClinicPermission } from "@/lib/mobile-permissions";
 import { getConfiguredAdapter } from "@/storage/factory";
 import { putVerified } from "@/storage/integrity";
 import { RESOURCE_PATH_PREFIX, UPLOAD_SIZE_LIMIT_BYTES } from "@/storage/types";
@@ -135,12 +136,17 @@ export const Route = createFileRoute("/api/forms/resources")({
             return json({ error: "Unable to determine clinic scope" }, 400);
           }
 
-          const permittedClinicIds =
-            await UserClinicPermissions.API.getClinicIdsWithPermission(
-              caller.id,
+          // Against the clinic the resource is attributed to. Mobile resolves the
+          // same flag against the signed-in clinic, so a hand-scoped config row
+          // can make the two disagree.
+          const permitted = await callerHasClinicPermission({
+            userId: caller.id,
+            clinicId: scopeClinicId,
+            permission:
               UserClinicPermissions.userPermissions.CAN_REGISTER_PATIENTS,
-            );
-          if (!permittedClinicIds.includes(scopeClinicId)) {
+            allowMobileOverride: true,
+          });
+          if (!permitted) {
             return json({ error: "Unauthorized" }, 403);
           }
 

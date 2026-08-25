@@ -7,6 +7,7 @@ import {
   resolveEntitiesForPeer,
   applyClinicScope,
   FULL_SNAPSHOT_TABLES,
+  syncSelection,
   normalizeCivilDates,
   type SyncEntity,
 } from "./sync-shared";
@@ -361,8 +362,9 @@ async function fetchBucket(args: {
   key: [string, string] | null;
   limit: number;
   clinicIds: string[] | null;
+  peerType: Device.DeviceTypeT;
 }): Promise<Record<string, any>[]> {
-  const { entity, bucket, since, ts, key, limit, clinicIds } = args;
+  const { entity, bucket, since, ts, key, limit, clinicIds, peerType } = args;
   const table = entity.Table.name;
   const sortCol = SORT_COLUMN[bucket];
   // MAX_HISTORY_DAYS_SYNC is deliberately not applied here — see getDeltaPage.
@@ -387,10 +389,13 @@ async function fetchBucket(args: {
   // Build it separately rather than calling selectAll() then select().
   let q: any;
 
+  // Mirrors getDeltaRecords: mobile gets the projected columns, a hub the row.
+  const selection = syncSelection(table, peerType);
+  const selectPayload = (query: any) =>
+    selection ? query.select(selection) : query.selectAll();
+
   if (bucket === "created") {
-    q = db
-      .selectFrom(table as any)
-      .selectAll()
+    q = selectPayload(db.selectFrom(table as any))
       .where("server_created_at", "<=", upper)
       .where("deleted_at", "is", null);
     if (isSnapshot) {
@@ -404,9 +409,7 @@ async function fetchBucket(args: {
         .where("server_created_at", ">=", from);
     }
   } else if (bucket === "updated") {
-    q = db
-      .selectFrom(table as any)
-      .selectAll()
+    q = selectPayload(db.selectFrom(table as any))
       .where("last_modified", ">", from)
       .where("last_modified", "<=", upper)
       .where("server_created_at", "<", from)
@@ -559,6 +562,7 @@ export async function getDeltaPage(args: {
       key,
       limit: pageRows + 1,
       clinicIds,
+      peerType,
     });
     const hasMoreBeyondPage = probed.length > pageRows;
     const candidates = probed.slice(0, pageRows);

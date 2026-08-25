@@ -31,6 +31,11 @@ export interface PatientVisitItemProps {
   clinic?: any
 
   /**
+   * The provider who recorded the visit. Absent in online mode.
+   */
+  provider?: any
+
+  /**
    * Callback function when the visit item is pressed
    */
   onPress: (visit: any) => void
@@ -51,10 +56,32 @@ const enhanceVisitItem = withObservables(["visit"], ({ visit }) => ({
   clinic: visit.clinicId
     ? visit.clinic.observe().pipe(catchError(() => of$(null)))
     : of$(null),
+  // Not a relation on Visit, so look it up through the record's own database
+  // rather than the imported singleton. Same dangling-id hazard as the clinic.
+  provider: visit.providerId
+    ? visit.collections
+        .get("users")
+        .findAndObserve(visit.providerId)
+        .pipe(catchError(() => of$(null)))
+    : of$(null),
 }))
 
+/** The live users-table name wins; the copy on the visit is the fallback. */
+export const resolveProviderName = (
+  liveName: string | null | undefined,
+  storedName: string | null | undefined,
+): string => liveName?.trim() || storedName || ""
+
 /** Inner rendering logic shared by both enhanced and plain variants */
-function PatientVisitItemInner({ visit, clinic, onPress, onDelete }: PatientVisitItemProps) {
+function PatientVisitItemInner({
+  visit,
+  clinic,
+  provider,
+  onPress,
+  onDelete,
+}: PatientVisitItemProps) {
+  const providerName = resolveProviderName(provider?.name, visit.providerName)
+
   return (
     <Pressable
       style={{ marginBottom: 32 }}
@@ -90,7 +117,7 @@ function PatientVisitItemInner({ visit, clinic, onPress, onDelete }: PatientVisi
           </Text>
         </If>
         <Text>
-          {translate("common:provider")}: {visit.providerName}
+          {translate("common:provider")}: {providerName}
         </Text>
       </View>
     </Pressable>

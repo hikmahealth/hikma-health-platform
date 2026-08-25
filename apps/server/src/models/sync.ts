@@ -14,6 +14,7 @@ import {
   EXEMPT_FROM_HISTORY_LIMIT,
   CLINIC_COLUMN_BY_TABLE,
   FULL_SNAPSHOT_TABLES,
+  syncSelection,
   applyClinicScope,
   getMaxHistoryDaysSync,
   normalizeCivilDates,
@@ -259,13 +260,20 @@ namespace Sync {
   const getFullSnapshot = async (
     tableName: string,
     hubClinicIds: string[] | null,
+    peerType: Device.DeviceTypeT,
   ): Promise<DeltaData> => {
+    const selection = syncSelection(tableName, peerType);
+    const liveRows = db
+      .selectFrom(tableName as "clinics")
+      .where("deleted_at", "is", null)
+      .where("is_deleted", "is not", true);
+
     const live = await applyClinicScope(
-      db
-        .selectFrom(tableName as "clinics")
-        .where("deleted_at", "is", null)
-        .where("is_deleted", "is not", true)
-        .selectAll(),
+      // Cast for the same reason as the table name above: the projection is
+      // resolved at runtime, which the static schema cannot express.
+      selection
+        ? liveRows.select(selection as unknown as "id")
+        : liveRows.selectAll(),
       tableName,
       hubClinicIds,
     ).execute();
@@ -341,6 +349,7 @@ namespace Sync {
         result[mobile_table_name] = await getFullSnapshot(
           server_table_name,
           hubClinicIds,
+          peerType,
         );
         continue;
       }
@@ -355,28 +364,38 @@ namespace Sync {
         ? clientLastSyncDate
         : effectiveLastSyncDate;
 
+      // Held on the delta path too, so dropping a table out of
+      // FULL_SNAPSHOT_TABLES cannot quietly widen what a device receives.
+      const selection = syncSelection(server_table_name, peerType);
+
       // Query for new records created at or after last sync.
       // Using >= to avoid missing records created exactly at the boundary timestamp.
+      const createdRows = db
+        .selectFrom(server_table_name)
+        .where("server_created_at", ">=", lastSyncDate)
+        .where("deleted_at", "is", null)
+        .where("is_deleted", "=", false);
+
       const newRecords = await applyClinicScope(
-        db
-          .selectFrom(server_table_name)
-          .where("server_created_at", ">=", lastSyncDate)
-          .where("deleted_at", "is", null)
-          .where("is_deleted", "=", false)
-          .selectAll(),
+        selection
+          ? createdRows.select(selection as unknown as "id")
+          : createdRows.selectAll(),
         server_table_name,
         hubClinicIds,
       ).execute();
 
       // Query for records updated since last sync (but created before)
+      const modifiedRows = db
+        .selectFrom(server_table_name)
+        .where("last_modified", ">", lastSyncDate)
+        .where("server_created_at", "<", lastSyncDate)
+        .where("deleted_at", "is", null)
+        .where("is_deleted", "=", false);
+
       const updatedRecords = await applyClinicScope(
-        db
-          .selectFrom(server_table_name)
-          .where("last_modified", ">", lastSyncDate)
-          .where("server_created_at", "<", lastSyncDate)
-          .where("deleted_at", "is", null)
-          .where("is_deleted", "=", false)
-          .selectAll(),
+        selection
+          ? modifiedRows.select(selection as unknown as "id")
+          : modifiedRows.selectAll(),
         server_table_name,
         hubClinicIds,
       ).execute();

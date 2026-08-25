@@ -1,4 +1,4 @@
-import { sql } from "kysely";
+import { sql, type AliasedRawBuilder } from "kysely";
 import { Logger } from "@hikmahealth/js-utils";
 import { civilDateFromLocalDate } from "@/lib/utils";
 import Patient from "./patient";
@@ -23,8 +23,8 @@ import DevicePinCode from "./device-pin-code";
 
 /**
  * These entities are synced to mobile. They should not contain information that is not needed for mobile use.
- * Do not sync users.
  * When adding new entities that need to be synced to mobile, add them to ENTITIES_TO_PUSH_TO_MOBILE
+ * `User` rides here only through `MOBILE_SYNC_COLUMNS` — read that first.
  *
  * Deliberately unannotated: `PostTableName` is derived from
  * `ENTITIES_TO_PULL_FROM_MOBILE[number]["Table"]["name"]`, so a `: SyncEntity[]`
@@ -49,6 +49,7 @@ export const ENTITIES_TO_PUSH_TO_MOBILE = [
   ClinicInventory,
   DispensingRecord,
   PrescriptionItem,
+  User,
   // Add more syncable entities here. Do not add any server defined entities here that do not track server_created_at or server_updated_at
 ];
 
@@ -58,9 +59,10 @@ export const ENTITIES_TO_PUSH_TO_MOBILE = [
  *
  * When adding new entities that need to be synced to the hubs, add them to ENTITIES_TO_PUSH_TO_HUB
  */
+// `User` comes in via the mobile list. Hubs still get whole rows — the column
+// projection applies to mobile peers only.
 export const ENTITIES_TO_PUSH_TO_HUB = [
   ...ENTITIES_TO_PUSH_TO_MOBILE,
-  User,
   Device,
   DevicePinCode,
 ];
@@ -222,24 +224,85 @@ export const normalizeCivilDates = <T extends Record<string, any>>(
 /**
  * Tables replicated in full on every pull instead of as a delta.
  *
- * A delta delivers a row exactly once, so a device that misses that window
- * never sees the row again — a permanent, silent gap. Mobile resolves clinic
- * references through `findAndObserve`, which throws when the row is absent,
- * taking down the screen rather than the one row. Re-sending makes any such
- * loss self-correcting on the next sync, whatever caused it.
+ * A delta delivers a row exactly once, so a device that misses that window never
+ * sees it again. Mobile resolves references through `findAndObserve`, which
+ * throws when the row is absent and takes down the screen rather than the one
+ * row. Re-sending makes any such loss self-correcting.
  *
- * "Full" is still subject to `applyClinicScope` — a hub gets a snapshot of its
- * own clinics — so this restores a row a device was entitled to and dropped, it
- * does not widen anyone's entitlement.
+ * Still subject to `applyClinicScope`, so this restores a row a device was
+ * entitled to and dropped — it does not widen anyone's entitlement. Safe to
+ * re-send: neither `Clinic` nor `User` is in `ENTITIES_TO_PULL_FROM_MOBILE`, so
+ * a snapshot cannot clobber a local edit.
  *
- * Safe to re-send: mobile never writes clinics (`Clinic` is absent from
- * `ENTITIES_TO_PULL_FROM_MOBILE`), so a snapshot cannot clobber a local edit.
+ * `users` needs this because user rows almost never change: a watermarked delta
+ * would leave a long-lived install permanently missing the names of everyone not
+ * edited since it last synced.
  *
- * Implemented twice: `getFullSnapshot` in sync.ts, the `isSnapshot` branches of
- * `fetchBucket` in sync-paged.ts. Both, or the guarantee above is false for
- * whichever path is missed.
+ * Implemented twice — `getFullSnapshot` in sync.ts and the `isSnapshot` branches
+ * of `fetchBucket` in sync-paged.ts. Both, or the guarantee is false.
  */
-export const FULL_SNAPSHOT_TABLES: ReadonlySet<string> = new Set(["clinics"]);
+export const FULL_SNAPSHOT_TABLES: ReadonlySet<string> = new Set([
+  "clinics",
+  "users",
+]);
+
+/** Stands in for a column a device may not see, and reads as deliberate. */
+export const MASKED_VALUE = "********";
+
+/**
+ * What a mobile peer receives for a table, in place of every column. Tables
+ * absent from here are sent whole, and hubs are never projected.
+ *
+ * An allowlist, not a denylist: a column added to Postgres later stays off
+ * devices until someone lists it here. `users` is why this exists — the row
+ * carries `hashed_password` and `instance_url`, and a device needs only enough
+ * to resolve `events.recorded_by_user_id` to a provider's name.
+ *
+ * Applied in SQL, so a withheld value never leaves Postgres. Sync bypasses the
+ * Schema models, so this is the only restriction on the cloud path — the hub
+ * has its own in `local-hub/.../rpc/handlers/sync.rs`.
+ */
+export const MOBILE_SYNC_COLUMNS: Record<
+  string,
+  { readonly columns: readonly string[]; readonly masked: readonly string[] }
+> = {
+  users: {
+    columns: [
+      "id",
+      "name",
+      "role",
+      "clinic_id",
+      "is_deleted",
+      "created_at",
+      "updated_at",
+      "last_modified",
+      "server_created_at",
+      "deleted_at",
+    ],
+    masked: ["email"],
+  },
+};
+
+/**
+ * The select list for a table and peer, or null to select every column. Any peer
+ * that is not a hub is treated as mobile, matching `resolveEntitiesForPeer`.
+ */
+export function syncSelection(
+  table: string,
+  peerType: Device.DeviceTypeT,
+): Array<string | AliasedRawBuilder<string, string>> | null {
+  if (peerType === "sync_hub") return null;
+
+  // Own keys only: a plain object literal resolves "constructor"/"valueOf" off
+  // Object.prototype, and spreading the absent `.columns` throws.
+  if (!Object.hasOwn(MOBILE_SYNC_COLUMNS, table)) return null;
+  const projection = MOBILE_SYNC_COLUMNS[table];
+
+  return [
+    ...projection.columns,
+    ...projection.masked.map((column) => sql.lit(MASKED_VALUE).as(column)),
+  ];
+}
 
 // Maps server table names to their clinic column for hub scoping.
 // Tables not listed here have no direct clinic association and sync unfiltered.
