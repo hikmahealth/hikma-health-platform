@@ -20,6 +20,7 @@ allowBuilds:
   # lefthook's git hooks are installed by the workspace `prepare` scripts instead.
   "@biomejs/biome": false
   lefthook: false
+  '@parcel/watcher': true
 
 # CVE pins on transitive dependencies. pnpm 11 drops these silently if they
 # are left in package.json#pnpm, reverting the tree to vulnerable versions.

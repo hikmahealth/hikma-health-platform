@@ -156,3 +156,5 @@ packages/**/.bsb.lock
 
 
 *.tsbuildinfo
+
+.docker
