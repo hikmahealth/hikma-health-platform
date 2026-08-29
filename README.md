@@ -261,8 +261,8 @@ This codebase handles protected health information. Treat it accordingly:
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) where present, plus the per-app
-guidelines. In short:
+See the server [`CONTRIBUTING.md`](apps/server/CONTRIBUTING.md), plus any
+per-app guidelines. In short:
 
 - Code must pass `pnpm run lint`
 - App-specific tests and type checks must pass before opening a PR
