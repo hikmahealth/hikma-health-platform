@@ -22,20 +22,27 @@ export const getClinicInventory = createServerFn({ method: "GET" })
       { name: "Get clinic inventory with drug info" },
       async () => {
         try {
-          const items = await ClinicInventory.API.getWithDrugInfo(
-            data.clinicId,
-            data.searchQuery ?? "",
-            {
-              limit: data.limit ?? 100,
-              offset: data.offset ?? 0,
-              includeZeroStock: true,
-            },
-          );
+          const [items, total] = await Promise.all([
+            ClinicInventory.API.getWithDrugInfo(
+              data.clinicId,
+              data.searchQuery ?? "",
+              {
+                limit: data.limit ?? 100,
+                offset: data.offset ?? 0,
+                includeZeroStock: true,
+              },
+            ),
+            ClinicInventory.API.countStockedDrugs(
+              data.clinicId,
+              data.searchQuery ?? "",
+              { includeZeroStock: true },
+            ),
+          ]);
 
           // Estimated from whether the page came back full, to avoid a count query.
           const hasMore = items.length === (data.limit ?? 100);
 
-          return Result.ok({ items, hasMore });
+          return Result.ok({ items, hasMore, total });
         } catch (error) {
           Sentry.captureException(error);
           return Result.err({
@@ -100,6 +107,56 @@ export const getBatchesByDrug = createServerFn({ method: "GET" })
           message:
             error instanceof Error ? error.message : "Failed to fetch batches",
         });
+      }
+    });
+  });
+
+export const getClinicDrugStock = createServerFn({ method: "GET" })
+  .validator((params: { clinicId: string; drugId: string }) => params)
+  .middleware([adminMiddleware])
+  .handler(async ({ data }) => {
+    return Sentry.startSpan(
+      { name: "Get clinic stock for drug" },
+      async () => {
+        try {
+          const stock = await ClinicInventory.API.getClinicDrugStock(
+            data.clinicId,
+            data.drugId,
+          );
+          return Result.ok(stock);
+        } catch (error) {
+          Sentry.captureException(error);
+          return Result.err({
+            _tag: "ServerError" as const,
+            message:
+              error instanceof Error
+                ? error.message
+                : "Failed to fetch clinic stock",
+          });
+        }
+      },
+    );
+  });
+
+/** Takes a drug off one clinic's shelves, writing off the stock held there. */
+export const removeDrugFromClinic = createServerFn({ method: "POST" })
+  .validator(
+    (data: { clinicId: string; drugId: string; reason?: string }) => data,
+  )
+  .middleware([adminMiddleware])
+  .handler(async ({ data, context }) => {
+    return Sentry.startSpan({ name: "Remove drug from clinic" }, async () => {
+      try {
+        const outcome = await ClinicInventory.API.removeDrugFromClinic({
+          clinicId: data.clinicId,
+          drugId: data.drugId,
+          performedBy: context.userId,
+          reason: data.reason,
+        });
+        return { success: true as const, data: outcome };
+      } catch (error) {
+        Sentry.captureException(error);
+        return { success: false as const, error: String(error) };
       }
     });
   });

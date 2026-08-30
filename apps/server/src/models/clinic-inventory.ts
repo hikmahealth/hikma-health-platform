@@ -12,6 +12,7 @@ import {
 } from "kysely";
 import { safeJSONParse, toSafeDateString } from "@/lib/utils";
 import UserClinicPermissions from "./user-clinic-permissions";
+import InventoryTransactions from "./inventory-transactions";
 import { v1 as uuidV1 } from "uuid";
 
 namespace ClinicInventory {
@@ -80,6 +81,28 @@ namespace ClinicInventory {
       batch_expiry_date: Date | null;
       quantity: number;
     }[];
+  };
+
+  /**
+   * Stock held for one drug at one clinic, summed across every batch.
+   *
+   * `reserved_quantity` is carved out of `quantity_available`.
+   * `destroyable_quantity` is summed per batch rather than derived from those
+   * two totals, so a row gone negative through reconciliation contributes 0.
+   */
+  export type ClinicDrugStock = {
+    batch_count: number;
+    quantity_available: number;
+    reserved_quantity: number;
+    destroyable_quantity: number;
+  };
+
+  /** What `removeDrugFromClinic` actually did, in units and batch rows. */
+  export type DrugRemovalOutcome = {
+    batches_cleared: number;
+    batches_retained: number;
+    units_destroyed: number;
+    units_retained: number;
   };
 
   export namespace Table {
@@ -218,6 +241,68 @@ namespace ClinicInventory {
     );
 
     /**
+     * The drugs a clinic stocks. Backs both the list and its count, so the two
+     * cannot disagree about what is on the shelves.
+     */
+    const drugsStockedAtClinic = (
+      clinicId: string,
+      searchQuery?: string,
+      includeZeroStock = true,
+    ) => {
+      let query = db
+        .selectFrom("drug_catalogue as dc")
+        .where("dc.is_deleted", "=", false)
+        .where("dc.is_active", "=", true)
+        .where((eb) =>
+          eb.exists(
+            eb
+              .selectFrom("clinic_inventory as ci")
+              .select("ci.id")
+              .whereRef("ci.drug_id", "=", "dc.id")
+              .where("ci.clinic_id", "=", clinicId)
+              .where("ci.is_deleted", "=", false)
+              .$if(!includeZeroStock, (qb) =>
+                qb.where("ci.quantity_available", ">", 0),
+              ),
+          ),
+        );
+
+      if (searchQuery && searchQuery.trim()) {
+        const searchPattern = `%${searchQuery.trim()}%`;
+        query = query.where((eb) =>
+          eb.or([
+            eb("dc.generic_name", "ilike", searchPattern),
+            eb("dc.brand_name", "ilike", searchPattern),
+          ]),
+        );
+      }
+
+      return query;
+    };
+
+    /**
+     * How many distinct drugs the clinic stocks, under the same filter
+     * `getWithDrugInfo` lists. A total across pages, not a page size.
+     */
+    export const countStockedDrugs = createServerOnlyFn(
+      async (
+        clinicId: string,
+        searchQuery?: string,
+        { includeZeroStock = true }: { includeZeroStock?: boolean } = {},
+      ): Promise<number> => {
+        const row = await drugsStockedAtClinic(
+          clinicId,
+          searchQuery,
+          includeZeroStock,
+        )
+          .select(sql<number>`COUNT(*)::int`.as("total"))
+          .executeTakeFirst();
+
+        return row?.total ?? 0;
+      },
+    );
+
+    /**
      * Get inventory items with drug information
      * @param clinicId - The ID of the clinic to retrieve inventory for
      * @param searchQuery - Optional search query to filter drugs by generic_name or brand_name
@@ -242,8 +327,11 @@ namespace ClinicInventory {
         } = {},
       ): Promise<DrugWithBatchInfo[]> => {
         // Single query to get drugs with their batches using JSON aggregation
-        let query = db
-          .selectFrom("drug_catalogue as dc")
+        const results = await drugsStockedAtClinic(
+          clinicId,
+          searchQuery,
+          includeZeroStock,
+        )
           .select([
             "dc.id as drug_id",
             "dc.generic_name",
@@ -323,40 +411,10 @@ namespace ClinicInventory {
                 ${!includeZeroStock ? sql`AND ci.quantity_available > 0` : sql``}
             )`.as("batches"),
           ])
-          .where("dc.is_deleted", "=", false)
-          .where("dc.is_active", "=", true)
-          // Only include drugs that have inventory records
-          .where((eb) =>
-            eb.exists(
-              eb
-                .selectFrom("clinic_inventory as ci")
-                .select("ci.id")
-                .whereRef("ci.drug_id", "=", "dc.id")
-                .where("ci.clinic_id", "=", clinicId)
-                .where("ci.is_deleted", "=", false)
-                .$if(!includeZeroStock, (qb) =>
-                  qb.where("ci.quantity_available", ">", 0),
-                ),
-            ),
-          );
-
-        // Add search filter if searchQuery is provided
-        if (searchQuery && searchQuery.trim()) {
-          const searchPattern = `%${searchQuery.trim()}%`;
-          query = query.where((eb) =>
-            eb.or([
-              eb("dc.generic_name", "ilike", searchPattern),
-              eb("dc.brand_name", "ilike", searchPattern),
-            ]),
-          );
-        }
-
-        query = query
           .orderBy("dc.generic_name", "asc")
           .limit(limit)
-          .offset(offset);
-
-        const results = await query.execute();
+          .offset(offset)
+          .execute();
 
         return results as DrugWithBatchInfo[];
       },
@@ -406,20 +464,25 @@ namespace ClinicInventory {
 
         return await db.transaction().execute(async (trx) => {
           // Get current inventory or create if doesn't exist
+          // The (clinic, drug, batch) unique index spans soft-deleted rows, so
+          // a removed row is revived rather than inserted a second time.
           const currentInventory = await trx
             .selectFrom(Table.name)
             .selectAll()
             .where("clinic_id", "=", clinicId)
             .where("drug_id", "=", drugId)
             .where("batch_id", "=", batchId)
-            .where("is_deleted", "=", false)
             .executeTakeFirst();
 
           let newQuantity: number;
           let inventoryId: string;
 
           if (currentInventory) {
-            newQuantity = currentInventory.quantity_available + quantityChange;
+            // A revived row restarts from zero; its old balance was written off.
+            const openingQuantity = currentInventory.is_deleted
+              ? 0
+              : currentInventory.quantity_available;
+            newQuantity = openingQuantity + quantityChange;
             inventoryId = currentInventory.id;
 
             // Update existing inventory
@@ -429,6 +492,8 @@ namespace ClinicInventory {
                 quantity_available: newQuantity,
                 reserved_quantity:
                   reserveQuantity ?? currentInventory.reserved_quantity,
+                is_deleted: false,
+                deleted_at: null,
                 updated_at: sql`now()::timestamp with time zone`,
                 last_modified: sql`now()::timestamp with time zone`,
                 last_counted_at:
@@ -607,6 +672,169 @@ namespace ClinicInventory {
         .where("id", "=", id)
         .execute();
     });
+
+    /**
+     * Stock held for one drug at one clinic, summed across its batches.
+     *
+     * Clinic-scoped, unlike `drug_batches.quantity_remaining`, which counts a
+     * batch across every clinic holding it.
+     */
+    export const getClinicDrugStock = createServerOnlyFn(
+      async (clinicId: string, drugId: string): Promise<ClinicDrugStock> => {
+        const totals = await db
+          .selectFrom(Table.name)
+          .select([
+            sql<number>`COUNT(*)::int`.as("batch_count"),
+            sql<number>`COALESCE(SUM(quantity_available), 0)::int`.as(
+              "quantity_available",
+            ),
+            sql<number>`COALESCE(SUM(GREATEST(reserved_quantity, 0)), 0)::int`.as(
+              "reserved_quantity",
+            ),
+            sql<number>`COALESCE(SUM(GREATEST(quantity_available - GREATEST(reserved_quantity, 0), 0)), 0)::int`.as(
+              "destroyable_quantity",
+            ),
+          ])
+          .where("clinic_id", "=", clinicId)
+          .where("drug_id", "=", drugId)
+          .where("is_deleted", "=", false)
+          .executeTakeFirst();
+
+        return {
+          batch_count: totals?.batch_count ?? 0,
+          quantity_available: totals?.quantity_available ?? 0,
+          reserved_quantity: totals?.reserved_quantity ?? 0,
+          destroyable_quantity: totals?.destroyable_quantity ?? 0,
+        };
+      },
+    );
+
+    const planRowRemoval = (row: {
+      quantity_available: number;
+      reserved_quantity: number | null;
+    }) => {
+      const retained = Math.max(0, row.reserved_quantity ?? 0);
+      // A negative balance means dispensing outran receiving: nothing to write
+      // off, and the row keeps that balance so its transaction still adds up.
+      const destroyed = Math.max(0, row.quantity_available - retained);
+      const newAvailable = Math.min(row.quantity_available, retained);
+      return { retained, destroyed, newAvailable, keepRow: retained > 0 };
+    };
+
+    /**
+     * Write a drug's stock off at one clinic and take it off its shelves.
+     *
+     * Rows holding units reserved for in-flight prescriptions keep those units
+     * and stay live; the rest are soft-deleted, so mobile drops them on the
+     * next sync. Dispensing history, the drug catalogue and other clinics are
+     * untouched. Removing a drug that holds no stock is a no-op, not an error.
+     */
+    export const removeDrugFromClinic = createServerOnlyFn(
+      async ({
+        clinicId,
+        drugId,
+        performedBy,
+        reason,
+      }: {
+        clinicId: string;
+        drugId: string;
+        performedBy: string | null;
+        reason?: string;
+      }): Promise<DrugRemovalOutcome> => {
+        const clinicIds =
+          await UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+            "is_clinic_admin",
+          );
+
+        if (!clinicIds.includes(clinicId)) {
+          throw new Error(
+            "Unauthorized: No inventory management permissions for this clinic",
+          );
+        }
+
+        return await db.transaction().execute(async (trx) => {
+          const rows = await trx
+            .selectFrom(Table.name)
+            .selectAll()
+            .where("clinic_id", "=", clinicId)
+            .where("drug_id", "=", drugId)
+            .where("is_deleted", "=", false)
+            .forUpdate()
+            .execute();
+
+          for (const row of rows) {
+            const plan = planRowRemoval(row);
+
+            await trx
+              .updateTable(Table.name)
+              .set({
+                quantity_available: plan.newAvailable,
+                is_deleted: !plan.keepRow,
+                deleted_at: plan.keepRow
+                  ? null
+                  : sql`now()::timestamp with time zone`,
+                updated_at: sql`now()::timestamp with time zone`,
+                last_modified: sql`now()::timestamp with time zone`,
+              })
+              .where("id", "=", row.id)
+              .execute();
+
+            await trx
+              .insertInto("inventory_transactions")
+              .values({
+                id: uuidV1(),
+                clinic_id: clinicId,
+                drug_id: drugId,
+                batch_id: row.batch_id,
+                transaction_type:
+                  InventoryTransactions.TransactionTypes.ADJUSTMENT,
+                quantity: -plan.destroyed,
+                balance_after: plan.newAvailable,
+                reference_type:
+                  InventoryTransactions.ReferenceTypes.ADJUSTMENT_RECORD,
+                reference_id: null,
+                reason:
+                  reason ||
+                  `Drug removed from clinic - Batch #${row.batch_number}`,
+                performed_by: performedBy,
+                timestamp: sql`now()::timestamp with time zone`,
+                created_at: sql`now()::timestamp with time zone`,
+                updated_at: sql`now()::timestamp with time zone`,
+              })
+              .execute();
+
+            if (plan.destroyed > 0) {
+              // The batch total spans every clinic, so it drops by what this
+              // clinic destroyed, never to this clinic's balance.
+              await trx
+                .updateTable("drug_batches")
+                .set({
+                  quantity_remaining: sql<number>`GREATEST(0, quantity_remaining - ${plan.destroyed})`,
+                  updated_at: sql`now()::timestamp with time zone`,
+                  last_modified: sql`now()::timestamp with time zone`,
+                })
+                .where("id", "=", row.batch_id)
+                .execute();
+            }
+          }
+
+          return rows.map(planRowRemoval).reduce<DrugRemovalOutcome>(
+            (total, plan) => ({
+              batches_cleared: total.batches_cleared + (plan.keepRow ? 0 : 1),
+              batches_retained: total.batches_retained + (plan.keepRow ? 1 : 0),
+              units_destroyed: total.units_destroyed + plan.destroyed,
+              units_retained: total.units_retained + plan.retained,
+            }),
+            {
+              batches_cleared: 0,
+              batches_retained: 0,
+              units_destroyed: 0,
+              units_retained: 0,
+            },
+          );
+        });
+      },
+    );
   }
 
   export namespace Sync {

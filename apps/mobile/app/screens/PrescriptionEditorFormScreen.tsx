@@ -773,7 +773,7 @@ function useDBClinicInventorySearch(searchTerm: string, clinicId: string) {
     return () => {
       sub.unsubscribe()
     }
-  }, [searchTerm])
+  }, [searchTerm, clinicId])
 
   return { isLoading, data }
 }

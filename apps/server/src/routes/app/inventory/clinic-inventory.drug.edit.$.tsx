@@ -1,16 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { format } from "date-fns";
 
 import DrugCatalogue from "@/models/drug-catalogue";
 import DrugBatches from "@/models/drug-batches";
+import type ClinicInventory from "@/models/clinic-inventory";
 import { getCurrentUser } from "@/lib/server-functions/auth";
 import { getDrugById } from "@/lib/server-functions/drugs";
 import {
   getBatchesByDrug,
   createDrugBatch,
+  getClinicDrugStock,
+  removeDrugFromClinic,
 } from "@/lib/server-functions/inventory";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import User from "@/models/user";
@@ -38,13 +41,21 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { CalendarIcon, Package } from "lucide-react";
+import { CalendarIcon, Package, Trash2 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { Result } from "@/lib/result";
 import {
@@ -83,10 +94,32 @@ const DEFAULT_BATCH_VALUES: NewBatchFormValues = {
   notes: "",
 };
 
+const describeClinicStock = (
+  stock: ClinicInventory.ClinicDrugStock,
+  drugName: string,
+  clinicName: string,
+) => {
+  if (stock.batch_count === 0) {
+    return `No stock of ${drugName} is recorded at ${clinicName}.`;
+  }
+
+  const reserved =
+    stock.reserved_quantity > 0
+      ? `, ${stock.reserved_quantity} of them reserved`
+      : "";
+
+  return `${stock.quantity_available} units across ${stock.batch_count} batches at ${clinicName}${reserved}.`;
+};
+
 export const Route = createFileRoute(
   "/app/inventory/clinic-inventory/drug/edit/$",
 )({
   component: RouteComponent,
+  // Carried from the inventory list so both clinic pickers open on the clinic
+  // the user was already looking at.
+  validateSearch: (search: Record<string, unknown>) => ({
+    clinicId: typeof search.clinicId === "string" ? search.clinicId : undefined,
+  }),
   loader: async ({ params }) => {
     const drugId = params["_splat"];
 
@@ -137,6 +170,7 @@ function RouteComponent() {
   } = Route.useLoaderData();
   const navigate = Route.useNavigate();
   const params = Route.useParams();
+  const { clinicId: clinicIdFromUrl } = Route.useSearch();
   const drugId = params._splat;
   const isExistingDrug = !!drugId && drugId !== "new";
 
@@ -147,10 +181,18 @@ function RouteComponent() {
   >(initialBatches || []);
   const [isLoading, setIsLoading] = useState(false);
 
+  // Unlike the batch form's clinic, this never falls back to clinics[0]:
+  // destroying stock only opens on a clinic the user actually chose.
+  const [removalClinicId, setRemovalClinicId] = useState(clinicIdFromUrl ?? "");
+  const [removalStock, setRemovalStock] =
+    useState<ClinicInventory.ClinicDrugStock | null>(null);
+  const [isRemoveDialogOpen, setIsRemoveDialogOpen] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
+
   const batchForm = useForm<NewBatchFormValues>({
     defaultValues: {
       ...DEFAULT_BATCH_VALUES,
-      clinic_id: clinics[0]?.id || "",
+      clinic_id: clinicIdFromUrl || clinics[0]?.id || "",
     },
   });
 
@@ -190,6 +232,84 @@ function RouteComponent() {
     value: batch.batch_number,
     label: batch.batch_number,
   }));
+
+  const removalClinicName =
+    clinics.find((clinic) => clinic.id === removalClinicId)?.name ||
+    "this clinic";
+
+  const loadRemovalStock = useCallback(
+    async (clinicId: string) => {
+      if (!selectedDrug || !clinicId) {
+        return null;
+      }
+
+      try {
+        const result = await getClinicDrugStock({
+          data: { clinicId, drugId: selectedDrug.id },
+        });
+        return Result.getOrNull(result);
+      } catch (error) {
+        Logger.error({ msg: "Error loading clinic stock:", error });
+        return null;
+      }
+    },
+    [selectedDrug],
+  );
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    loadRemovalStock(removalClinicId).then((stock) => {
+      if (isCurrent) {
+        setRemovalStock(stock);
+      }
+    });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [loadRemovalStock, removalClinicId]);
+
+  const handleRemoveFromClinic = async () => {
+    if (!selectedDrug || !removalClinicId) {
+      return;
+    }
+
+    setIsRemoving(true);
+    try {
+      const result = await removeDrugFromClinic({
+        data: { clinicId: removalClinicId, drugId: selectedDrug.id },
+      });
+
+      if (!result.success) {
+        toast.error(result.error || "Failed to remove drug from clinic");
+        return;
+      }
+
+      const { units_destroyed, units_retained } = result.data;
+      toast.success(
+        units_retained > 0
+          ? `${selectedDrug.generic_name} removed from ${removalClinicName}. ${units_destroyed} units destroyed, ${units_retained} reserved units kept for prescriptions in flight.`
+          : `${selectedDrug.generic_name} removed from ${removalClinicName}. ${units_destroyed} units destroyed.`,
+      );
+
+      setIsRemoveDialogOpen(false);
+
+      // The clinic stays selected, so re-read its summary or the card keeps
+      // offering to destroy stock that is already gone.
+      setRemovalStock(await loadRemovalStock(removalClinicId));
+
+      const batchesResult = await getBatchesByDrug({
+        data: { drugId: selectedDrug.id, onlyAvailable: false },
+      });
+      setExistingBatches(Result.getOrElse(batchesResult, []));
+    } catch (error) {
+      Logger.error({ msg: "Error removing drug from clinic:", error });
+      toast.error("Failed to remove drug from clinic");
+    } finally {
+      setIsRemoving(false);
+    }
+  };
 
   // Create a new batch (if needed) or update an existing batch if it exists.
   // TODO: show a confirmation dialog if the batch already exists.
@@ -691,7 +811,116 @@ function RouteComponent() {
             </CardContent>
           </Card>
         )}
+
+        {/* Remove Drug From Clinic */}
+        {selectedDrug && (
+          <Card className="mt-6 border-destructive/40">
+            <CardHeader>
+              <CardTitle className="text-destructive">
+                Remove From Clinic
+              </CardTitle>
+              <CardDescription>
+                Destroy a single clinic's stock of{" "}
+                {selectedDrug.generic_name} and take the product off that
+                clinic's shelves.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="max-w-sm">
+                <SelectInput
+                  label="Clinic"
+                  data={clinics.map((clinic) => ({
+                    label: clinic.name ? clinic.name : "Unnamed Clinic",
+                    value: clinic.id,
+                  }))}
+                  value={removalClinicId}
+                  onChange={(value) => setRemovalClinicId(value || "")}
+                  placeholder="Select a clinic"
+                />
+              </div>
+
+              {removalClinicId && removalStock && (
+                <p className="text-sm text-muted-foreground">
+                  {describeClinicStock(
+                    removalStock,
+                    selectedDrug.generic_name,
+                    removalClinicName,
+                  )}
+                </p>
+              )}
+
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={
+                  !removalClinicId ||
+                  !removalStock ||
+                  removalStock.batch_count === 0
+                }
+                onClick={() => setIsRemoveDialogOpen(true)}
+              >
+                <Trash2 className="h-4 w-4" />
+                Remove from clinic
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      {selectedDrug && (
+        <Dialog
+          open={isRemoveDialogOpen}
+          onOpenChange={(open) => !isRemoving && setIsRemoveDialogOpen(open)}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>
+                Remove {selectedDrug.generic_name} from {removalClinicName}?
+              </DialogTitle>
+              <DialogDescription asChild>
+                <div className="space-y-3 text-sm">
+                  <p>
+                    This destroys the{" "}
+                    {removalStock?.destroyable_quantity ?? 0} units held at{" "}
+                    {removalClinicName} and takes the product off that clinic's
+                    shelves. It cannot be undone.
+                  </p>
+                  {(removalStock?.reserved_quantity ?? 0) > 0 && (
+                    <p>
+                      {removalStock?.reserved_quantity} units reserved for
+                      prescriptions already in flight are kept and stay
+                      dispensable.
+                    </p>
+                  )}
+                  <p>
+                    Medications already prescribed or dispensed are not
+                    affected. The drug stays in the drug catalogue and its stock
+                    at other clinics is untouched.
+                  </p>
+                </div>
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isRemoving}
+                onClick={() => setIsRemoveDialogOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={isRemoving}
+                onClick={handleRemoveFromClinic}
+              >
+                {isRemoving ? "Removing..." : "Remove from clinic"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

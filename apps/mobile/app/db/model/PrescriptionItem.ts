@@ -42,10 +42,16 @@ export default class PrescriptionItemModel extends Model {
   @relation("patients", "patient_id") patient!: Relation<any>
   @relation("drug_catalogue", "drug_id") drug!: Relation<DrugCatalogue>
 
+  // Dispensing deducts from the item's own clinic, so offering another
+  // clinic's batches would only fail at deduction time.
   @lazy
   clinicInventory: Query<ClinicInventory> = this.collections
     .get<ClinicInventory>("clinic_inventory")
-    .query(Q.where("drug_id", this.drugId), Q.where("is_deleted", false))
+    .query(
+      Q.where("clinic_id", this.clinicId),
+      Q.where("drug_id", this.drugId),
+      Q.where("is_deleted", false),
+    )
 }
 
 function sanitizeMetadata(data: any) {

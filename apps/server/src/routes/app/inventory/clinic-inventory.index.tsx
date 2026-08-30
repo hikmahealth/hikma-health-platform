@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import * as React from "react";
 import { useState, useEffect } from "react";
-import ClinicInventory from "@/models/clinic-inventory";
+import type ClinicInventory from "@/models/clinic-inventory";
 import Clinic from "@/models/clinic";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,13 +39,25 @@ import { Logger } from "@hikmahealth/js-utils";
 
 const ITEMS_PER_PAGE = 100;
 
+type InventoryPage = {
+  items: ClinicInventory.DrugWithBatchInfo[];
+  hasMore: boolean;
+  total: number;
+};
+
+const EMPTY_INVENTORY: InventoryPage = {
+  items: [],
+  hasMore: false,
+  total: 0,
+};
+
 export const Route = createFileRoute("/app/inventory/clinic-inventory/")({
   component: RouteComponent,
   loader: async () => {
     const clinics = Result.getOrElse(await getAllClinics(), []);
     return {
       clinics,
-      initialInventory: { items: [], hasMore: false },
+      initialInventory: EMPTY_INVENTORY,
     };
   },
 });
@@ -92,7 +104,7 @@ function RouteComponent() {
           offset,
         },
       });
-      setInventory(Result.getOrElse(result, { items: [], hasMore: false }));
+      setInventory(Result.getOrElse(result, EMPTY_INVENTORY));
       setCurrentPage(page);
     } catch (error) {
       Logger.error({ msg: "Error loading inventory:", error });
@@ -116,11 +128,18 @@ function RouteComponent() {
     navigate({
       to: "/app/inventory/clinic-inventory/drug/edit/$",
       params: { _splat: drugId },
+      search: { clinicId: selectedClinicId || undefined },
     });
   };
 
   const handleAddNewItem = () => {
-    navigate({ to: "/app/inventory/clinic-inventory/drug/edit/new" });
+    navigate({
+      to: "/app/inventory/clinic-inventory/drug/edit/$",
+      params: {
+        _splat: "new",
+      },
+      search: { clinicId: selectedClinicId || undefined },
+    });
   };
 
   // Generate page numbers to display
@@ -202,6 +221,17 @@ function RouteComponent() {
           </Button>
         )}
       </div>
+
+      {/* Medication count */}
+      {selectedClinicId && (
+        <p className="text-sm text-muted-foreground mb-2">
+          {loading
+            ? "Counting medicines..."
+            : `${inventory.total} ${
+                inventory.total === 1 ? "medicine" : "medicines"
+              } in this clinic${searchQuery.trim() ? " matching your search" : ""}`}
+        </p>
+      )}
 
       {/* Table */}
       {selectedClinicId ? (
