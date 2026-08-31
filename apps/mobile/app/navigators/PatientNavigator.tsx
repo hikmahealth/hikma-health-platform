@@ -61,7 +61,9 @@ export type PatientNavigatorParamList = {
   AppointmentEditorForm: {
     patientId: string
     visitId: string | null
-    appointmentId: string
+
+    // Present only when editing an existing appointment
+    appointmentId?: string | null
   }
   AppointmentView: { patientId: string; appointmentId: string; departmentId?: string }
   PatientVisitsList: { patientId: string }

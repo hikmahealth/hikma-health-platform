@@ -11,6 +11,9 @@ import { Q } from "@nozbe/watermelondb"
 import { LoginResponse } from "@/rpc/types"
 import { Logger } from "@hikmahealth/js-utils"
 
+/** How long a login request may go unanswered. Generous for a few hundred bytes. */
+const SIGN_IN_TIMEOUT_MS = 60_000
+
 namespace User {
   export const Roles = {
     ADMIN: "admin",
@@ -81,6 +84,11 @@ namespace User {
       throw new Error("Invalid email or password")
     }
 
+    // Sync signs in before it reports any progress, so an unanswered login
+    // socket would hold the sync lock for the life of the process.
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), SIGN_IN_TIMEOUT_MS)
+
     try {
       const endpoint = `${apiUrl}/api/login`
       Logger.log({ email, endpoint })
@@ -91,6 +99,7 @@ namespace User {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ email, password }),
+        signal: controller.signal,
       })
       Logger.log({ response: response.status })
 
@@ -138,6 +147,8 @@ namespace User {
     } catch (e) {
       Logger.error(e)
       throw e
+    } finally {
+      clearTimeout(timeout)
     }
   }
 

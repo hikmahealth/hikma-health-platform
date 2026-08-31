@@ -448,6 +448,7 @@ const en = {
     downloadPatientHistory: "Download Patient History",
     syncingStarted: "Syncing data with the server",
     syncStarted: "Syncing data with the server",
+    syncAlreadyRunning: "A sync is already running. Please wait for it to finish.",
     or: "or",
 
     // vitals

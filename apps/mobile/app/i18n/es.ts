@@ -331,6 +331,7 @@ const es: ENTranslations = {
     editAppointment: "Editar",
     appointments: "Citas",
     syncStarted: "Sincronización iniciada",
+    syncAlreadyRunning: "Ya hay una sincronización en curso. Espere a que termine.",
     yes: "Sí",
     no: "No",
     firstName: "Nombre",

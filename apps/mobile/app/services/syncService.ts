@@ -287,6 +287,15 @@ export const isSyncAvailable = async (): Promise<boolean> => {
   }
 }
 
+/**
+ * Whether a sync — ordinary, manual, or the first-sync backfill — is running now.
+ *
+ * Ground truth, unlike `syncStore`: `syncCloud` signs in before it reports
+ * FETCHING and manual sync only reports once it holds the lock, so the store
+ * answers IDLE through both windows. Gate user actions on this, not on state.
+ */
+export const isSyncActive = (): boolean => ordinarySyncInFlight !== null || isSyncInFlight()
+
 export const getSyncState = (): Sync.StateT => {
   return syncStore.getSnapshot().context.state
 }

@@ -3,7 +3,11 @@ import { useSelector } from "@xstate/react"
 import { Option } from "effect"
 
 import Sync from "@/models/Sync"
-import { startSync as startSyncService, isSyncAvailable } from "@/services/syncService"
+import {
+  startSync as startSyncService,
+  isSyncActive as isSyncActiveService,
+  isSyncAvailable,
+} from "@/services/syncService"
 import { providerStore } from "@/store/provider"
 import { syncStore } from "@/store/sync"
 
@@ -56,6 +60,12 @@ export interface UseSyncReturn {
    * Force reset sync operation
    */
   forceReset: () => Promise<void>
+  /**
+   * Whether a sync is actually running, asked of the sync service rather than
+   * derived from `state`. Read this, not `isIdle`, before starting one on a
+   * user action — the two disagree in both directions.
+   */
+  isSyncActive: () => boolean
   /**
    * Check if sync is available (app is activated)
    */
@@ -113,7 +123,7 @@ export const useSync = (): UseSyncReturn => {
 
   const forceReset = useCallback(async () => {
     return syncStore.trigger.force_reset()
-  }, [provider.email])
+  }, [])
 
   const checkSyncAvailability = useCallback(async () => {
     return isSyncAvailable()
@@ -132,6 +142,7 @@ export const useSync = (): UseSyncReturn => {
     pushed: syncContext.stats.pushed,
     startSync,
     forceReset,
+    isSyncActive: isSyncActiveService,
     checkSyncAvailability,
   }
 }

@@ -2,7 +2,7 @@ import { FC, useEffect, useState } from "react"
 import { Platform, Pressable, ViewStyle } from "react-native"
 import { NativeStackScreenProps } from "@react-navigation/native-stack"
 import { useSelector } from "@xstate/react"
-import { format, set } from "date-fns"
+import { format, isToday, set } from "date-fns"
 import { Option, Schema } from "effect"
 import { cloneDeep } from "es-toolkit"
 import { sortBy } from "es-toolkit"
@@ -19,7 +19,6 @@ import { Text } from "@/components/Text"
 import { TextField } from "@/components/TextField"
 import { Checkbox } from "@/components/Toggle/Checkbox"
 import { View } from "@/components/View"
-import database from "@/db"
 import { useClinicDepartments } from "@/hooks/useClinicDepartments"
 import { useDBClinicsList } from "@/hooks/useDBClinicsList"
 import { usePermissionGuard } from "@/hooks/usePermissionGuard"
@@ -84,7 +83,13 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
   const { clinics, isLoading } = useDBClinicsList()
   const { can } = usePermissionGuard()
 
-  const { visitId, patientId } = route.params
+  const { visitId, patientId, appointmentId } = route.params
+
+  // An appointmentId in the route params is what puts the screen in edit mode.
+  const editingAppointmentId = appointmentId || null
+  const [seeding, setSeeding] = useState<"loading" | "ready" | "missing">(
+    editingAppointmentId ? "loading" : "ready",
+  )
 
   const [openPicker, setOpenPicker] = useState<
     "clinic" | "duration" | "reason" | "department" | null
@@ -97,6 +102,7 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
     formState: { isSubmitting },
     getValues,
     setValue,
+    reset,
     watch,
   } = useForm<Appointment.EncodedT>({
     defaultValues: {
@@ -119,7 +125,85 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
     watch("clinicId") || "",
   )
 
+  useEffect(() => {
+    if (!editingAppointmentId) return
+    let cancelled = false
+
+    Appointment.DB.getEncodedById(editingAppointmentId)
+      .then((existing) => {
+        if (cancelled) return
+        if (!existing) {
+          setSeeding("missing")
+          return
+        }
+        reset(existing)
+        setSeeding("ready")
+      })
+      .catch((error) => {
+        if (cancelled) return
+        Logger.error({ msg: "Failed to load appointment for editing:", error })
+        setSeeding("missing")
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [editingAppointmentId])
+
+  useEffect(() => {
+    if (editingAppointmentId) {
+      navigation.setOptions({ title: translate("appointmentView:editAppointment") })
+    }
+  }, [editingAppointmentId])
+
   const onSubmit = async (submission: Appointment.EncodedT) => {
+    if (editingAppointmentId) {
+      return updateAppointment(editingAppointmentId, submission)
+    }
+    return createAppointment(submission)
+  }
+
+  const updateAppointment = async (id: string, submission: Appointment.EncodedT) => {
+    if (!can("appointment:update")) {
+      Toast.show("You do not have permission to edit appointments", {
+        duration: Toast.durations.SHORT,
+        position: Toast.positions.BOTTOM,
+      })
+      return
+    }
+    try {
+      // Status and colour tag are left to the appointment view — editing details
+      // here should not re-open a completed appointment.
+      await Appointment.DB.update(id, {
+        timestamp: submission.timestamp,
+        duration: submission.duration,
+        reason: submission.reason,
+        notes: submission.notes,
+        isWalkIn: submission.isWalkIn,
+        departments: submission.departments.map((department) => ({
+          ...department,
+          status: Appointment.asDepartmentStatus(department.status),
+        })),
+      })
+      Toast.show("✅ Appointment updated", {
+        position: Toast.positions.BOTTOM,
+        containerStyle: {
+          marginBottom: 100,
+        },
+      })
+      navigation.goBack()
+    } catch (error) {
+      Logger.error({ msg: "Failed to update appointment:", error })
+      Toast.show("❌ Failed to update appointment", {
+        position: Toast.positions.BOTTOM,
+        containerStyle: {
+          marginBottom: 100,
+        },
+      })
+    }
+  }
+
+  const createAppointment = async (submission: Appointment.EncodedT) => {
     if (!can("appointment:create")) {
       Toast.show("You do not have permission to create appointments", {
         duration: Toast.durations.SHORT,
@@ -180,40 +264,56 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
     }
   }
 
-  const isWalkIn = watch("isWalkIn")
-  // if the appointment is walk-in, set the date to today
-  useEffect(() => {
-    if (isWalkIn === true) {
-      const now = new Date()
-      setValue("timestamp", now)
+  // Turning on walk-in means the patient is here now. Stamped from the toggle, not an
+  // effect on the value, so seeding a saved walk-in leaves its original time alone.
+  const handleWalkInChange = (onChange: (value: boolean) => void) => (isWalkIn: boolean) => {
+    onChange(isWalkIn)
+    if (isWalkIn) {
+      setValue("timestamp", new Date())
     }
-  }, [isWalkIn])
+  }
 
   const getDepartmentById = (departmentId: string) => {
     return clinicDepartments.find((department) => department.id === departmentId)
   }
 
-  const handleDepartmentChange = (data: string[]) => {
-    Logger.log({ data })
-    const depts = data
-      // .filter((departmentId) => clinicDepartments.some((dept) => dept.id === departmentId))
-      .map((departmentId) => {
-        const department = getDepartmentById(departmentId)
-        Logger.log({ found: department, id: departmentId })
-        return {
-          id: departmentId,
-          name: department?.name || "Unnamed Department",
-          seen_at: null,
-          seen_by: null,
-          status: "pending",
-        }
-      })
-    setValue("departments", depts)
+  const handleDepartmentChange = (departmentIds: string[]) => {
+    const selected = getValues("departments") || []
+    const departments = departmentIds.map((departmentId) => {
+      // Keep the existing entry so recorded progress is not reset to pending.
+      const existing = selected.find((department) => department.id === departmentId)
+      if (existing) return existing
+
+      return {
+        id: departmentId,
+        name: getDepartmentById(departmentId)?.name || "Unnamed Department",
+        seen_at: null,
+        seen_by: null,
+        status: "pending",
+      }
+    })
+    setValue("departments", departments)
   }
 
   const updateTime = (time: Date) => {
     // setIsTimePickerOpen(false)
     setValue("timestamp", new Date(time))
+  }
+
+  if (seeding === "loading") {
+    return (
+      <Screen style={$root} preset="scroll">
+        <Text tx="common:loading" />
+      </Screen>
+    )
+  }
+
+  if (seeding === "missing") {
+    return (
+      <Screen style={$root} preset="scroll">
+        <Text text="Appointment not found" />
+      </Screen>
+    )
   }
 
   return (
@@ -228,7 +328,7 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
               <Checkbox
                 label="This is a walk-in Appointment"
                 value={field.value}
-                onValueChange={field.onChange}
+                onValueChange={handleWalkInChange(field.onChange)}
               />
             </View>
           )}
@@ -247,19 +347,29 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
                   ))}
                 </Picker>
               </View> */}
-              <PlatformPicker
-                isIos={isIos}
-                options={sortBy(clinics, ["name"]).map((clinic) => ({
-                  label: clinic.name,
-                  value: clinic.id,
-                }))}
-                fieldKey="clinicId"
-                modalTitle="Clinic"
-                setValue={() => (value: string) => field.onChange(value)}
-                setOpen={(value: boolean) => setOpenPicker(value ? "clinic" : null)}
-                isOpen={openPicker === "clinic"}
-                value={field.value}
-              />
+
+              {/* Departments are scoped to a clinic, so a saved appointment stays
+                  with the clinic it was booked at. */}
+              <If
+                condition={editingAppointmentId !== null}
+                fallback={
+                  <PlatformPicker
+                    isIos={isIos}
+                    options={sortBy(clinics, ["name"]).map((clinic) => ({
+                      label: clinic.name,
+                      value: clinic.id,
+                    }))}
+                    fieldKey="clinicId"
+                    modalTitle="Clinic"
+                    setValue={() => (value: string) => field.onChange(value)}
+                    setOpen={(value: boolean) => setOpenPicker(value ? "clinic" : null)}
+                    isOpen={openPicker === "clinic"}
+                    value={field.value}
+                  />
+                }
+              >
+                <Text text={clinics.find((clinic) => clinic.id === field.value)?.name || "—"} />
+              </If>
             </View>
           )}
         />
@@ -341,11 +451,16 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
           </View>
         </If>
 
-        {/*If the appointment is a walk-in, display the time in the format Today, h:mm a*/}
+        {/*A walk-in's time is stamped by the toggle, but a saved one can be from
+           any day, so only say "Today" when it is.*/}
         <If condition={watch("isWalkIn") === true}>
           <View>
             <Text preset="formLabel" tx="appointmentEditorForm:time" />
-            <Text>Today, {format(getValues("timestamp"), "h:mm a")}</Text>
+            <Text>
+              {isToday(getValues("timestamp"))
+                ? `Today, ${format(getValues("timestamp"), "h:mm a")}`
+                : format(getValues("timestamp"), "MMM d, yyyy 'at' h:mm a")}
+            </Text>
           </View>
         </If>
 
@@ -353,7 +468,10 @@ export const AppointmentEditorFormScreen: FC<AppointmentEditorFormScreenProps> =
           modal
           open={isTimePickerOpen}
           date={watch("timestamp")}
-          onConfirm={updateTime}
+          onConfirm={(data) => {
+            updateTime(data)
+            setIsTimePickerOpen(false)
+          }}
           mode="time"
           onDateChange={updateTime}
           onCancel={() => setIsTimePickerOpen(false)}

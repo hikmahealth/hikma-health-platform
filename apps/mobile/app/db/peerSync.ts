@@ -40,6 +40,30 @@ type SyncPullResponse = {
   timestamp: number
 }
 
+/**
+ * How long a sync request may go entirely unanswered. Generous because
+ * `/api/v2/sync` serialises the whole change set before it replies.
+ */
+const SYNC_RESPONSE_TIMEOUT_MS = 5 * 60_000
+
+/**
+ * `fetch`, abandoned if the server never begins answering.
+ *
+ * Bounds the wait for a response, not the download — the timer is cleared once
+ * the headers arrive, so a large pull still transfers at whatever pace it needs.
+ * Without this, an unanswered socket pins the sync lock for the life of the
+ * process and every later sync joins a run that can never end.
+ */
+const fetchAnswered = async (url: string, init: RequestInit): Promise<Response> => {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), SYNC_RESPONSE_TIMEOUT_MS)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timeout)
+  }
+}
+
 /** Exported so the first-sync backfill reads credentials the same way. */
 export const getCredentials = async (): Promise<{ email: string; password: string }> => {
   const email = await EncryptedStorage.getItem("provider_email")
@@ -81,7 +105,7 @@ const syncCloud = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> 
       const pullStart = Date.now()
       const urlParams = `last_pulled_at=${lastPulledAt || 0}&schema_version=${schemaVersion}&migration=${encodeURIComponent(JSON.stringify(migration))}`
 
-      const response = await fetch(`${SYNC_API}?${urlParams}`, { headers })
+      const response = await fetchAnswered(`${SYNC_API}?${urlParams}`, { headers })
       if (!response.ok) {
         const errorText = await response.text()
         throw new Error(`Cloud sync pull failed (${response.status}): ${errorText}`)
@@ -108,7 +132,7 @@ const syncCloud = async (peer: Peer.T, callbacks: SyncCallbacks): Promise<void> 
       const pushHeaders = new Headers(headers)
       pushHeaders.set("Content-Type", "application/json")
 
-      const response = await fetch(`${SYNC_API}?last_pulled_at=${lastPulledAt || 0}`, {
+      const response = await fetchAnswered(`${SYNC_API}?last_pulled_at=${lastPulledAt || 0}`, {
         method: "POST",
         headers: pushHeaders,
         body: JSON.stringify(changes),

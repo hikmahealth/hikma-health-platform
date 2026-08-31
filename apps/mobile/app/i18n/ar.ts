@@ -445,6 +445,7 @@ const ar: Translations = {
     downloadPatientHistory: "تحميل تاريخ المريض ",
     syncingStarted: "جاري مزامنة البيانات مع الخادم",
     syncStarted: "جاري مزامنة البيانات مع الخادم",
+    syncAlreadyRunning: "المزامنة قيد التشغيل بالفعل. يرجى الانتظار حتى تنتهي.",
 
     or: "أو",
 

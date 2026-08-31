@@ -382,19 +382,47 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
         <View>
           <AgendaDateSetter date={filters.date} setDate={(date) => onFiltersChange({ date })} />
         </View>
-        {summary ? (
-          <View pt={6}>
-            <Text
-              size="xxs"
-              style={themed($summaryText)}
-              text={`${summary.total} total · ${summary.open} open · ${summary.checkedIn} checked in · ${summary.completed} completed`}
-            />
+        {summary && summary.total > 0 ? (
+          <View pt={6} direction="row" flexWrap="wrap" alignItems="center" gap={10}>
+            <Text size="xxs" style={themed($summaryTotalText)} text={`Total ${summary.total}`} />
+            {statusesList.map((status) => (
+              <StatusCount
+                key={status}
+                label={upperFirst(status.replaceAll("_", " "))}
+                color={getAppintmentStatusColor(status)[0]}
+                count={summary.byStatus[status]}
+              />
+            ))}
+            {summary.unrecognized > 0 ? (
+              <StatusCount label="Other" color={colors.textDim} count={summary.unrecognized} />
+            ) : null}
           </View>
         ) : null}
       </View>
     )
   },
 )
+
+/** One entry of the status legend under the date setter. Dimmed when nothing is in that status. */
+const StatusCount: FC<{ label: string; color: string; count: number }> = ({
+  label,
+  color,
+  count,
+}) => {
+  const { themed } = useAppTheme()
+
+  return (
+    <View
+      direction="row"
+      alignItems="center"
+      gap={4}
+      style={count === 0 ? $summaryItemEmpty : null}
+    >
+      <View style={[$summaryDot, { backgroundColor: color }]} />
+      <Text size="xxs" style={themed($summaryText)} text={`${label} ${count}`} />
+    </View>
+  )
+}
 
 const $container: ViewStyle = {
   justifyContent: "center",
@@ -616,6 +644,20 @@ const $emptySubtext: ThemedStyle<TextStyle> = ({ colors }) => ({
 const $summaryText: ThemedStyle<TextStyle> = ({ colors }) => ({
   color: colors.textDim,
 })
+
+const $summaryTotalText: ThemedStyle<TextStyle> = ({ colors }) => ({
+  color: colors.text,
+})
+
+const $summaryItemEmpty: ViewStyle = {
+  opacity: 0.45,
+}
+
+const $summaryDot: ViewStyle = {
+  width: 6,
+  height: 6,
+  borderRadius: 3,
+}
 
 const $modalContentContainerStyle: ViewStyle = {
   marginTop: 4,

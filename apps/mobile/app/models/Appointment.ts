@@ -43,49 +43,57 @@ namespace Appointment {
   export type EncodedDepartment = Schema.Schema.Type<typeof DepartmentSchema>
   export type EncodedDepartmentT = typeof DepartmentSchema.Encoded
 
+  const departmentStatusValues: readonly string[] = [
+    "pending",
+    "scheduled",
+    "checked_in",
+    "in_progress",
+    "completed",
+    "cancelled",
+  ]
+
+  /**
+   * Narrow a department status read back out of the free-form departments jsonb.
+   * @param {string} status
+   * @returns {EncodedDepartmentT["status"]} the status, or "pending" if unrecognised
+   */
+  export const asDepartmentStatus = (status: string): EncodedDepartmentT["status"] =>
+    departmentStatusValues.includes(status) ? (status as EncodedDepartmentT["status"]) : "pending"
+
   export type Status = (typeof Status)[keyof typeof Status]
 
   export const statusList = Object.values(Status)
 
   export type StatusSummary = {
     total: number
-    open: number
-    checkedIn: number
-    completed: number
+    byStatus: Record<Status, number>
+    /** Appointments whose status this build does not know about. */
+    unrecognized: number
   }
 
+  const statusValues: readonly string[] = statusList
+
+  const isStatus = (status: string): status is Status => statusValues.includes(status)
+
   /**
-   * Tally a set of appointment statuses into the buckets the appointments list summarises.
+   * Tally a set of appointment statuses into one count per status.
    *
-   * `open` is every status where the patient has not arrived yet. Cancelled appointments land
-   * in no bucket, so the three buckets deliberately do not add up to `total`.
+   * `total` always equals the sum of `byStatus` plus `unrecognized`.
    * @param {readonly string[]} statuses one entry per appointment
    * @returns {StatusSummary}
    */
   export const summarizeStatuses = (statuses: readonly string[]): StatusSummary => {
-    const summary: StatusSummary = {
-      total: statuses.length,
-      open: 0,
-      checkedIn: 0,
-      completed: 0,
-    }
+    const byStatus = Object.fromEntries(statusList.map((status) => [status, 0])) as Record<
+      Status,
+      number
+    >
+    const summary: StatusSummary = { total: statuses.length, byStatus, unrecognized: 0 }
 
     for (const status of statuses) {
-      switch (status) {
-        case "pending":
-        case "scheduled":
-        case "confirmed":
-          summary.open += 1
-          break
-        case "checked_in":
-        case "in_progress":
-          summary.checkedIn += 1
-          break
-        case "completed":
-          summary.completed += 1
-          break
-        default:
-          break
+      if (isStatus(status)) {
+        byStatus[status] += 1
+      } else {
+        summary.unrecognized += 1
       }
     }
 
@@ -545,6 +553,54 @@ namespace Appointment {
         Logger.error({ msg: "Error searching appointments:", error })
         throw error
       }
+    }
+
+    /**
+     * Convert a stored appointment into the encoded shape the editor form works with.
+     *
+     * Nullable columns are coerced to their empty value — the form branches on
+     * `isWalkIn` being exactly true or false, and a null hides the date inputs.
+     * @param {AppointmentModel} rawAppointment
+     * @returns {Appointment.EncodedT}
+     */
+    export function rawToEncoded(rawAppointment: AppointmentModel): Appointment.EncodedT {
+      return {
+        id: rawAppointment.id,
+        providerId: rawAppointment.providerId,
+        clinicId: rawAppointment.clinicId,
+        patientId: rawAppointment.patientId,
+        userId: rawAppointment.userId,
+        currentVisitId: rawAppointment.currentVisitId,
+        fulfilledVisitId: rawAppointment.fulfilledVisitId,
+        timestamp: new Date(rawAppointment.timestamp),
+        duration: rawAppointment.duration || 0,
+        reason: rawAppointment.reason || "",
+        notes: rawAppointment.notes || "",
+        status: rawAppointment.status,
+        isWalkIn: rawAppointment.isWalkIn === true,
+        departments: rawAppointment.departments || [],
+        metadata: rawAppointment.metadata || {},
+        isDeleted: rawAppointment.isDeleted,
+        createdAt: rawAppointment.createdAt,
+        updatedAt: rawAppointment.updatedAt,
+        deletedAt: rawAppointment.deletedAt || null,
+      }
+    }
+
+    /**
+     * Look up a single appointment.
+     * @param {string} appointmentId
+     * @returns {Promise<Appointment.EncodedT | null>} null when no such appointment exists
+     */
+    export const getEncodedById = async (
+      appointmentId: string,
+    ): Promise<Appointment.EncodedT | null> => {
+      const [record] = await database
+        .get<AppointmentModel>("appointments")
+        .query(Q.where("id", appointmentId), Q.take(1))
+        .fetch()
+
+      return record ? rawToEncoded(record) : null
     }
 
     export function rawToT(rawAppointment: AppointmentModel): Appointment.T {

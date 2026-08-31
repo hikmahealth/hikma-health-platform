@@ -68,6 +68,21 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
     navigation.navigate("PatientView", { patientId: patient.id })
   }
 
+  const editAppointment = () => {
+    if (!validateAppointment(appointment)) return
+    if (!can("appointment:update")) {
+      Toast.show("You do not have permission to edit appointments", {
+        position: Toast.positions.BOTTOM,
+      })
+      return
+    }
+    navigation.navigate("AppointmentEditorForm", {
+      patientId: appointment.patientId,
+      visitId: appointment.currentVisitId || null,
+      appointmentId: appointment.id,
+    })
+  }
+
   const rescheduleAppointment = () => {
     Alert.alert(
       "Reschedule Appointment",
@@ -388,13 +403,26 @@ export const AppointmentViewScreen: FC<AppointmentViewScreenProps> = ({ route, n
       <Text
         text={`Appointment Date: \n${format(appointment.timestamp, "MMM d, yyyy 'at' h:mm a")}`}
       />
-      <Pressable onPress={openPatientFile}>
-        <Text
-          text="Open patient file"
-          color={colors.palette.primary500}
-          textDecorationLine="underline"
-        />
-      </Pressable>
+      <View direction="row" alignItems="center" gap={spacing.md} pt={spacing.xxs}>
+        <Pressable onPress={openPatientFile}>
+          <Text
+            text="Open patient file"
+            color={colors.palette.primary500}
+            textDecorationLine="underline"
+          />
+        </Pressable>
+
+        <Pressable onPress={editAppointment}>
+          <View direction="row" alignItems="center" gap={spacing.xxs}>
+            <LucideEdit color={colors.palette.primary500} size={14} />
+            <Text
+              tx="appointmentView:editAppointment"
+              color={colors.palette.primary500}
+              textDecorationLine="underline"
+            />
+          </View>
+        </Pressable>
+      </View>
 
       <If condition={clinic !== null && clinic !== undefined && typeof clinic.name === "string"}>
         <View pt={spacing.md}>
