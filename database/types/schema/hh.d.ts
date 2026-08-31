@@ -367,6 +367,7 @@ export interface PatientAdditionalAttributes {
   patient_id: string;
   server_created_at: Generated<Timestamp>;
   string_value: string | null;
+  unique_reference: string | null;
   updated_at: Generated<Timestamp>;
 }
 
