@@ -19,10 +19,12 @@ import {
   Archive,
   Trash2,
   Edit,
+  FlaskConical,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { Option } from "effect";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import If from "@/components/if";
 import {
   createDepartment,
@@ -249,6 +251,44 @@ function RouteComponent() {
     can_dispense_medications: false,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // HERS subscription state
+  const [hersSubscribed, setHersSubscribed] = useState<boolean | null>(null);
+  const [hersLoading, setHersLoading] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/hers/subscription")
+      .then((res) => res.json())
+      .then((data: { clinics: string[] }) => {
+        setHersSubscribed(data.clinics.includes(clinic.id));
+      })
+      .catch(() => {
+        setHersSubscribed(null);
+      });
+  }, [clinic.id]);
+
+  const handleHersSubscribe = async () => {
+    setHersLoading(true);
+    try {
+      const res = await fetch("/api/hers/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clinic_id: clinic.id }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Subscription failed");
+      }
+
+      toast.success("Clinic subscribed to HERS notifications");
+      setHersSubscribed(true);
+    } catch (error) {
+      Logger.error({ msg: "Failed to subscribe to HERS", error });
+      toast.error("Failed to subscribe clinic to HERS");
+    } finally {
+      setHersLoading(false);
+    }
+  };
 
   const formatDate = (date: Date | string | null | undefined) => {
     if (!date) return "N/A";
@@ -610,6 +650,43 @@ function RouteComponent() {
               </Button>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Experimental: HERS Subscription */}
+      <Card className="border-dashed">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <FlaskConical className="h-5 w-5 text-muted-foreground" />
+            <div>
+              <CardTitle className="text-base">Experimental</CardTitle>
+              <CardDescription>HERS Environmental Monitoring</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-4">
+            Subscribe this clinic to the HERS platform to receive notifications
+            about environmental changes (e.g. air quality, weather events)
+            relevant to the clinic's location.
+          </p>
+
+          {hersSubscribed === null ? (
+            <p className="text-sm text-muted-foreground italic">
+              Unable to check subscription status.
+            </p>
+          ) : hersSubscribed ? (
+            <Badge variant="secondary">Subscribed</Badge>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={handleHersSubscribe}
+              disabled={hersLoading}
+            >
+              {hersLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Subscribe to HERS
+            </Button>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as EducationRouteImport } from './routes/education'
 import { Route as ApiLoginRouteImport } from './routes/api/login'
+import { Route as ApiStorageRouteImport } from './routes/api/storage'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppEntriesRouteImport } from './routes/app/entries'
 import { Route as EducationIndexRouteImport } from './routes/education/index'
@@ -23,6 +24,7 @@ import { Route as ApiAuthSignInRouteImport } from './routes/api/auth.sign-in'
 import { Route as ApiAuthSignOutRouteImport } from './routes/api/auth.sign-out'
 import { Route as ApiEntriesBackfillRouteImport } from './routes/api/entries.backfill'
 import { Route as ApiFormsResourcesRouteImport } from './routes/api/forms.resources'
+import { Route as ApiHersSubscriptionRouteImport } from './routes/api/hers.subscription'
 import { Route as ApiHubVerifyKeyRouteImport } from './routes/api/hub.verify-key'
 import { Route as ApiResourcesIdRouteImport } from './routes/api/resources.$id'
 import { Route as ApiV2SyncRouteImport } from './routes/api/v2.sync'
@@ -41,6 +43,8 @@ import { Route as AppSettingsRegisterMobileAppRouteImport } from './routes/app/s
 import { Route as AppUsersIndexRouteImport } from './routes/app/users.index'
 import { Route as RpcCommandSplatRouteImport } from './routes/rpc.command.$'
 import { Route as RpcQuerySplatRouteImport } from './routes/rpc.query.$'
+import { Route as ApiHersEnvironmentNotifyRouteImport } from './routes/api/hers.environment.notify'
+import { Route as ApiHersOutputPredictionRouteImport } from './routes/api/hers.output.prediction'
 import { Route as AppAppointmentsEditSplatRouteImport } from './routes/app/appointments.edit.$'
 import { Route as AppClinicsIdIndexRouteImport } from './routes/app/clinics.$id.index'
 import { Route as AppClinicsEditSplatRouteImport } from './routes/app/clinics.edit.$'
@@ -79,6 +83,11 @@ const EducationRoute = EducationRouteImport.update({
 const ApiLoginRoute = ApiLoginRouteImport.update({
   id: '/api/login',
   path: '/api/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiStorageRoute = ApiStorageRouteImport.update({
+  id: '/api/storage',
+  path: '/api/storage',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -129,6 +138,11 @@ const ApiEntriesBackfillRoute = ApiEntriesBackfillRouteImport.update({
 const ApiFormsResourcesRoute = ApiFormsResourcesRouteImport.update({
   id: '/api/forms/resources',
   path: '/api/forms/resources',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHersSubscriptionRoute = ApiHersSubscriptionRouteImport.update({
+  id: '/api/hers/subscription',
+  path: '/api/hers/subscription',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHubVerifyKeyRoute = ApiHubVerifyKeyRouteImport.update({
@@ -221,6 +235,17 @@ const RpcCommandSplatRoute = RpcCommandSplatRouteImport.update({
 const RpcQuerySplatRoute = RpcQuerySplatRouteImport.update({
   id: '/rpc/query/$',
   path: '/rpc/query/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHersEnvironmentNotifyRoute =
+  ApiHersEnvironmentNotifyRouteImport.update({
+    id: '/api/hers/environment/notify',
+    path: '/api/hers/environment/notify',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiHersOutputPredictionRoute = ApiHersOutputPredictionRouteImport.update({
+  id: '/api/hers/output/prediction',
+  path: '/api/hers/output/prediction',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppAppointmentsEditSplatRoute =
@@ -335,6 +360,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/education': typeof EducationRouteWithChildren
   '/api/login': typeof ApiLoginRoute
+  '/api/storage': typeof ApiStorageRoute
   '/app/entries': typeof AppEntriesRoute
   '/education/$id': typeof EducationIdRoute
   '/rpc/heartbeat': typeof RpcHeartbeatRoute
@@ -345,6 +371,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/sign-out': typeof ApiAuthSignOutRoute
   '/api/entries/backfill': typeof ApiEntriesBackfillRoute
   '/api/forms/resources': typeof ApiFormsResourcesRoute
+  '/api/hers/subscription': typeof ApiHersSubscriptionRoute
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
   '/api/v2/sync': typeof ApiV2SyncRoute
@@ -363,6 +390,8 @@ export interface FileRoutesByFullPath {
   '/app/prescriptions/': typeof AppPrescriptionsIndexRoute
   '/app/reports/': typeof AppReportsIndexRoute
   '/app/users/': typeof AppUsersIndexRoute
+  '/api/hers/environment/notify': typeof ApiHersEnvironmentNotifyRoute
+  '/api/hers/output/prediction': typeof ApiHersOutputPredictionRoute
   '/app/appointments/edit/$': typeof AppAppointmentsEditSplatRoute
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
@@ -386,6 +415,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/login': typeof ApiLoginRoute
+  '/api/storage': typeof ApiStorageRoute
   '/app/entries': typeof AppEntriesRoute
   '/education/$id': typeof EducationIdRoute
   '/rpc/heartbeat': typeof RpcHeartbeatRoute
@@ -396,6 +426,7 @@ export interface FileRoutesByTo {
   '/api/auth/sign-out': typeof ApiAuthSignOutRoute
   '/api/entries/backfill': typeof ApiEntriesBackfillRoute
   '/api/forms/resources': typeof ApiFormsResourcesRoute
+  '/api/hers/subscription': typeof ApiHersSubscriptionRoute
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
   '/api/v2/sync': typeof ApiV2SyncRoute
@@ -414,6 +445,8 @@ export interface FileRoutesByTo {
   '/app/prescriptions': typeof AppPrescriptionsIndexRoute
   '/app/reports': typeof AppReportsIndexRoute
   '/app/users': typeof AppUsersIndexRoute
+  '/api/hers/environment/notify': typeof ApiHersEnvironmentNotifyRoute
+  '/api/hers/output/prediction': typeof ApiHersOutputPredictionRoute
   '/app/appointments/edit/$': typeof AppAppointmentsEditSplatRoute
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
@@ -440,6 +473,7 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/education': typeof EducationRouteWithChildren
   '/api/login': typeof ApiLoginRoute
+  '/api/storage': typeof ApiStorageRoute
   '/app/entries': typeof AppEntriesRoute
   '/education/$id': typeof EducationIdRoute
   '/rpc/heartbeat': typeof RpcHeartbeatRoute
@@ -450,6 +484,7 @@ export interface FileRoutesById {
   '/api/auth/sign-out': typeof ApiAuthSignOutRoute
   '/api/entries/backfill': typeof ApiEntriesBackfillRoute
   '/api/forms/resources': typeof ApiFormsResourcesRoute
+  '/api/hers/subscription': typeof ApiHersSubscriptionRoute
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
   '/api/v2/sync': typeof ApiV2SyncRoute
@@ -468,6 +503,8 @@ export interface FileRoutesById {
   '/app/prescriptions/': typeof AppPrescriptionsIndexRoute
   '/app/reports/': typeof AppReportsIndexRoute
   '/app/users/': typeof AppUsersIndexRoute
+  '/api/hers/environment/notify': typeof ApiHersEnvironmentNotifyRoute
+  '/api/hers/output/prediction': typeof ApiHersOutputPredictionRoute
   '/app/appointments/edit/$': typeof AppAppointmentsEditSplatRoute
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
@@ -495,6 +532,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/education'
     | '/api/login'
+    | '/api/storage'
     | '/app/entries'
     | '/education/$id'
     | '/rpc/heartbeat'
@@ -505,6 +543,7 @@ export interface FileRouteTypes {
     | '/api/auth/sign-out'
     | '/api/entries/backfill'
     | '/api/forms/resources'
+    | '/api/hers/subscription'
     | '/api/hub/verify-key'
     | '/api/resources/$id'
     | '/api/v2/sync'
@@ -523,6 +562,8 @@ export interface FileRouteTypes {
     | '/app/prescriptions/'
     | '/app/reports/'
     | '/app/users/'
+    | '/api/hers/environment/notify'
+    | '/api/hers/output/prediction'
     | '/app/appointments/edit/$'
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
@@ -546,6 +587,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/api/login'
+    | '/api/storage'
     | '/app/entries'
     | '/education/$id'
     | '/rpc/heartbeat'
@@ -556,6 +598,7 @@ export interface FileRouteTypes {
     | '/api/auth/sign-out'
     | '/api/entries/backfill'
     | '/api/forms/resources'
+    | '/api/hers/subscription'
     | '/api/hub/verify-key'
     | '/api/resources/$id'
     | '/api/v2/sync'
@@ -574,6 +617,8 @@ export interface FileRouteTypes {
     | '/app/prescriptions'
     | '/app/reports'
     | '/app/users'
+    | '/api/hers/environment/notify'
+    | '/api/hers/output/prediction'
     | '/app/appointments/edit/$'
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
@@ -599,6 +644,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/education'
     | '/api/login'
+    | '/api/storage'
     | '/app/entries'
     | '/education/$id'
     | '/rpc/heartbeat'
@@ -609,6 +655,7 @@ export interface FileRouteTypes {
     | '/api/auth/sign-out'
     | '/api/entries/backfill'
     | '/api/forms/resources'
+    | '/api/hers/subscription'
     | '/api/hub/verify-key'
     | '/api/resources/$id'
     | '/api/v2/sync'
@@ -627,6 +674,8 @@ export interface FileRouteTypes {
     | '/app/prescriptions/'
     | '/app/reports/'
     | '/app/users/'
+    | '/api/hers/environment/notify'
+    | '/api/hers/output/prediction'
     | '/app/appointments/edit/$'
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
@@ -653,17 +702,21 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   EducationRoute: typeof EducationRouteWithChildren
   ApiLoginRoute: typeof ApiLoginRoute
+  ApiStorageRoute: typeof ApiStorageRoute
   RpcHeartbeatRoute: typeof RpcHeartbeatRoute
   ApiAuthIsValidTokenRoute: typeof ApiAuthIsValidTokenRoute
   ApiAuthSignInRoute: typeof ApiAuthSignInRoute
   ApiAuthSignOutRoute: typeof ApiAuthSignOutRoute
   ApiEntriesBackfillRoute: typeof ApiEntriesBackfillRoute
   ApiFormsResourcesRoute: typeof ApiFormsResourcesRoute
+  ApiHersSubscriptionRoute: typeof ApiHersSubscriptionRoute
   ApiHubVerifyKeyRoute: typeof ApiHubVerifyKeyRoute
   ApiResourcesIdRoute: typeof ApiResourcesIdRoute
   ApiV2SyncRoute: typeof ApiV2SyncRoute
   RpcCommandSplatRoute: typeof RpcCommandSplatRoute
   RpcQuerySplatRoute: typeof RpcQuerySplatRoute
+  ApiHersEnvironmentNotifyRoute: typeof ApiHersEnvironmentNotifyRoute
+  ApiHersOutputPredictionRoute: typeof ApiHersOutputPredictionRoute
   ApiEventsEventIdAttachmentsResourceIdRoute: typeof ApiEventsEventIdAttachmentsResourceIdRoute
 }
 
@@ -695,6 +748,13 @@ declare module '@tanstack/react-router' {
       path: '/api/login'
       fullPath: '/api/login'
       preLoaderRoute: typeof ApiLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/storage': {
+      id: '/api/storage'
+      path: '/api/storage'
+      fullPath: '/api/storage'
+      preLoaderRoute: typeof ApiStorageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/': {
@@ -765,6 +825,13 @@ declare module '@tanstack/react-router' {
       path: '/api/forms/resources'
       fullPath: '/api/forms/resources'
       preLoaderRoute: typeof ApiFormsResourcesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/hers/subscription': {
+      id: '/api/hers/subscription'
+      path: '/api/hers/subscription'
+      fullPath: '/api/hers/subscription'
+      preLoaderRoute: typeof ApiHersSubscriptionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/hub/verify-key': {
@@ -891,6 +958,20 @@ declare module '@tanstack/react-router' {
       path: '/rpc/query/$'
       fullPath: '/rpc/query/$'
       preLoaderRoute: typeof RpcQuerySplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/hers/environment/notify': {
+      id: '/api/hers/environment/notify'
+      path: '/api/hers/environment/notify'
+      fullPath: '/api/hers/environment/notify'
+      preLoaderRoute: typeof ApiHersEnvironmentNotifyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/hers/output/prediction': {
+      id: '/api/hers/output/prediction'
+      path: '/api/hers/output/prediction'
+      fullPath: '/api/hers/output/prediction'
+      preLoaderRoute: typeof ApiHersOutputPredictionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/appointments/edit/$': {
@@ -1126,17 +1207,21 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   EducationRoute: EducationRouteWithChildren,
   ApiLoginRoute: ApiLoginRoute,
+  ApiStorageRoute: ApiStorageRoute,
   RpcHeartbeatRoute: RpcHeartbeatRoute,
   ApiAuthIsValidTokenRoute: ApiAuthIsValidTokenRoute,
   ApiAuthSignInRoute: ApiAuthSignInRoute,
   ApiAuthSignOutRoute: ApiAuthSignOutRoute,
   ApiEntriesBackfillRoute: ApiEntriesBackfillRoute,
   ApiFormsResourcesRoute: ApiFormsResourcesRoute,
+  ApiHersSubscriptionRoute: ApiHersSubscriptionRoute,
   ApiHubVerifyKeyRoute: ApiHubVerifyKeyRoute,
   ApiResourcesIdRoute: ApiResourcesIdRoute,
   ApiV2SyncRoute: ApiV2SyncRoute,
   RpcCommandSplatRoute: RpcCommandSplatRoute,
   RpcQuerySplatRoute: RpcQuerySplatRoute,
+  ApiHersEnvironmentNotifyRoute: ApiHersEnvironmentNotifyRoute,
+  ApiHersOutputPredictionRoute: ApiHersOutputPredictionRoute,
   ApiEventsEventIdAttachmentsResourceIdRoute:
     ApiEventsEventIdAttachmentsResourceIdRoute,
 }

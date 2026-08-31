@@ -70,8 +70,8 @@ export function ConnectMobileAppCard() {
         <CardDescription>
           Scanning this code tells the mobile app which server to sync with. It
           does not create an entry in the table below — use{" "}
-          <span className="font-medium">Register New Device</span> for a sync hub
-          or any client that needs its own API key.
+          <span className="font-medium">Register New Device</span> for a sync
+          hub or any client that needs its own API key.
         </CardDescription>
       </CardHeader>
 
