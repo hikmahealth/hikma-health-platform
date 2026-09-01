@@ -6,7 +6,6 @@ import * as Sentry from "@sentry/react-native"
 import { uuidv7 } from "uuidv7"
 
 import migrations from "./migrations"
-
 import { modelClasses } from "./modelClasses"
 import { type RawSqlAdapter, repairSchemaDrift } from "./repairSchemaDrift"
 import schema from "./schema"

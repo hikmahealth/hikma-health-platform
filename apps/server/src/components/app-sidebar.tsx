@@ -231,6 +231,10 @@ export const navData = {
           title: "Configuration",
           url: "/app/settings/configurations",
         },
+        {
+          title: "HERS",
+          url: "/app/settings/hers",
+        },
         // {
         //   title: "File Storage",
         //   url: "/app/settings/file-storage",

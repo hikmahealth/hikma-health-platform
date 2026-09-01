@@ -19,12 +19,63 @@ if (!process.env.SERVER_URL) {
 // NOTE(@ally): how is this loaded onto the server dynamically?
 export const serverUrl = new JURL(process.env.SERVER_URL);
 
+type DateString = string;
+
+type Value =
+  string | number | boolean | null | Value[] | { [k: string]: Value };
+const json = <T extends Value>(data: T, options?: ResponseInit) =>
+  new Response(JSON.stringify(data), {
+    status: 200,
+    ...options,
+    headers: { "Content-Type": "application/json", ...options?.headers },
+  });
+
 export const Route = createFileRoute("/api/hers/subscription")({
   server: {
     handlers: {
       GET: async function () {
+        // might to cache this clinic
+        const res = await fetch(
+          hersclient.baseurl.joinPath(
+            "/v1/api/subscription/environmental-changes",
+          ),
+          {
+            method: "GET",
+            headers: hersclient.createHeader(),
+          },
+        );
+
+        if (!res.ok) {
+          throw new Error(
+            "failed to return provide the values" + res.statusText,
+          );
+        }
+
+        const data = (await res.json()) as Array<{
+          reference: string;
+          description?: string | null;
+          webhook_url: string;
+          subscribed_at: DateString;
+        }>;
+
+        if (data.length === 0) {
+          return json({ clinics: [] });
+        }
+
+        // return list of present clinics that have subscribed to the service
+        const subbedclinics = await db
+          .selectFrom("clinics")
+          .select(["clinics.id"])
+          .where(
+            "clinics.id",
+            "in",
+            data.map((s) => s.reference),
+          )
+          .where("clinics.is_deleted", "=", false)
+          .execute();
+
         // get all the clinics that have subscribed to some environmental changes
-        return { clinics: [] as string[] };
+        return json({ clinics: subbedclinics.map((s) => s.id) });
       },
       POST: async function ({ request }) {
         // select the clinic to subscribe
@@ -50,7 +101,9 @@ export const Route = createFileRoute("/api/hers/subscription")({
           ),
           {
             method: "POST",
-            headers: hersclient.createHeader(),
+            headers: hersclient.createHeader({
+              "Content-Type": "application/json",
+            }),
             body: JSON.stringify({
               location: {
                 reference: clinic.id,
@@ -66,12 +119,37 @@ export const Route = createFileRoute("/api/hers/subscription")({
 
         if (!res.ok) {
           throw new Response(
-            "failed to add clinic to listen to environment changes",
+            "failed to add clinic to listen to environment changes. reason:" +
+              (await res.text()),
             { status: 500 },
           );
         }
 
-        return new Response("done!", { status: 202 });
+        return json("done!", { status: 202 });
+      },
+      DELETE: async function ({ request }) {
+        const input = (await request.json()) as { clinic_id: string };
+
+        // Build the delete URL with the clinic ID as the location reference
+        const deleteUrl = hersclient.baseurl.joinPath(
+          "/v1/api/subscription/environmental-changes",
+        );
+        deleteUrl.searchParams.set("location", input.clinic_id);
+
+        const res = await fetch(deleteUrl.toString(), {
+          method: "DELETE",
+          headers: hersclient.createHeader(),
+        });
+
+        if (!res.ok) {
+          throw new Response(
+            "failed to remove clinic from HERS subscriptions. reason:" +
+              (await res.text()),
+            { status: 500 },
+          );
+        }
+
+        return json("done!", { status: 200 });
       },
     },
   },
