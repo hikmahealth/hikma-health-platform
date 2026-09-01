@@ -72,12 +72,10 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
   const { patient: offlinePatient, isLoading: isLoadingOffline } = usePatientRecord(patientId)
   const onlinePatientQuery = useProviderPatient(isOnline ? patientId : null)
 
-  // Normalize: offline returns Option<DBPatient>, online returns Patient.T | null
+  // Normalize: both sources yield a nullable patient, the rest of this screen reads an Option
   const patient = isOnline
-    ? onlinePatientQuery.data
-      ? Option.some(onlinePatientQuery.data as unknown as Patient.DBPatient)
-      : Option.none()
-    : offlinePatient
+    ? Option.fromNullable(onlinePatientQuery.data as unknown as Patient.DBPatient | undefined)
+    : Option.fromNullable(offlinePatient)
   const isLoading = isOnline ? onlinePatientQuery.isLoading : isLoadingOffline
 
   const { hersEnabled } = useSelector(appStateStore, (store) => store.context)

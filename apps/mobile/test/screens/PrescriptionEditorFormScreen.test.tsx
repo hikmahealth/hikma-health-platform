@@ -147,7 +147,7 @@ jest.mock("@/hooks/usePatientRecord", () => ({
   usePatientRecord: jest.fn(() => {
     const { Option } = require("effect")
     return {
-      patient: Option.some({
+      patient: {
         id: "patient-1",
         givenName: "Jane",
         surname: "Doe",
@@ -166,7 +166,7 @@ jest.mock("@/hooks/usePatientRecord", () => ({
         deletedAt: Option.none(),
         createdAt: new Date(),
         updatedAt: new Date(),
-      }),
+      },
       isLoading: false,
     }
   }),

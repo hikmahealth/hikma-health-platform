@@ -1,5 +1,6 @@
 import { Q } from "@nozbe/watermelondb"
 import * as Sentry from "@sentry/react-native"
+import { catchError, of as of$ } from "@nozbe/watermelondb/utils/rx"
 
 import database from "@/db"
 import ClinicInventoryModel from "@/db/model/ClinicInventory"
@@ -463,13 +464,21 @@ namespace DrugCatalogue {
       const subscription = database.collections
         .get<DB.T>("drug_catalogue")
         .findAndObserve(drugId)
+        .pipe(
+          // Absent on this device — deleted upstream or never synced; unpiped it crashes the app.
+          catchError((error) => {
+            Logger.error(error)
+            return of$(null)
+          }),
+        )
         .subscribe((dbDrug) => {
+          // Set before emitting: catchError completes the stream, so no later correction arrives.
+          isLoading = false
           if (dbDrug && !dbDrug.isDeleted) {
             callback(fromDB(dbDrug), isLoading)
           } else {
             callback(null, isLoading)
           }
-          isLoading = false
         })
 
       return {

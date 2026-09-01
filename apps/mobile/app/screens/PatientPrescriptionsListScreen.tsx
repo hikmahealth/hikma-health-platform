@@ -2,7 +2,6 @@ import { FC, useEffect, useState } from "react"
 import { Pressable, ViewStyle, TextStyle } from "react-native"
 import { Q } from "@nozbe/watermelondb"
 import { NativeStackScreenProps } from "@react-navigation/native-stack"
-import { Option } from "effect"
 import {
   PlusIcon,
   PillIcon,
@@ -64,12 +63,7 @@ export const PatientPrescriptionsListScreen: FC<PatientPrescriptionsListScreenPr
 
   const { patient } = usePatientRecord(patientId)
 
-  const patientRecord = Option.match(patient, {
-    onNone: () => ({ givenName: "", surname: "" }),
-    onSome: (patient) => patient,
-  })
-
-  const patientName = Patient.displayName(patientRecord)
+  const patientName = Patient.displayName(patient ?? { givenName: "", surname: "" })
 
   const { prescriptions } = useDBPatientPrescriptions(patientId)
 

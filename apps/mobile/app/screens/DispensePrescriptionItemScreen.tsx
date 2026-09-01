@@ -6,6 +6,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack"
 import { useSelector } from "@xstate/react"
 import DropDownPicker from "react-native-dropdown-picker"
 import Toast from "react-native-root-toast"
+import { catchError, of as of$ } from "@nozbe/watermelondb/utils/rx"
 
 import { Button } from "@/components/Button"
 import { Screen } from "@/components/Screen"
@@ -38,6 +39,7 @@ export const DispensePrescriptionItemScreen: FC<DispensePrescriptionItemScreenPr
   const { id: providerId } = useSelector(providerStore, (state) => state.context)
   const { can } = usePermissionGuard()
   const [prescriptionItem, setPrescriptionItem] = useState<PrescriptionItem.DB.T | null>(null)
+  const [itemMissing, setItemMissing] = useState(false)
   const [clinicInventory, setClinicInventory] = useState<ClinicInventory.DB.T[]>([])
 
   const [selectedBatches, setSelectedBatches] = useState<string[]>([])
@@ -50,7 +52,23 @@ export const DispensePrescriptionItemScreen: FC<DispensePrescriptionItemScreenPr
     const sub = database
       .get<PrescriptionItem.DB.T>("prescription_items")
       .findAndObserve(prescriptionItemId)
+      .pipe(
+        // Absent on this device — deleted upstream or never synced; unpiped it crashes the app.
+        catchError((error) => {
+          Logger.error(error)
+          return of$(null)
+        }),
+      )
       .subscribe((item) => {
+        if (!item) {
+          // Distinct from the initial null, or the screen sits on "Loading..." forever.
+          setItemMissing(true)
+          setPrescriptionItem(null)
+          setClinicInventory([])
+          return
+        }
+
+        setItemMissing(false)
         item.clinicInventory
           .fetch()
           .then((res) => {
@@ -192,6 +210,15 @@ export const DispensePrescriptionItemScreen: FC<DispensePrescriptionItemScreenPr
         },
       },
     ])
+  }
+
+  if (itemMissing) {
+    return (
+      <Screen style={$root} preset="scroll">
+        <Text size="lg" text="This prescription item is not available on this device." />
+        <Text size="sm" text="It may have been deleted, or it may not have synced yet." />
+      </Screen>
+    )
   }
 
   if (!prescriptionItem) {

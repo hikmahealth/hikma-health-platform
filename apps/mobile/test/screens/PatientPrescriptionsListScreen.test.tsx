@@ -60,13 +60,10 @@ jest.mock("@/db", () => ({
 }))
 
 jest.mock("@/hooks/usePatientRecord", () => ({
-  usePatientRecord: jest.fn(() => {
-    const { Option } = require("effect")
-    return {
-      patient: Option.some({ id: "patient-1", givenName: "Jane", surname: "Doe" }),
-      isLoading: false,
-    }
-  }),
+  usePatientRecord: jest.fn(() => ({
+    patient: { id: "patient-1", givenName: "Jane", surname: "Doe" },
+    isLoading: false,
+  })),
 }))
 
 jest.mock("@/hooks/usePermissionGuard", () => ({

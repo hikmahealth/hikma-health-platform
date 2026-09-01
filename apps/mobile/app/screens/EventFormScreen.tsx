@@ -19,6 +19,7 @@ import { LucideAlertCircle, LucideX } from "lucide-react-native"
 import { Controller, useForm, useFormState, useWatch } from "react-hook-form"
 import DropDownPicker from "react-native-dropdown-picker"
 import Toast from "react-native-root-toast"
+import { catchError, of as of$ } from "@nozbe/watermelondb/utils/rx"
 import { useImmer } from "use-immer"
 import { uuidv7 } from "uuidv7"
 
@@ -239,7 +240,12 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
     [],
   )
 
-  const { form, state: formState, isLoading } = useEventForm(formId, visitId, patientId, eventId)
+  const {
+    form,
+    state: formState,
+    isLoading,
+    eventMissing,
+  } = useEventForm(formId, visitId, patientId, eventId)
   const { isOpen, openDialogue, closeDialogue } = useOpenDialogue()
 
   // Parse-once: compile every rule on the form into a closure when the form
@@ -1014,6 +1020,17 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
       </View>
     )
   }
+  if (eventMissing) {
+    return (
+      <View alignItems="center" pt={40} justifyContent="center" px={24}>
+        <LucideAlertCircle size={60} color={colors.textDim} />
+        <Text size="lg">This entry is not available on this device.</Text>
+        <Text size="sm" style={{ textAlign: "center" }}>
+          It may have been deleted, or it may not have synced yet.
+        </Text>
+      </View>
+    )
+  }
 
   return (
     <BottomSheetModalProvider>
@@ -1497,6 +1514,8 @@ type EventFormState = {
   // getFieldValue: (fieldId: string) => any
   state: EventModel | null
   isLoading: boolean
+  /** An `eventId` was given to edit, but no such event exists on this device. */
+  eventMissing: boolean
 }
 
 // FIXME: MUST REFACTOR & remove all unused code
@@ -1518,12 +1537,15 @@ function useEventForm(
   const [form, setForm] = useState<EventFormModel | null>(null)
   const [formState, updateFormState] = useImmer<EventModel | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
+  const [eventMissing, setEventMissing] = useState<boolean>(false)
 
   useEffect(() => {
     let cancelled = false
     let formSub: { unsubscribe: () => void } | null = null
     let formReady = false
     let eventReady = !eventId // no event to load = already ready
+
+    setEventMissing(false)
 
     const checkReady = () => {
       if (!cancelled && formReady && eventReady) {
@@ -1559,8 +1581,22 @@ function useEventForm(
       ? database.collections
           .get<EventModel>("events")
           .findAndObserve(eventId)
+          .pipe(
+            // Absent on this device — deleted upstream or never synced; unpiped it crashes the app.
+            catchError((error) => {
+              Logger.error(error)
+              return of$(null)
+            }),
+          )
           .subscribe((event) => {
             if (cancelled) return
+            // Never a blank draft: isEditing stays true, so saving would blank the unsynced record.
+            if (!event) {
+              setEventMissing(true)
+              eventReady = true
+              checkReady()
+              return
+            }
             updateFormState((d) => {
               const draft = d || ({} as any)
               draft.formId = event.formId
@@ -1609,6 +1645,7 @@ function useEventForm(
   return {
     form: form,
     isLoading,
+    eventMissing,
     // fields: form?.formFields ?? [],
     state: formState,
     // getFieldValue: getFieldValue,

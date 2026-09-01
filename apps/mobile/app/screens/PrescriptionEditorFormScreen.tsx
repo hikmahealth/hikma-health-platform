@@ -79,8 +79,7 @@ export const PrescriptionEditorFormScreen: FC<PrescriptionEditorFormScreenProps>
   // canEditOtherProviderEvent. Blank until loaded, and blank is the strict case.
   const [prescriptionAuthorId, setPrescriptionAuthorId] = useState("")
 
-  const { patient } = usePatientRecord(patientId)
-  const patientRecord = Option.getOrNull(patient)
+  const { patient: patientRecord } = usePatientRecord(patientId)
 
   const { clinics } = useDBClinicsList()
 

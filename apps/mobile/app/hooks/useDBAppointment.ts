@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { catchError, of as of$ } from "@nozbe/watermelondb/utils/rx"
 
 import database from "@/db"
 import Appointment from "@/models/Appointment"
@@ -36,37 +37,43 @@ export const useAppointment = (appointmentId: string) => {
     }
 
     setIsLoadingAppointment(true)
-    try {
-      database
-        .get<Appointment.DBAppointment>("appointments")
-        .findAndObserve(appointmentId)
-        .subscribe((apt) => {
-          const { getPatient, getClinic } = apt
-          setAppointment(apt)
-          Logger.log("🎉 Change happened to appointment")
-          getPatient
-            .then((res) => {
-              setPatient(res?.[0])
-              setIsLoadingPatient(false)
-            })
-            .catch(resetPatient)
-          getClinic
-            .then((res) => {
-              setClinic(res?.[0])
-              setIsLoadingClinic(false)
-            })
-            .catch(resetClinic)
-        })
-    } catch (error) {
-      Logger.error(error)
-      setAppointment(null)
-      setClinic(null)
-      setPatient(null)
-    } finally {
-      setIsLoadingAppointment(false)
-    }
+    const subscription = database
+      .get<Appointment.DBAppointment>("appointments")
+      .findAndObserve(appointmentId)
+      .pipe(
+        // Absent on this device — deleted upstream or never synced; unpiped it crashes the app.
+        catchError((error) => {
+          Logger.error(error)
+          return of$(null)
+        }),
+      )
+      .subscribe((apt) => {
+        if (!apt) {
+          setAppointment(null)
+          resetPatient()
+          resetClinic()
+          return
+        }
+
+        const { getPatient, getClinic } = apt
+        setAppointment(apt)
+        getPatient
+          .then((res) => {
+            setPatient(res?.[0] ?? null)
+            setIsLoadingPatient(false)
+          })
+          .catch(resetPatient)
+        getClinic
+          .then((res) => {
+            setClinic(res?.[0] ?? null)
+            setIsLoadingClinic(false)
+          })
+          .catch(resetClinic)
+      })
+    setIsLoadingAppointment(false)
 
     return () => {
+      subscription.unsubscribe()
       setAppointment(null)
       setIsLoadingAppointment(false)
     }

@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/react-native"
 import { format, isValid } from "date-fns"
 import { Either, Option } from "effect"
 import { camelCase } from "es-toolkit/compat"
+import { catchError, of as of$ } from "@nozbe/watermelondb/utils/rx"
 
 import database from "@/db"
 import AppointmentModel from "@/db/model/Appointment"
@@ -271,9 +272,12 @@ namespace Patient {
     export const table_name = "patients"
 
     /**
-     * Subscription to a patient record in the database
+     * Subscription to a patient record in the database. Emits `null` when the patient is not
+     * viewable — no such row on this device, or no history permission on its primary clinic.
+     *
      * @param patientId The patient ID
-     * @param {(patient: Option.Option<DB.T>, isLoading: boolean) => void} callback Function called when patient data updates
+     * @param provider The signed-in provider's id and clinic
+     * @param callback Function called when patient data updates
      * @returns {{unsubscribe: () => void}} Object containing unsubscribe function
      */
     export function subscribe(
@@ -282,49 +286,68 @@ namespace Patient {
         userId: string
         clinicId: string
       },
-      callback: (patient: Option.Option<DB.T>, isLoading: boolean) => void,
+      callback: (patient: DB.T | null, isLoading: boolean) => void,
     ): { unsubscribe: () => void } {
       const { userId, clinicId } = provider
 
+      // No clinic means no permission context; throwing would take down the caller's screen.
       if (!clinicId) {
-        throw new Error("Provider does not belong to any clinic")
+        Logger.warn({ msg: "Patient.DB.subscribe: provider belongs to no clinic", userId })
+        callback(null, false)
+        return { unsubscribe: () => {} }
       }
 
-      let isLoading = true
       let permissionsLoaded = false
       let viewHistoryClinicIds: string[] = []
-
-      // Kick off the async permission lookup
-      UserClinicPermissions.DB.getClinicIdsWithPermission(userId, "canViewHistory").then((ids) => {
-        viewHistoryClinicIds = ids
-        permissionsLoaded = true
-        // Re-evaluate with the latest patient if we already have one
-        if (latestPatient !== undefined) {
-          emitPatient(latestPatient)
-        }
-      })
-
       let latestPatient: DB.T | undefined
 
       function emitPatient(dbPatient: DB.T) {
         // Don't emit until permissions are loaded
         if (!permissionsLoaded) return
-        isLoading = false
         // If the patient has no primary clinic, then just return the patient.
         if (
           !dbPatient.primaryClinicId ||
           viewHistoryClinicIds.includes(dbPatient.primaryClinicId)
         ) {
-          callback(Option.fromNullable(dbPatient), isLoading)
+          callback(dbPatient, false)
         } else {
-          callback(Option.none(), isLoading)
+          callback(null, false)
         }
       }
+
+      // A failed lookup degrades to "no history clinics" rather than pinning the caller on loading.
+      UserClinicPermissions.DB.getClinicIdsWithPermission(userId, "canViewHistory")
+        .then((ids) => {
+          viewHistoryClinicIds = ids
+        })
+        .catch((error) => {
+          Logger.error(error)
+          Sentry.captureException(error)
+        })
+        .finally(() => {
+          permissionsLoaded = true
+          // Re-evaluate with the latest patient if we already have one
+          if (latestPatient !== undefined) {
+            emitPatient(latestPatient)
+          }
+        })
 
       const subscription = database.collections
         .get<DB.T>("patients")
         .findAndObserve(patientId)
+        .pipe(
+          // Absent on this device — deleted upstream or never synced; unpiped it crashes the app.
+          catchError((error) => {
+            Logger.error(error)
+            return of$(null)
+          }),
+        )
         .subscribe((dbPatient) => {
+          if (!dbPatient) {
+            // Nothing for the permission lookup to re-evaluate, so `latestPatient` stays unset.
+            callback(null, false)
+            return
+          }
           latestPatient = dbPatient
           emitPatient(dbPatient)
         })
