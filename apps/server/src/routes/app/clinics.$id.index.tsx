@@ -259,7 +259,7 @@ function RouteComponent() {
   useEffect(() => {
     fetch("/api/hers/subscription")
       .then((res) => res.json())
-      .then((data: { clinics: string[] }) => {
+      .then((data: { clinics: Array<{ id: string }> }) => {
         setHersSubscribed(data.clinics.includes(clinic.id));
       })
       .catch(() => {
@@ -285,6 +285,29 @@ function RouteComponent() {
     } catch (error) {
       Logger.error({ msg: "Failed to subscribe to HERS", error });
       toast.error("Failed to subscribe clinic to HERS");
+    } finally {
+      setHersLoading(false);
+    }
+  };
+
+  const handleHersUnsubscribe = async () => {
+    setHersLoading(true);
+    try {
+      const res = await fetch("/api/hers/subscription", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ clinic_id: clinic.id }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Unsubscription failed");
+      }
+
+      toast.success("Clinic removed from HERS notifications");
+      setHersSubscribed(false);
+    } catch (error) {
+      Logger.error({ msg: "Failed to unsubscribe from HERS", error });
+      toast.error("Failed to unsubscribe clinic from HERS");
     } finally {
       setHersLoading(false);
     }
@@ -676,7 +699,26 @@ function RouteComponent() {
               Unable to check subscription status.
             </p>
           ) : hersSubscribed ? (
-            <Badge variant="secondary">Subscribed</Badge>
+            <div className="flex items-center gap-3">
+              <Badge
+                variant="outline"
+                className="text-green-600 border-green-600"
+              >
+                ACTIVE
+              </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={handleHersUnsubscribe}
+                disabled={hersLoading}
+              >
+                {hersLoading && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
+                Deactivate
+              </Button>
+            </div>
           ) : (
             <Button
               variant="outline"

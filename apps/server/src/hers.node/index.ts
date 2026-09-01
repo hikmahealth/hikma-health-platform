@@ -3,13 +3,20 @@ import { JURL } from "./utils";
 
 class Client {
   readonly baseurl;
+  readonly clientId;
+  readonly clientSecret;
   constructor(url: string, clientId: string, clientSecret: string) {
     this.baseurl = new JURL(url);
+    this.clientId = clientId;
+    this.clientSecret = new TextEncoder().encode(clientSecret);
   }
 
-  createHeader() {
-    const header = new Headers();
-    header.set("Authorization", `Basic ${"clientId:clientSecret"}`);
+  createHeader(opts?: HeadersInit) {
+    const header = new Headers(opts);
+    header.set(
+      "Authorization",
+      `Basic ${btoa(`${this.clientId}:${new TextDecoder().decode(this.clientSecret)}`)}`,
+    );
     return header;
   }
 }

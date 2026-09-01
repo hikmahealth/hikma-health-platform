@@ -39,6 +39,7 @@ import { Route as AppPatientsCustomizeRegistrationFormRouteImport } from './rout
 import { Route as AppPatientsRegisterRouteImport } from './routes/app/patients.register'
 import { Route as AppPrescriptionsIndexRouteImport } from './routes/app/prescriptions.index'
 import { Route as AppReportsIndexRouteImport } from './routes/app/reports/index'
+import { Route as AppSettingsHersRouteImport } from './routes/app/settings.hers'
 import { Route as AppSettingsRegisterMobileAppRouteImport } from './routes/app/settings.register-mobile-app'
 import { Route as AppUsersIndexRouteImport } from './routes/app/users.index'
 import { Route as RpcCommandSplatRouteImport } from './routes/rpc.command.$'
@@ -216,6 +217,11 @@ const AppReportsIndexRoute = AppReportsIndexRouteImport.update({
   path: '/reports/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSettingsHersRoute = AppSettingsHersRouteImport.update({
+  id: '/settings/hers',
+  path: '/settings/hers',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSettingsRegisterMobileAppRoute =
   AppSettingsRegisterMobileAppRouteImport.update({
     id: '/settings/register-mobile-app',
@@ -379,6 +385,7 @@ export interface FileRoutesByFullPath {
   '/app/patients/$id': typeof AppPatientsIdRoute
   '/app/patients/customize-registration-form': typeof AppPatientsCustomizeRegistrationFormRoute
   '/app/patients/register': typeof AppPatientsRegisterRoute
+  '/app/settings/hers': typeof AppSettingsHersRoute
   '/app/settings/register-mobile-app': typeof AppSettingsRegisterMobileAppRoute
   '/rpc/command/$': typeof RpcCommandSplatRoute
   '/rpc/query/$': typeof RpcQuerySplatRoute
@@ -434,6 +441,7 @@ export interface FileRoutesByTo {
   '/app/patients/$id': typeof AppPatientsIdRoute
   '/app/patients/customize-registration-form': typeof AppPatientsCustomizeRegistrationFormRoute
   '/app/patients/register': typeof AppPatientsRegisterRoute
+  '/app/settings/hers': typeof AppSettingsHersRoute
   '/app/settings/register-mobile-app': typeof AppSettingsRegisterMobileAppRoute
   '/rpc/command/$': typeof RpcCommandSplatRoute
   '/rpc/query/$': typeof RpcQuerySplatRoute
@@ -492,6 +500,7 @@ export interface FileRoutesById {
   '/app/patients/$id': typeof AppPatientsIdRoute
   '/app/patients/customize-registration-form': typeof AppPatientsCustomizeRegistrationFormRoute
   '/app/patients/register': typeof AppPatientsRegisterRoute
+  '/app/settings/hers': typeof AppSettingsHersRoute
   '/app/settings/register-mobile-app': typeof AppSettingsRegisterMobileAppRoute
   '/rpc/command/$': typeof RpcCommandSplatRoute
   '/rpc/query/$': typeof RpcQuerySplatRoute
@@ -551,6 +560,7 @@ export interface FileRouteTypes {
     | '/app/patients/$id'
     | '/app/patients/customize-registration-form'
     | '/app/patients/register'
+    | '/app/settings/hers'
     | '/app/settings/register-mobile-app'
     | '/rpc/command/$'
     | '/rpc/query/$'
@@ -606,6 +616,7 @@ export interface FileRouteTypes {
     | '/app/patients/$id'
     | '/app/patients/customize-registration-form'
     | '/app/patients/register'
+    | '/app/settings/hers'
     | '/app/settings/register-mobile-app'
     | '/rpc/command/$'
     | '/rpc/query/$'
@@ -663,6 +674,7 @@ export interface FileRouteTypes {
     | '/app/patients/$id'
     | '/app/patients/customize-registration-form'
     | '/app/patients/register'
+    | '/app/settings/hers'
     | '/app/settings/register-mobile-app'
     | '/rpc/command/$'
     | '/rpc/query/$'
@@ -932,6 +944,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppReportsIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/settings/hers': {
+      id: '/app/settings/hers'
+      path: '/settings/hers'
+      fullPath: '/app/settings/hers'
+      preLoaderRoute: typeof AppSettingsHersRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/app/settings/register-mobile-app': {
       id: '/app/settings/register-mobile-app'
       path: '/settings/register-mobile-app'
@@ -1117,6 +1136,7 @@ interface AppRouteChildren {
   AppPatientsIdRoute: typeof AppPatientsIdRoute
   AppPatientsCustomizeRegistrationFormRoute: typeof AppPatientsCustomizeRegistrationFormRoute
   AppPatientsRegisterRoute: typeof AppPatientsRegisterRoute
+  AppSettingsHersRoute: typeof AppSettingsHersRoute
   AppSettingsRegisterMobileAppRoute: typeof AppSettingsRegisterMobileAppRoute
   AppAppointmentsIndexRoute: typeof AppAppointmentsIndexRoute
   AppClinicsIndexRoute: typeof AppClinicsIndexRoute
@@ -1154,6 +1174,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPatientsCustomizeRegistrationFormRoute:
     AppPatientsCustomizeRegistrationFormRoute,
   AppPatientsRegisterRoute: AppPatientsRegisterRoute,
+  AppSettingsHersRoute: AppSettingsHersRoute,
   AppSettingsRegisterMobileAppRoute: AppSettingsRegisterMobileAppRoute,
   AppAppointmentsIndexRoute: AppAppointmentsIndexRoute,
   AppClinicsIndexRoute: AppClinicsIndexRoute,

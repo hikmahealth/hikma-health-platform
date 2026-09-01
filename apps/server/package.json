@@ -4,7 +4,7 @@
   "version": "2025.11.22",
   "type": "module",
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "dotenv -e ../../.env -- vite dev --port 3000 --host",
     "start-only": "DB_SSL=true node .output/server/index.mjs",
     "start-dist": "DB_SSL=true node dist/server/server.js",
     "start:local-prod": "pnpm run build && DB_SSL=true node --env-file=.env .output/server/index.mjs",
