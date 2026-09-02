@@ -31,11 +31,16 @@ import {
 } from "@/components/ui/pagination";
 import { toast } from "sonner";
 import { getAllClinics } from "@/lib/server-functions/clinics";
-import { getClinicInventory } from "@/lib/server-functions/inventory";
+import {
+  getClinicInventory,
+  removeDrugFromClinic,
+} from "@/lib/server-functions/inventory";
 import { Result } from "@/lib/result";
-import { LucidePlus } from "lucide-react";
+import { LucidePlus, Trash } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Logger } from "@hikmahealth/js-utils";
+import { formatDrugStrength } from "@/lib/utils";
+import { upperFirst } from "es-toolkit/compat";
 
 const ITEMS_PER_PAGE = 100;
 
@@ -71,6 +76,11 @@ function RouteComponent() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [removingDrugId, setRemovingDrugId] = useState<string | null>(null);
+  // The clinic the rows on screen were loaded for. `selectedClinicId` flips as
+  // soon as the picker changes, a round-trip before the rows catch up, so a
+  // destructive action has to bind to this rather than to the picker.
+  const [loadedClinicId, setLoadedClinicId] = useState<string>("");
 
   // Update total pages based on whether there are more items
   useEffect(() => {
@@ -105,6 +115,7 @@ function RouteComponent() {
         },
       });
       setInventory(Result.getOrElse(result, EMPTY_INVENTORY));
+      setLoadedClinicId(clinicId);
       setCurrentPage(page);
     } catch (error) {
       Logger.error({ msg: "Error loading inventory:", error });
@@ -119,6 +130,7 @@ function RouteComponent() {
     loadInventory(selectedClinicId, page);
   };
 
+  // @ts-expect-error not implemented yet, coming soon!
   const handleStockCount = async () => {
     // TODO: Implement stock count functionality
     toast.info("Stock count functionality coming soon");
@@ -130,6 +142,67 @@ function RouteComponent() {
       params: { _splat: drugId },
       search: { clinicId: selectedClinicId || undefined },
     });
+  };
+
+  const handleRemoveDrugInventory = async (
+    drug: (typeof inventory.items)[number],
+  ) => {
+    const clinicId = loadedClinicId;
+    const { drug_id: drugId, generic_name } = drug;
+    const clinic = clinics.find((clinic) => clinic.id === clinicId);
+    if (!clinic || clinicId !== selectedClinicId) {
+      toast.error("Wait for the clinic's inventory to finish loading.");
+      return;
+    }
+
+    // The stock this writes off is gone for good, so the prompt names what
+    // goes with it rather than asking in the abstract. `destroyable_quantity`
+    // is the server's own figure — subtracting the two aggregates overstates
+    // it wherever a batch row has gone negative.
+    const free = drug.destroyable_quantity;
+    const reservedNote =
+      drug.reserved_quantity > 0
+        ? ` ${drug.reserved_quantity} reserved units stay put for prescriptions already in flight.`
+        : "";
+    if (
+      !window.confirm(
+        `Remove ${generic_name} from ${clinic.name}? This destroys ${free} units and takes the product off that clinic's shelves.${reservedNote}\n\n` +
+          `The drug stays in the drug catalogue, its stock at other clinics is untouched, and medications already prescribed or dispensed are not affected.\n\n` +
+          `It cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setRemovingDrugId(drugId);
+    try {
+      const result = await removeDrugFromClinic({
+        data: { clinicId, drugId },
+      });
+
+      if (!result.success) {
+        toast.error(result.error || "Failed to remove drug from clinic");
+        return;
+      }
+
+      const { units_destroyed, units_retained } = result.data;
+      toast.success(
+        units_retained > 0
+          ? `${generic_name} removed from ${clinic.name}. ${units_destroyed} units destroyed, ${units_retained} reserved units kept for prescriptions in flight.`
+          : `${generic_name} removed from ${clinic.name}. ${units_destroyed} units destroyed.`,
+      );
+
+      // Without this the row keeps its pre-removal quantities and invites a
+      // second delete on stock that is already gone.
+      await loadInventory(clinicId, currentPage);
+    } catch (error) {
+      // adminMiddleware throws outside the server function's own try, so an
+      // expired session lands here rather than in the !success branch.
+      Logger.error({ msg: "Error removing drug from clinic:", error });
+      toast.error("Failed to remove drug from clinic");
+    } finally {
+      setRemovingDrugId(null);
+    }
   };
 
   const handleAddNewItem = () => {
@@ -239,39 +312,29 @@ function RouteComponent() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Actions</TableHead>
                 <TableHead>Drug Name</TableHead>
                 <TableHead>Form</TableHead>
-                <TableHead className="text-center">Quantity</TableHead>
-                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="">Quantity</TableHead>
+                <TableHead className="">Status</TableHead>
+                <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {inventory?.items?.map((item: any) => {
+              {inventory?.items?.map((item) => {
                 const isLowStock = false;
                 // min_stock_level not available in current API response
                 // TODO: Add min_stock_level to getWithDrugInfo query
 
+                // Reserved units are carved out of `quantity`, not held
+                // alongside it. The free count is summed per row by the query,
+                // not derived here — see `destroyable_quantity`.
+                const freeQuantity = item.destroyable_quantity;
+                const strength = formatDrugStrength(item.dosage_quantity);
+
                 return (
                   <TableRow key={item.drug_id}>
-                    <TableCell className="space-x-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleEdit(item.drug_id)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleStockCount()}
-                      >
-                        Count
-                      </Button>
-                    </TableCell>
                     <TableCell className="font-medium">
-                      {item.brand_name || "-"}
+                      {item.brand_name || item.generic_name || "-"}
                       {item.is_controlled && (
                         <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-1 rounded">
                           Controlled
@@ -284,10 +347,14 @@ function RouteComponent() {
                       )}
                     </TableCell>
                     <TableCell>
-                      {item.brand_name || "-"}
-
+                      {upperFirst(item.form || "-")}
+                      {strength && (
+                        <p className="text-gray-800">
+                          {strength} {item.dosage_units}
+                        </p>
+                      )}
                       <p className="text-xs text-gray-500">
-                        {item.generic_name || "-"}
+                        {upperFirst(item.generic_name || "-")}
                       </p>
                     </TableCell>
                     <TableCell>
@@ -295,17 +362,17 @@ function RouteComponent() {
                       <table className="min-w-full">
                         <tbody>
                           <tr>
-                            <td className="text-left pr-2">Available:</td>
+                            <td className="text-left pr-2">Free:</td>
                             <td
                               className={`text-right ${isLowStock ? "text-red-600 font-semibold" : ""}`}
                             >
-                              {item.quantity}
+                              {freeQuantity.toLocaleString()}
                             </td>
                           </tr>
                           <tr>
                             <td className="text-left pr-2">Reserved:</td>
                             <td className="text-right">
-                              {item.reserved_quantity}
+                              {item.reserved_quantity.toLocaleString()}
                             </td>
                           </tr>
                           <tr>
@@ -313,10 +380,7 @@ function RouteComponent() {
                               Total:
                             </td>
                             <td className="text-right font-semibold">
-                              {(
-                                parseInt(item.quantity) +
-                                parseInt(item.reserved_quantity)
-                              ).toLocaleString()}
+                              {item.quantity.toLocaleString()}
                             </td>
                           </tr>
                         </tbody>
@@ -336,6 +400,36 @@ function RouteComponent() {
                           In Stock
                         </span>
                       )}
+                    </TableCell>
+                    <TableCell className="space-x-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEdit(item.drug_id)}
+                      >
+                        Edit
+                      </Button>
+                      {/*
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleStockCount()}
+                      >
+                        Count
+                      </Button>
+                      */}
+
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={removingDrugId !== null}
+                        onClick={() => handleRemoveDrugInventory(item)}
+                      >
+                        <Trash color="red" />
+                        {removingDrugId === item.drug_id
+                          ? "Removing..."
+                          : "Remove from Clinic"}
+                      </Button>
                     </TableCell>
                   </TableRow>
                 );

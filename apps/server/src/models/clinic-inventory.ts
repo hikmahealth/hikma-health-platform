@@ -67,7 +67,9 @@ namespace ClinicInventory {
     brand_name: string | null;
     form: string | null;
     route: string | null;
-    dosage_quantity: number | null;
+    // decimal(10, 4) — pg hands it back as a string; format it with
+    // `formatDrugStrength` rather than rounding to a fixed width.
+    dosage_quantity: string | null;
     dosage_units: string | null;
     sale_price: number | null;
     sale_currency: string | null;
@@ -76,6 +78,13 @@ namespace ClinicInventory {
     batch_expiry_date: Date | null;
     quantity: number;
     reserved_quantity: number;
+    /**
+     * What a removal would write off, floored per row before summing — the
+     * same expression `getClinicDrugStock` reports and `planRowRemoval` acts
+     * on. Not `quantity - reserved_quantity`: a row gone negative through
+     * reconciliation contributes 0 rather than eating another batch's stock.
+     */
+    destroyable_quantity: number;
     batches: {
       batch_id: string;
       batch_expiry_date: Date | null;
@@ -366,24 +375,35 @@ namespace ClinicInventory {
               ORDER BY ci.quantity_available DESC
               LIMIT 1
             )`.as("batch_expiry_date"),
-            // Calculate total quantity
+            // Calculate total quantity. SUM(integer) is bigint, which pg
+            // returns as a string; the cast keeps the declared `number` honest.
             sql<number>`(
-              SELECT COALESCE(SUM(ci.quantity_available), 0)
+              SELECT COALESCE(SUM(ci.quantity_available), 0)::int
               FROM clinic_inventory ci
               WHERE ci.clinic_id = ${clinicId}
                 AND ci.drug_id = dc.id
                 AND ci.is_deleted = false
                 ${!includeZeroStock ? sql`AND ci.quantity_available > 0` : sql``}
             )`.as("quantity"),
-            // Calculate total quantity reserved
+            // Calculate total quantity reserved. Carved out of the total
+            // above, not additional to it.
             sql<number>`(
-              SELECT COALESCE(SUM(ci.reserved_quantity), 0)
+              SELECT COALESCE(SUM(ci.reserved_quantity), 0)::int
               FROM clinic_inventory ci
               WHERE ci.clinic_id = ${clinicId}
                 AND ci.drug_id = dc.id
                 AND ci.is_deleted = false
                 AND ci.reserved_quantity > 0
             )`.as("reserved_quantity"),
+            // Free stock, floored per row so a negative balance contributes 0.
+            sql<number>`(
+              SELECT COALESCE(SUM(GREATEST(ci.quantity_available - GREATEST(ci.reserved_quantity, 0), 0)), 0)::int
+              FROM clinic_inventory ci
+              WHERE ci.clinic_id = ${clinicId}
+                AND ci.drug_id = dc.id
+                AND ci.is_deleted = false
+                ${!includeZeroStock ? sql`AND ci.quantity_available > 0` : sql``}
+            )`.as("destroyable_quantity"),
             // Get all batches as JSON array
             sql<
               {

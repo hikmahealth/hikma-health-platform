@@ -56,7 +56,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn } from "@/lib/utils";
+import { cn, formatDrugStrength } from "@/lib/utils";
 import { Result } from "@/lib/result";
 import {
   Table,
@@ -432,7 +432,7 @@ function RouteComponent() {
                   <div>
                     <p className="text-sm text-muted-foreground">Strength</p>
                     <p className="font-medium">
-                      {selectedDrug.dosage_quantity}
+                      {formatDrugStrength(selectedDrug.dosage_quantity)}{" "}
                       {selectedDrug.dosage_units}
                     </p>
                   </div>
@@ -820,9 +820,8 @@ function RouteComponent() {
                 Remove From Clinic
               </CardTitle>
               <CardDescription>
-                Destroy a single clinic's stock of{" "}
-                {selectedDrug.generic_name} and take the product off that
-                clinic's shelves.
+                Destroy a single clinic's stock of {selectedDrug.generic_name}{" "}
+                and take the product off that clinic's shelves.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -880,10 +879,9 @@ function RouteComponent() {
               <DialogDescription asChild>
                 <div className="space-y-3 text-sm">
                   <p>
-                    This destroys the{" "}
-                    {removalStock?.destroyable_quantity ?? 0} units held at{" "}
-                    {removalClinicName} and takes the product off that clinic's
-                    shelves. It cannot be undone.
+                    This destroys the {removalStock?.destroyable_quantity ?? 0}{" "}
+                    units held at {removalClinicName} and takes the product off
+                    that clinic's shelves. It cannot be undone.
                   </p>
                   {(removalStock?.reserved_quantity ?? 0) > 0 && (
                     <p>

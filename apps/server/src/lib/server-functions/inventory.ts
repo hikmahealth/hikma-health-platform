@@ -156,7 +156,13 @@ export const removeDrugFromClinic = createServerFn({ method: "POST" })
         return { success: true as const, data: outcome };
       } catch (error) {
         Sentry.captureException(error);
-        return { success: false as const, error: String(error) };
+        return {
+          success: false as const,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to remove drug from clinic",
+        };
       }
     });
   });

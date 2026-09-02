@@ -602,3 +602,22 @@ export function countLines(text: string): number {
   if (!text) return 0;
   return text.split("\n").length;
 }
+
+/**
+ * Render a drug strength for display.
+ *
+ * `drug_catalogue.dosage_quantity` is `decimal(10, 4)` and arrives from `pg` as
+ * a string. Rounding it to a fixed width turns 0.0125 mg into 0.01 mg, so
+ * trailing zeros are trimmed rather than digits dropped. An absent strength
+ * renders as "" — a blank is honest where a fabricated "0.00" is not.
+ */
+export function formatDrugStrength(
+  value: number | string | null | undefined,
+): string {
+  // Number("") and Number("  ") are both 0 — the fabricated zero this guards.
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string" && value.trim() === "") return "";
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return "";
+  return String(parsed);
+}
