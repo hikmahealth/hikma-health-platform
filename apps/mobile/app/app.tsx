@@ -160,6 +160,14 @@ export function App() {
     boot().finally(() => setIsProviderStoreInitialized(true))
   }, [])
 
+  console.log({
+    isProviderStoreInitialized,
+    isNavigationStateRestored,
+    isI18nInitialized,
+    fontLoadError,
+    areFontsLoaded,
+  })
+
   // Before we show the app, we have to wait for our state to be ready.
   // In the meantime, don't render anything. This will be the background
   // color set in native by rootView's background color.
@@ -172,6 +180,7 @@ export function App() {
     (!areFontsLoaded && !fontLoadError) ||
     !isProviderStoreInitialized
   ) {
+    console.log("YOU SHOULDN'T SEE THIS")
     return null
   }
 

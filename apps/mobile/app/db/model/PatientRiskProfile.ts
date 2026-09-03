@@ -3,10 +3,10 @@ import { field, text, date, readonly, relation } from "@nozbe/watermelondb/decor
 
 import Patient from "./Patient"
 
-type ProfileValueType = "string" | "numeric" | "integer" | "boolean" | "datetime"
+type ProfileValueType = "string" | "numeric" | "integer" | "boolean" | "datetime" | "json"
 
-export default class PatientRiskProfileAttribute extends Model {
-  static table = "patient_risk_profile_attributes"
+export default class PatientRiskProfile extends Model {
+  static table = "patient_risk_profiles"
 
   static associations = {
     patients: { type: "belongs_to" as const, key: "patient_id" },
@@ -15,20 +15,25 @@ export default class PatientRiskProfileAttribute extends Model {
   // --- Identity ---
   @text("patient_id") patientId!: string
   @text("clinic_id") clinicId?: string
-  @text("profile_key") profileKey!: string
-  @text("unique_reference") uniqueReference?: string
+  @text("kind") kind!: string
+  @text("source") source!: string
+  @text("target") target?: string
+  @text("version") version!: string
 
   // --- Value type discriminator ---
-  // One of: 'string' | 'numeric' | 'integer' | 'boolean' | 'datetime'
-  @text("profile_value_type") profileValueType!: ProfileValueType
+  // One of: 'string' | 'numeric' | 'integer' | 'boolean' | 'datetime' | 'json'
+  @text("value_type") valueType!: ProfileValueType
 
-  // --- Value columns (only the one matching profileValueType is populated) ---
+  // --- Value columns (only the one matching valueType is populated) ---
   @text("string_value") stringValue?: string
   @field("boolean_value") booleanValue?: boolean
   @field("integer_value") integerValue?: number
   // Stored as string to preserve decimal(31,10) precision without float loss
   @text("numerical_value") numericalValue?: string
   @date("datetime_value") datetimeValue?: Date
+  // Stored as JSON string
+  @text("json_value") jsonValue?: string
+  @text("metadata") metadata?: string
 
   // --- Flags ---
   @field("is_deleted") isDeleted!: boolean

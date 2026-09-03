@@ -9,19 +9,21 @@ export default schemaMigrations({
       toVersion: 12,
       steps: [
         createTable({
-          name: "patient_risk_profile_attributes",
+          name: "patient_risk_profiles",
           columns: [
             { name: "patient_id", type: "string", isIndexed: true },
             { name: "clinic_id", type: "string", isOptional: true, isIndexed: true },
-            { name: "profile_key", type: "string", isIndexed: true },
-            { name: "unique_reference", type: "string", isOptional: true },
+            { name: "key", type: "string", isIndexed: true },
+            { name: "target", type: "string", isOptional: true },
             // 'string' | 'numeric' | 'integer' | 'boolean' | 'datetime'
-            { name: "profile_value_type", type: "string" },
+            { name: "value_type", type: "string" },
             { name: "string_value", type: "string", isOptional: true },
             { name: "boolean_value", type: "boolean", isOptional: true },
-            { name: "integer_value", type: "number", isOptional: true },
             { name: "numerical_value", type: decimal, isOptional: true }, // stored as string to preserve decimal precision
             { name: "datetime_value", type: "number", isOptional: true }, // Unix timestamp
+            { name: "json_value", type: "string", isOptional: true },
+            { name: "source", type: "string" },
+            { name: "version", type: "string" },
             { name: "is_deleted", type: "boolean" },
             { name: "created_at", type: "number" },
             { name: "updated_at", type: "number" },

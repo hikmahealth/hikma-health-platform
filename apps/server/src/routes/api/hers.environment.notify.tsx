@@ -14,6 +14,8 @@ export const Route = createFileRoute("/api/hers/environment/notify")({
       POST: async ({ request }) => {
         const input = (await request.json()) as { location_reference: string };
 
+        console.log(input);
+
         // check if location exists
         const clinic = await db
           .selectFrom("clinics")
@@ -40,13 +42,14 @@ export const Route = createFileRoute("/api/hers/environment/notify")({
         for (const p of patients) {
           input_payload.push({
             id: p.id,
+            sex: p.sex,
           });
         }
 
-        const url = hersclient.baseurl.joinPath("/v1/api/compute/risk");
+        const url = hersclient.baseurl.joinPath("/v1/api/compute/risk/async");
         const q = new URLSearchParams();
 
-        q.set("id", uuidv7());
+        q.set("request_id", uuidv7());
         q.set(
           "on_complete",
           serverUrl.joinPath("/api/hers/output/prediction").toString(),
@@ -62,13 +65,25 @@ export const Route = createFileRoute("/api/hers/environment/notify")({
         url.search = q.toString();
         const res = await fetch(url, {
           method: "POST",
-          headers: hersclient.createHeader(),
+          headers: hersclient.createHeader({
+            "Content-Type": "application/json",
+          }),
           body: JSON.stringify(input_payload),
         });
 
+        console.log({ url });
+
         if (!res.ok) {
-          throw new Response("failed to request risk compute", { status: 500 });
+          console.log("failed");
+          throw new Response(
+            "failed to request risk compute" + (await res.text()),
+            {
+              status: res.status,
+            },
+          );
         }
+
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
       },
     },
   },

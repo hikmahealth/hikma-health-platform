@@ -24,7 +24,15 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Calendar, Phone, MapPin, LucideUser } from "lucide-react";
+import {
+  Calendar,
+  Phone,
+  MapPin,
+  LucideUser,
+  HeartPulse,
+  Wind,
+  TestTube2,
+} from "lucide-react";
 import { format } from "date-fns";
 import type PatientVital from "@/models/patient-vital";
 import type Patient from "@/models/patient";
@@ -42,6 +50,8 @@ import { PrescriptionsList } from "@/components/patient/PrescriptionsList";
 import { PatientProblemsList } from "@/components/patient/PatientProblemsList";
 import { parseCivilDate } from "@/lib/utils";
 import { Logger } from "@hikmahealth/js-utils";
+import { useQuery } from "@tanstack/react-query";
+import type { RiskPrediction } from "../api/patients.$id.risk-profile";
 
 export const Route = createFileRoute("/app/patients/$id")({
   component: RouteComponent,
@@ -183,6 +193,81 @@ export const Route = createFileRoute("/app/patients/$id")({
     }
   },
 });
+
+const RISK_TYPE_META = {
+  cvd: { label: "Cardiovascular", Icon: HeartPulse },
+  respiratory: { label: "Respiratory", Icon: Wind },
+} as const;
+
+const RISK_SCORE_VARIANT = {
+  high: "destructive",
+  medium: "outline",
+  low: "secondary",
+} as const satisfies Record<string, "destructive" | "outline" | "secondary">;
+
+function RiskRelatedInformation({ id }: { id: string }) {
+  const results = useQuery({
+    queryKey: ["risk_prediction", id],
+    queryFn: (): Promise<RiskPrediction[]> =>
+      fetch(`/api/patients/${id}/risk-profile`).then((res) => res.json()),
+  });
+
+  // Nothing to show — omit the card entirely
+  if (!results.data || results.data.length === 0) {
+    return <></>;
+  }
+
+  return (
+    <Card className="border-yellow-500 [*>[data-slot=card-title]]:text-yellow-900 [*>[data-slot=card-description]]:text-yellow-700">
+      <CardHeader>
+        <CardTitle className="text-lg flex flex-row gap-3 items-center">
+          Environmental Risk Profile
+          <span className="bg-yellow-700 text-sm text-yellow-50 px-2.5 rounded-full items-center gap-2 py-0.5 whitespace-nowrap inline-flex flex">
+            <TestTube2 className="size-4" /> HERS
+          </span>
+        </CardTitle>
+        <CardDescription>
+          Predicted risk levels based on environmental exposure data
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap gap-4">
+          {results.data.map((entry) => {
+            const meta = RISK_TYPE_META[entry.value.type] ?? RISK_TYPE_META.cvd;
+            const { Icon, label } = meta;
+            return (
+              <div
+                key={entry.value.type}
+                className="flex flex-1 min-w-[180px] items-center justify-between gap-4 rounded-lg border p-4"
+              >
+                <div className="flex items-center gap-2">
+                  <Icon className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">{label}</p>
+                    {entry.recorded_at && (
+                      <p className="text-xs text-muted-foreground">
+                        Updated{" "}
+                        {format(
+                          new Date(entry.recorded_at as string),
+                          "MMM dd, yyyy",
+                        )}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <Badge
+                  variant={RISK_SCORE_VARIANT[entry.value.score] ?? "outline"}
+                >
+                  {entry.value.score.toUpperCase()}
+                </Badge>
+              </div>
+            );
+          })}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function RouteComponent() {
   const {
@@ -400,6 +485,8 @@ function RouteComponent() {
           </div>
         </CardHeader>
       </Card>
+
+      <RiskRelatedInformation id={patientId} />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <Card>

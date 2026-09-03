@@ -40,6 +40,7 @@ const SYNCABLE_TABLES = [
   "event_forms",
   "registration_forms",
   "patient_additional_attributes",
+  "patient_risk_profiles",
   "appointments",
   "prescriptions",
   "patient_vitals",

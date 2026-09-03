@@ -46,6 +46,7 @@ import { Route as RpcCommandSplatRouteImport } from './routes/rpc.command.$'
 import { Route as RpcQuerySplatRouteImport } from './routes/rpc.query.$'
 import { Route as ApiHersEnvironmentNotifyRouteImport } from './routes/api/hers.environment.notify'
 import { Route as ApiHersOutputPredictionRouteImport } from './routes/api/hers.output.prediction'
+import { Route as ApiPatientsIdRiskProfileRouteImport } from './routes/api/patients.$id.risk-profile'
 import { Route as AppAppointmentsEditSplatRouteImport } from './routes/app/appointments.edit.$'
 import { Route as AppClinicsIdIndexRouteImport } from './routes/app/clinics.$id.index'
 import { Route as AppClinicsEditSplatRouteImport } from './routes/app/clinics.edit.$'
@@ -254,6 +255,12 @@ const ApiHersOutputPredictionRoute = ApiHersOutputPredictionRouteImport.update({
   path: '/api/hers/output/prediction',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPatientsIdRiskProfileRoute =
+  ApiPatientsIdRiskProfileRouteImport.update({
+    id: '/api/patients/$id/risk-profile',
+    path: '/api/patients/$id/risk-profile',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AppAppointmentsEditSplatRoute =
   AppAppointmentsEditSplatRouteImport.update({
     id: '/appointments/edit/$',
@@ -399,6 +406,7 @@ export interface FileRoutesByFullPath {
   '/app/users/': typeof AppUsersIndexRoute
   '/api/hers/environment/notify': typeof ApiHersEnvironmentNotifyRoute
   '/api/hers/output/prediction': typeof ApiHersOutputPredictionRoute
+  '/api/patients/$id/risk-profile': typeof ApiPatientsIdRiskProfileRoute
   '/app/appointments/edit/$': typeof AppAppointmentsEditSplatRoute
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
@@ -455,6 +463,7 @@ export interface FileRoutesByTo {
   '/app/users': typeof AppUsersIndexRoute
   '/api/hers/environment/notify': typeof ApiHersEnvironmentNotifyRoute
   '/api/hers/output/prediction': typeof ApiHersOutputPredictionRoute
+  '/api/patients/$id/risk-profile': typeof ApiPatientsIdRiskProfileRoute
   '/app/appointments/edit/$': typeof AppAppointmentsEditSplatRoute
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
@@ -514,6 +523,7 @@ export interface FileRoutesById {
   '/app/users/': typeof AppUsersIndexRoute
   '/api/hers/environment/notify': typeof ApiHersEnvironmentNotifyRoute
   '/api/hers/output/prediction': typeof ApiHersOutputPredictionRoute
+  '/api/patients/$id/risk-profile': typeof ApiPatientsIdRiskProfileRoute
   '/app/appointments/edit/$': typeof AppAppointmentsEditSplatRoute
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
@@ -574,6 +584,7 @@ export interface FileRouteTypes {
     | '/app/users/'
     | '/api/hers/environment/notify'
     | '/api/hers/output/prediction'
+    | '/api/patients/$id/risk-profile'
     | '/app/appointments/edit/$'
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
@@ -630,6 +641,7 @@ export interface FileRouteTypes {
     | '/app/users'
     | '/api/hers/environment/notify'
     | '/api/hers/output/prediction'
+    | '/api/patients/$id/risk-profile'
     | '/app/appointments/edit/$'
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
@@ -688,6 +700,7 @@ export interface FileRouteTypes {
     | '/app/users/'
     | '/api/hers/environment/notify'
     | '/api/hers/output/prediction'
+    | '/api/patients/$id/risk-profile'
     | '/app/appointments/edit/$'
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
@@ -729,6 +742,7 @@ export interface RootRouteChildren {
   RpcQuerySplatRoute: typeof RpcQuerySplatRoute
   ApiHersEnvironmentNotifyRoute: typeof ApiHersEnvironmentNotifyRoute
   ApiHersOutputPredictionRoute: typeof ApiHersOutputPredictionRoute
+  ApiPatientsIdRiskProfileRoute: typeof ApiPatientsIdRiskProfileRoute
   ApiEventsEventIdAttachmentsResourceIdRoute: typeof ApiEventsEventIdAttachmentsResourceIdRoute
 }
 
@@ -993,6 +1007,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHersOutputPredictionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/patients/$id/risk-profile': {
+      id: '/api/patients/$id/risk-profile'
+      path: '/api/patients/$id/risk-profile'
+      fullPath: '/api/patients/$id/risk-profile'
+      preLoaderRoute: typeof ApiPatientsIdRiskProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/app/appointments/edit/$': {
       id: '/app/appointments/edit/$'
       path: '/appointments/edit/$'
@@ -1243,6 +1264,7 @@ const rootRouteChildren: RootRouteChildren = {
   RpcQuerySplatRoute: RpcQuerySplatRoute,
   ApiHersEnvironmentNotifyRoute: ApiHersEnvironmentNotifyRoute,
   ApiHersOutputPredictionRoute: ApiHersOutputPredictionRoute,
+  ApiPatientsIdRiskProfileRoute: ApiPatientsIdRiskProfileRoute,
   ApiEventsEventIdAttachmentsResourceIdRoute:
     ApiEventsEventIdAttachmentsResourceIdRoute,
 }

@@ -23,6 +23,8 @@ export type JsonValue = JsonArray | JsonObject | JsonPrimitive;
 
 export type Numeric = ColumnType<string, number | string, number | string>;
 
+export type ProfileValueType = "boolean" | "datetime" | "integer" | "json" | "numeric" | "string";
+
 export type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
 export interface AccessGrants {
@@ -367,7 +369,6 @@ export interface PatientAdditionalAttributes {
   patient_id: string;
   server_created_at: Generated<Timestamp>;
   string_value: string | null;
-  unique_reference: string | null;
   updated_at: Generated<Timestamp>;
 }
 
@@ -467,6 +468,30 @@ export interface PatientRegistrationForms {
   name: Generated<string>;
   server_created_at: Generated<Timestamp | null>;
   updated_at: Generated<Timestamp | null>;
+}
+
+export interface PatientRiskProfiles {
+  boolean_value: boolean | null;
+  clinic_id: string | null;
+  created_at: Generated<Timestamp>;
+  datetime_value: Timestamp | null;
+  deleted_at: Timestamp | null;
+  id: string;
+  integer_value: number | null;
+  is_deleted: Generated<boolean>;
+  json_value: Json | null;
+  kind: string;
+  last_modified: Generated<Timestamp>;
+  metadata: Json | null;
+  numerical_value: Numeric | null;
+  patient_id: string;
+  server_created_at: Generated<Timestamp>;
+  source: string;
+  string_value: string | null;
+  target: string | null;
+  updated_at: Generated<Timestamp>;
+  value_type: ProfileValueType;
+  version: string;
 }
 
 export interface Patients {
@@ -755,6 +780,7 @@ export interface DB {
   patient_observations: PatientObservations;
   patient_problems: PatientProblems;
   patient_registration_forms: PatientRegistrationForms;
+  patient_risk_profiles: PatientRiskProfiles;
   patient_tobacco_history: PatientTobaccoHistory;
   patient_vitals: PatientVitals;
   patients: Patients;
