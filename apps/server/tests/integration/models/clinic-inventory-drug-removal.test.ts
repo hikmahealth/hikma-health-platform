@@ -526,3 +526,192 @@ describe("re-stocking a removed drug (integration)", () => {
     expect(revived.quantity_available).toBe(30);
   });
 });
+
+// Clearing a clinic must land where removing each drug one at a time would.
+// The extra ground covered here is the per-drug tally.
+describe("clearClinicInventory (integration)", () => {
+  const otherBatch = uuidV1();
+
+  // On top of the shared fixture, so the per-drug tests keep their single-drug
+  // clinic. CLEANUP already covers both rows via `ids.otherDrug`.
+  beforeEach(async () => {
+    await testDb
+      .insertInto("drug_batches")
+      .values({
+        id: otherBatch,
+        drug_id: ids.otherDrug,
+        batch_number: "OTHER-1",
+        expiry_date: sql`'2030-01-01'::date`,
+        quantity_received: 30,
+        quantity_remaining: 30,
+        received_date: sql`'2026-01-01'::date`,
+        is_deleted: false,
+        metadata: sql`'{}'::jsonb`,
+      })
+      .execute();
+
+    await testDb
+      .insertInto("clinic_inventory")
+      .values(
+        invRow(ids.clinicA, ids.otherDrug, otherBatch, "OTHER-1", 30, 0),
+      )
+      .execute();
+  });
+
+  it("writes off every drug and tallies them separately from batches", async () => {
+    const outcome = await ClinicInventory.API.clearClinicInventory({
+      clinicId: ids.clinicA,
+      performedBy: ids.user,
+    });
+
+    // The test drug loses 60 + 15 and keeps 10 reserved; the bystander loses
+    // its whole 30. Only the first is still stocked, so only it is retained.
+    expect(outcome).toEqual({
+      batches_cleared: 3,
+      batches_retained: 1,
+      units_destroyed: 105,
+      units_retained: 10,
+      drugs_cleared: 1,
+      drugs_retained: 1,
+    });
+  });
+
+  it("matches what removing each drug individually would have done", async () => {
+    const first = await ClinicInventory.API.removeDrugFromClinic({
+      clinicId: ids.clinicA,
+      drugId: ids.drug,
+      performedBy: ids.user,
+    });
+    const second = await ClinicInventory.API.removeDrugFromClinic({
+      clinicId: ids.clinicA,
+      drugId: ids.otherDrug,
+      performedBy: ids.user,
+    });
+
+    expect({
+      batches_cleared: first.batches_cleared + second.batches_cleared,
+      batches_retained: first.batches_retained + second.batches_retained,
+      units_destroyed: first.units_destroyed + second.units_destroyed,
+      units_retained: first.units_retained + second.units_retained,
+    }).toEqual({
+      batches_cleared: 3,
+      batches_retained: 1,
+      units_destroyed: 105,
+      units_retained: 10,
+    });
+  });
+
+  it("keeps reserved units on a live row, so the clinic is not left empty", async () => {
+    await ClinicInventory.API.clearClinicInventory({
+      clinicId: ids.clinicA,
+      performedBy: ids.user,
+    });
+
+    const rows = await inventoryFor(ids.clinicA, ids.drug);
+    const reservedRow = rows.find((row) => row.batch_id === ids.batchTwo)!;
+    expect(reservedRow.is_deleted).toBe(false);
+    expect(reservedRow.deleted_at).toBeNull();
+    expect(reservedRow.quantity_available).toBe(10);
+    expect(reservedRow.reserved_quantity).toBe(10);
+
+    const cleared = rows.find((row) => row.batch_id === ids.batchOne)!;
+    expect(cleared.is_deleted).toBe(true);
+    expect(cleared.deleted_at).not.toBeNull();
+  });
+
+  it("leaves the other clinic's shelves untouched", async () => {
+    await ClinicInventory.API.clearClinicInventory({
+      clinicId: ids.clinicA,
+      performedBy: ids.user,
+    });
+
+    const rows = await inventoryFor(ids.clinicB, ids.drug);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].is_deleted).toBe(false);
+    expect(rows[0].quantity_available).toBe(40);
+  });
+
+  it("leaves both drugs in the catalogue", async () => {
+    await ClinicInventory.API.clearClinicInventory({
+      clinicId: ids.clinicA,
+      performedBy: ids.user,
+    });
+
+    const drugs = await testDb
+      .selectFrom("drug_catalogue")
+      .select(["id", "is_deleted"])
+      .where("id", "in", [ids.drug, ids.otherDrug])
+      .execute();
+
+    expect(drugs).toHaveLength(2);
+    expect(drugs.every((drug) => drug.is_deleted === false)).toBe(true);
+  });
+
+  it("drops each batch total by what this clinic destroyed", async () => {
+    await ClinicInventory.API.clearClinicInventory({
+      clinicId: ids.clinicA,
+      performedBy: ids.user,
+    });
+
+    // Batch one is shared with clinic B, which keeps its 40.
+    expect(await batchRemaining(ids.batchOne)).toBe(40);
+    expect(await batchRemaining(ids.batchTwo)).toBe(25);
+    expect(await batchRemaining(ids.batchThree)).toBe(20);
+    expect(await batchRemaining(otherBatch)).toBe(0);
+  });
+
+  it("logs one adjustment per batch it touched", async () => {
+    await ClinicInventory.API.clearClinicInventory({
+      clinicId: ids.clinicA,
+      performedBy: ids.user,
+    });
+
+    const logged = await testDb
+      .selectFrom("inventory_transactions")
+      .select(["drug_id", "quantity"])
+      .where("clinic_id", "=", ids.clinicA)
+      .where("drug_id", "in", [ids.drug, ids.otherDrug])
+      .execute();
+
+    expect(logged).toHaveLength(4);
+    expect(
+      logged.reduce((total, row) => total + Number(row.quantity), 0),
+    ).toBe(-105);
+  });
+
+  it("is a no-op on a clinic that has already been cleared", async () => {
+    await ClinicInventory.API.clearClinicInventory({
+      clinicId: ids.clinicA,
+      performedBy: ids.user,
+    });
+
+    const second = await ClinicInventory.API.clearClinicInventory({
+      clinicId: ids.clinicA,
+      performedBy: ids.user,
+    });
+
+    // The reserved row survives the first pass with nothing left to destroy.
+    expect(second).toEqual({
+      batches_cleared: 0,
+      batches_retained: 1,
+      units_destroyed: 0,
+      units_retained: 10,
+      drugs_cleared: 0,
+      drugs_retained: 1,
+    });
+  });
+
+  it("refuses a clinic the caller does not administer", async () => {
+    permittedClinicIds = [ids.clinicB];
+
+    await expect(
+      ClinicInventory.API.clearClinicInventory({
+        clinicId: ids.clinicA,
+        performedBy: ids.user,
+      }),
+    ).rejects.toThrow("Unauthorized");
+
+    const rows = await inventoryFor(ids.clinicA, ids.drug);
+    expect(rows.every((row) => row.is_deleted === false)).toBe(true);
+  });
+});

@@ -94,7 +94,7 @@ describe("Event.readAttachments — adversarial", () => {
   })
 })
 
-describe("Event.getHtmlEventDisplay — attachment name escaping", () => {
+describe("Event.getHtmlEventDisplay — file fields", () => {
   const eventWith = (attachments: Event.Attachment[]): Event.T => ({
     ...Event.empty,
     eventType: "Visit",
@@ -110,47 +110,133 @@ describe("Event.getHtmlEventDisplay — attachment name escaping", () => {
     ],
   })
 
-  // Filenames originate from the device and travel through sync, so the report
-  // must treat them as untrusted when interpolating into HTML.
-  it("escapes markup in a filename instead of emitting it", () => {
+  it("reports how many files were attached", () => {
     const html = Event.getHtmlEventDisplay(
       eventWith([
-        {
-          id: "res1",
-          fileName: "<script>alert(1)</script>.jpg",
-          mimetype: "image/jpeg",
-        },
+        { id: "res1", fileName: "scan.jpg", mimetype: "image/jpeg" },
+        { id: "res2", fileName: "report.pdf", mimetype: "application/pdf" },
       ]),
       "en",
     )
-    expect(html).not.toContain("<script>")
-    expect(html).toContain("&lt;script&gt;")
+    expect(html).toContain("2 files")
   })
 
-  it("escapes every attachment in a multi-file field, not just the first", () => {
+  it("says one file in the singular", () => {
     const html = Event.getHtmlEventDisplay(
-      eventWith([
-        { id: "res1", fileName: "safe.jpg", mimetype: "image/jpeg" },
-        { id: "res2", fileName: "<img onerror=x>.pdf", mimetype: "application/pdf" },
-      ]),
+      eventWith([{ id: "res1", fileName: "scan.jpg", mimetype: "image/jpeg" }]),
       "en",
     )
-    expect(html).toContain("safe.jpg")
-    expect(html).not.toContain("<img onerror")
+    expect(html).toContain("1 file")
+    expect(html).not.toContain("1 files")
   })
 
-  it("never emits an unescaped angle bracket from a filename", () => {
+  it("says zero rather than omitting an empty file field", () => {
+    expect(Event.getHtmlEventDisplay(eventWith([]), "en")).toContain("0 files")
+  })
+
+  // Asserted as independence rather than absence: a filename of "1" or "file"
+  // occurs in the count itself, so a substring check would fail on its wording.
+  it("emits the same markup whatever the filename says", () => {
+    const baseline = Event.getHtmlEventDisplay(
+      eventWith([{ id: "res1", fileName: "benign.jpg", mimetype: null }]),
+      "en",
+    )
+
     fc.assert(
       fc.property(fc.string({ maxLength: 60 }), (fileName) => {
         const html = Event.getHtmlEventDisplay(
           eventWith([{ id: "res1", fileName, mimetype: null }]),
           "en",
         )
-        const rendered = html.slice(html.indexOf("[Attachment:"))
-        expect(rendered).not.toMatch(/<(?!\/?div)/)
+        expect(html).toBe(baseline)
       }),
       { numRuns: 300 },
     )
+  })
+})
+
+describe("Event.getHtmlEventDisplay — escaping", () => {
+  const eventWithField = (field: Partial<Event.FormDataItem>): Event.T => ({
+    ...Event.empty,
+    eventType: "Visit",
+    formData: [
+      { fieldId: "f1", name: "Notes", fieldType: "text", inputType: "text", value: "", ...field },
+    ] as Event.FormDataItem[],
+  })
+
+  it("escapes markup in a field name", () => {
+    const html = Event.getHtmlEventDisplay(eventWithField({ name: "<script>alert(1)</script>" }), "en")
+    expect(html).not.toContain("<script>")
+    expect(html).toContain("&lt;script&gt;")
+  })
+
+  it("escapes markup in a field value", () => {
+    const html = Event.getHtmlEventDisplay(
+      eventWithField({ value: "<img src=x onerror=alert(1)>" }),
+      "en",
+    )
+    expect(html).not.toContain("<img")
+    expect(html).toContain("&lt;img")
+  })
+
+  it("escapes markup inside a medicine entry", () => {
+    const html = Event.getHtmlEventDisplay(
+      eventWithField({
+        fieldType: "medicine",
+        inputType: "input-group",
+        value: [{ dose: "<b>5</b>", doseUnits: "mg", route: "oral", form: "tablet", frequency: "<i>bd</i>" }],
+      }),
+      "en",
+    )
+    expect(html).not.toContain("<b>")
+    expect(html).not.toContain("<i>")
+  })
+
+  // The report is handed to a renderer that parses it, so no stored value may
+  // introduce a tag the template did not write.
+  it("emits no tag beyond the ones the template itself writes", () => {
+    fc.assert(
+      fc.property(fc.string({ maxLength: 80 }), fc.string({ maxLength: 80 }), (name, value) => {
+        const html = Event.getHtmlEventDisplay(eventWithField({ name, value }), "en")
+        const tags = html.match(/<\/?[a-zA-Z][^>]*>/g) ?? []
+        for (const tag of tags) {
+          expect(["<div", "</div>", "<span", "</span>"].some((t) => tag.startsWith(t))).toBe(true)
+        }
+      }),
+      { numRuns: 300 },
+    )
+  })
+})
+
+describe("Event.getHtmlEventDisplay — date fields", () => {
+  const eventWithDate = (value: unknown): Event.T => ({
+    ...Event.empty,
+    eventType: "Visit",
+    formData: [
+      {
+        fieldId: "f1",
+        name: "Onset",
+        fieldType: "date",
+        inputType: "date",
+        value: value as any,
+      },
+    ],
+  })
+
+  it("formats a civil date without shifting the day", () => {
+    const html = Event.getHtmlEventDisplay(eventWithDate("2026-09-03"), "en")
+    expect(html).toContain("Sep 03, 2026")
+    expect(html).not.toContain("2026-09-03")
+  })
+
+  it("keeps a value it cannot parse visible", () => {
+    expect(Event.getHtmlEventDisplay(eventWithDate("sometime last week"), "en")).toContain(
+      "sometime last week",
+    )
+  })
+
+  it("renders nothing for an absent date rather than the literal null", () => {
+    expect(Event.getHtmlEventDisplay(eventWithDate(null), "en")).not.toContain("null")
   })
 })
 

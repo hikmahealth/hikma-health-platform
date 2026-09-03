@@ -14,6 +14,7 @@ export const getClinicInventory = createServerFn({ method: "GET" })
       searchQuery?: string;
       limit?: number;
       offset?: number;
+      sort?: string;
     }) => params,
   )
   .middleware([adminMiddleware])
@@ -30,6 +31,7 @@ export const getClinicInventory = createServerFn({ method: "GET" })
                 limit: data.limit ?? 100,
                 offset: data.offset ?? 0,
                 includeZeroStock: true,
+                sort: ClinicInventory.parseSortOption(data.sort),
               },
             ),
             ClinicInventory.API.countStockedDrugs(
@@ -162,6 +164,35 @@ export const removeDrugFromClinic = createServerFn({ method: "POST" })
             error instanceof Error
               ? error.message
               : "Failed to remove drug from clinic",
+        };
+      }
+    });
+  });
+
+/**
+ * Takes every drug off one clinic's shelves. No search or drug filter by
+ * design — a partial "clear all" would read as total.
+ */
+export const clearClinicInventory = createServerFn({ method: "POST" })
+  .validator((data: { clinicId: string; reason?: string }) => data)
+  .middleware([adminMiddleware])
+  .handler(async ({ data, context }) => {
+    return Sentry.startSpan({ name: "Clear clinic inventory" }, async () => {
+      try {
+        const outcome = await ClinicInventory.API.clearClinicInventory({
+          clinicId: data.clinicId,
+          performedBy: context.userId,
+          reason: data.reason,
+        });
+        return { success: true as const, data: outcome };
+      } catch (error) {
+        Sentry.captureException(error);
+        return {
+          success: false as const,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Failed to clear clinic inventory",
         };
       }
     });

@@ -9,7 +9,8 @@ type Options = Parameters<typeof format>[2]
  * Returns the current locale. Defaults to en-US.
  */
 const getLocale = (i18n: typeof i18nLib = i18nLib): Locale => {
-  const locale = i18n.language.split("-")[0]
+  // Unset until i18next initialises, and these formatters run during render.
+  const locale = i18n.language?.split("-")[0] ?? ""
   // Create a mapping of locale codes to their corresponding date-fns locales
   const localeMap: Record<string, Locale> = {
     en: locales.enUS,
@@ -52,6 +53,17 @@ export function localeDate(
   }
 
   return format(dateObj, dateFormat, { ...options, locale: getLocale() })
+}
+
+/**
+ * A stored `date` form value, formatted for the current locale. Falls back to
+ * the raw value when it will not parse — blanking a recorded clinical field
+ * hides it. Absent values render empty, not "null".
+ */
+export function displayDateValue(value: unknown): string {
+  if (value === null || value === undefined) return ""
+  const raw = String(value)
+  return localeDate(raw) || raw
 }
 
 /**

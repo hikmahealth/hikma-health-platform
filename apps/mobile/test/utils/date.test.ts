@@ -37,6 +37,14 @@ describe("date utilities", () => {
       expect(localeDate(date, "HH:mm:ss")).toBe("14:30:45")
     })
 
+    // Runs during render, so an unready locale must fall back, not throw.
+    it("should fall back to en-US before i18next has set a language", () => {
+      const i18n = require("i18next")
+      i18n.language = undefined
+
+      expect(localeDate(new Date(2024, 0, 15))).toBe("Jan 15, 2024")
+    })
+
     it("should handle Arabic locale", () => {
       const i18n = require("i18next")
       i18n.language = "ar-SA"

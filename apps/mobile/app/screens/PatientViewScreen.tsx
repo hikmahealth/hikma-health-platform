@@ -57,6 +57,7 @@ import { providerStore } from "@/store/provider"
 import { colors } from "@/theme/colors"
 import { resolveActionOrder } from "@/utils/actionOrder"
 import { localeDate } from "@/utils/date"
+import { escapeHtml } from "@/utils/html"
 import { Logger } from "@hikmahealth/js-utils"
 
 const { height } = Dimensions.get("window")
@@ -518,8 +519,8 @@ async function printHTML(props: PDFReportProps) {
           const evs = Event.getHtmlEventDisplay(ev, language)
           return `
           <div class="mb-18">
-            <p style="color: #1e3a8a; font-weight: bold;" class="m-0">Form: ${ev.eventType}</p>
-            <p class="m-0 mb-4">${translate("common:healthcareProvider")}: ${visit.providerName}</p>
+            <p style="color: #1e3a8a; font-weight: bold;" class="m-0">Form: ${escapeHtml(ev.eventType)}</p>
+            <p class="m-0 mb-4">${translate("common:healthcareProvider")}: ${escapeHtml(visit.providerName)}</p>
 
             <p class="m-0 mb-4">${translate("common:results")}:</p>
             <div>
@@ -558,23 +559,23 @@ async function printHTML(props: PDFReportProps) {
         <div class="flex">
           <div style="flex: 1">
               <h3 class="mb-0">${translate("patientReport:PatientInformation")}</h3>
-              ${patientFullName}
+              ${escapeHtml(patientFullName)}
 
               <br>
               <br>
               ${
                 patient.value.additionalData &&
                 Object.entries(patient.value.additionalData)
-                  .map((v) => "<p>" + v[0] + ": " + v[1] + "</p>")
+                  .map((v) => "<p>" + escapeHtml(v[0]) + ": " + escapeHtml(v[1]) + "</p>")
                   .join("")
               }
               <br>
               <h3 class="mb-0">${translate("common:sex")}</h3>
-              ${upperFirst(translate((patient.value.sex as any) || ""))}
+              ${escapeHtml(upperFirst(translate((patient.value.sex as any) || "")))}
 
               <br>
               <h3 class="mb-0">${translate("common:citizenship")}</h3>
-              ${patient.value.citizenship}
+              ${escapeHtml(patient.value.citizenship)}
           </div>
 
           <div style="flex: 1">
@@ -582,17 +583,17 @@ async function printHTML(props: PDFReportProps) {
               ${localeDate(patient.value.dateOfBirth, "MMMM dd yyyy", {})}
 
               <h3 class="mb-0">${translate("common:weight")}</h3>
-              ${weight}
+              ${escapeHtml(weight)}
 
               <h3 class="mb-0">${translate("common:height")}</h3>
-              ${height}
+              ${escapeHtml(height)}
           </div>
         </div>
 
 
         <div>
           <h3 class='mb-0'>${translate("common:patientSummary")}</h3>
-          ${summary}
+          ${escapeHtml(summary)}
         </div>
       </div>
 

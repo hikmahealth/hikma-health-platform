@@ -1,38 +1,29 @@
 import { createServerFn } from "@tanstack/react-start";
 import Prescription from "@/models/prescription";
-import Patient from "@/models/patient";
-import Clinic from "@/models/clinic";
 import User from "@/models/user";
 import { userRoleTokenHasCapability } from "../auth/request";
-import type { Pagination } from "./builders";
+import { pageOffset, type Pagination } from "./builders";
 import * as Sentry from "@sentry/tanstackstart-react";
 import { Result } from "@/lib/result";
 import { adminMiddleware } from "@/middleware/auth";
 
-const getAllPrescriptions = createServerFn({ method: "GET" })
-  .middleware([adminMiddleware])
-  .handler(async (): Promise<Prescription.EncodedT[]> => {
-    const res = await Prescription.API.getAll();
-    return res;
-  });
+const PRESCRIPTIONS_PAGE_SIZE = 25;
 
-const getAllPrescriptionsWithDetails = createServerFn({
-  method: "GET",
-})
+export type PrescriptionsPage = {
+  items: Prescription.EncodedT[];
+  pagination: Pagination;
+};
+
+/** One page of the all-patients prescription list. Pages are 1-based. */
+const getPrescriptionsPage = createServerFn({ method: "GET" })
+  .validator((data: { page?: number } | undefined) => data ?? {})
   .middleware([adminMiddleware])
-  .handler(
-    async (): Promise<
-      {
-        prescription: Prescription.EncodedT;
-        patient: Patient.EncodedT;
-        clinic: Clinic.EncodedT;
-        provider: User.EncodedT;
-      }[]
-    > => {
-      const res = await Prescription.API.getAllWithDetails();
-      return res;
-    },
-  );
+  .handler(async ({ data }): Promise<PrescriptionsPage> => {
+    return Prescription.API.getPage({
+      limit: PRESCRIPTIONS_PAGE_SIZE,
+      offset: pageOffset(data.page ?? 1, PRESCRIPTIONS_PAGE_SIZE),
+    });
+  });
 
 const togglePrescriptionStatus = createServerFn({ method: "POST" })
   .validator((data: { id: string; status: string }) => data)
@@ -96,8 +87,7 @@ const getPatientPrescriptions = createServerFn({ method: "GET" })
   );
 
 export {
-  getAllPrescriptions,
-  getAllPrescriptionsWithDetails,
+  getPrescriptionsPage,
   togglePrescriptionStatus,
   getPatientPrescriptions,
 };

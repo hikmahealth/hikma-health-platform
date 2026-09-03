@@ -16,6 +16,30 @@ export type Pagination = {
   hasMore: boolean;
 };
 
+/** 1-based page to 0-based row offset. Anything else lands on page 1. */
+export function pageOffset(page: number, pageSize: number): number {
+  const safePage = Number.isFinite(page) ? Math.max(1, Math.floor(page)) : 1;
+  return (safePage - 1) * pageSize;
+}
+
+/** How many pages `total` rows fill. Always at least one, even when empty. */
+export function pageCount(total: number, pageSize: number): number {
+  if (pageSize <= 0) return 1;
+  return Math.max(1, Math.ceil(total / pageSize));
+}
+
+/**
+ * First page, last page, and the current page's neighbours. Callers draw an
+ * ellipsis wherever the returned numbers skip a step.
+ */
+export function pageWindow(currentPage: number, totalPages: number): number[] {
+  const lastPage = Math.max(1, totalPages);
+  const neighbours = [currentPage - 1, currentPage, currentPage + 1].filter(
+    (page) => page > 1 && page < lastPage,
+  );
+  return [...new Set([1, ...neighbours, lastPage])].sort((a, b) => a - b);
+}
+
 // ──────────────────────────────────────────────
 // Patient types & builders
 // ──────────────────────────────────────────────

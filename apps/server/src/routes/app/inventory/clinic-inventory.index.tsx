@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import * as React from "react";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type ClinicInventory from "@/models/clinic-inventory";
+import { pageCount } from "@/lib/server-functions/builders";
 import Clinic from "@/models/clinic";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,6 +33,7 @@ import {
 import { toast } from "sonner";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import {
+  clearClinicInventory,
   getClinicInventory,
   removeDrugFromClinic,
 } from "@/lib/server-functions/inventory";
@@ -43,6 +45,20 @@ import { formatDrugStrength } from "@/lib/utils";
 import { upperFirst } from "es-toolkit/compat";
 
 const ITEMS_PER_PAGE = 100;
+
+const medicines = (count: number) =>
+  `${count} ${count === 1 ? "medicine" : "medicines"}`;
+
+// Keyed by the model's union so a renamed sort breaks the build. Type-only
+// import — a real one would pull the db into the client bundle.
+const SORT_LABELS: Record<ClinicInventory.SortOption, string> = {
+  brand_name: "Brand name (A–Z)",
+  generic_name: "Generic name (A–Z)",
+  quantity_desc: "Quantity (most first)",
+  quantity_asc: "Quantity (least first)",
+};
+
+const DEFAULT_SORT: ClinicInventory.SortOption = "brand_name";
 
 type InventoryPage = {
   items: ClinicInventory.DrugWithBatchInfo[];
@@ -74,33 +90,34 @@ function RouteComponent() {
   const [selectedClinicId, setSelectedClinicId] = useState<string>("");
   const [inventory, setInventory] = useState(initialInventory);
   const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(false);
   const [removingDrugId, setRemovingDrugId] = useState<string | null>(null);
+  const [clearingInventory, setClearingInventory] = useState(false);
+  const [sortBy, setSortBy] =
+    useState<ClinicInventory.SortOption>(DEFAULT_SORT);
   // The clinic the rows on screen were loaded for. `selectedClinicId` flips as
   // soon as the picker changes, a round-trip before the rows catch up, so a
   // destructive action has to bind to this rather than to the picker.
   const [loadedClinicId, setLoadedClinicId] = useState<string>("");
 
-  // Update total pages based on whether there are more items
-  useEffect(() => {
-    if (inventory?.hasMore) {
-      // If we have more items, set total pages to at least current + 1
-      setTotalPages(Math.max(totalPages, currentPage + 1));
-    } else {
-      // If no more items, current page is the last
-      setTotalPages(currentPage);
-    }
-  }, [inventory?.hasMore, currentPage]);
+  // The real count, not `hasMore` — which only meant "at least one more".
+  // `countStockedDrugs` shares the listing's base query, so it counts the
+  // same rows.
+  const totalPages = pageCount(inventory.total, ITEMS_PER_PAGE);
 
-  // Load inventory when clinic is selected
   const handleClinicChange = async (clinicId: string) => {
     setSelectedClinicId(clinicId);
     setCurrentPage(1);
     await loadInventory(clinicId, 1);
   };
 
-  const loadInventory = async (clinicId: string, page: number) => {
+  // A parameter, not a closure read, so the dropdown can load its new value in
+  // the same tick it sets it.
+  const loadInventory = async (
+    clinicId: string,
+    page: number,
+    sort: ClinicInventory.SortOption = sortBy,
+  ) => {
     if (!clinicId) return;
 
     setLoading(true);
@@ -112,6 +129,7 @@ function RouteComponent() {
           searchQuery,
           limit: ITEMS_PER_PAGE,
           offset,
+          sort,
         },
       });
       setInventory(Result.getOrElse(result, EMPTY_INVENTORY));
@@ -125,9 +143,23 @@ function RouteComponent() {
     }
   };
 
+  // Re-sorting reorders the whole result set, so the page means nothing.
+  const handleSortChange = async (value: string) => {
+    const sort = value as ClinicInventory.SortOption;
+    setSortBy(sort);
+    setCurrentPage(1);
+    if (selectedClinicId) {
+      await loadInventory(selectedClinicId, 1, sort);
+    }
+  };
+
+  // Clamped, not rejected: rows can vanish under the page the user is on, and
+  // rejecting the step would strand them there.
   const handlePageChange = (page: number) => {
-    if (page < 1 || page > totalPages || !selectedClinicId) return;
-    loadInventory(selectedClinicId, page);
+    if (!selectedClinicId) return;
+    const target = Math.min(Math.max(1, page), totalPages);
+    if (target === currentPage) return;
+    loadInventory(selectedClinicId, target);
   };
 
   // @ts-expect-error not implemented yet, coming soon!
@@ -196,12 +228,81 @@ function RouteComponent() {
       // second delete on stock that is already gone.
       await loadInventory(clinicId, currentPage);
     } catch (error) {
-      // adminMiddleware throws outside the server function's own try, so an
-      // expired session lands here rather than in the !success branch.
+      // adminMiddleware throws outside the server fn's own try, so an expired
+      // session lands here rather than in the !success branch.
       Logger.error({ msg: "Error removing drug from clinic:", error });
       toast.error("Failed to remove drug from clinic");
     } finally {
       setRemovingDrugId(null);
+    }
+  };
+
+  const handleClearClinicInventory = async () => {
+    const clinicId = loadedClinicId;
+    const clinic = clinics.find((clinic) => clinic.id === clinicId);
+    if (!clinic || clinicId !== selectedClinicId) {
+      toast.error("Wait for the clinic's inventory to finish loading.");
+      return;
+    }
+
+    // The search box never narrows this. `inventory.total` is search-scoped, so
+    // it can only be quoted as the damage when nothing is filtering it.
+    const isFiltered = searchQuery.trim().length > 0;
+    const scope = isFiltered
+      ? "every medicine"
+      : `all ${medicines(inventory.total)}`;
+    const filterWarning = isFiltered
+      ? "\n\nYour search filter does NOT narrow this. Every medicine in the clinic goes, not just the ones listed."
+      : "";
+
+    if (
+      !window.confirm(
+        `Clear the shelves at ${clinic.name}? This removes ${scope} from that clinic and destroys the free stock of each.${filterWarning}\n\n` +
+          `Units reserved for prescriptions already in flight stay put, so those medicines remain on the shelves.\n\n` +
+          `Drugs stay in the drug catalogue, stock at other clinics is untouched, and medications already prescribed or dispensed are not affected.\n\n` +
+          `It cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setClearingInventory(true);
+    try {
+      const result = await clearClinicInventory({ data: { clinicId } });
+
+      if (!result.success) {
+        toast.error(result.error || "Failed to clear the clinic's inventory");
+        return;
+      }
+
+      const { drugs_cleared, drugs_retained, units_destroyed, units_retained } =
+        result.data;
+
+      // An already-cleared clinic is a no-op, not a partial success — it must
+      // not read as "0 medicines removed".
+      if (drugs_cleared === 0 && units_destroyed === 0) {
+        toast.info(
+          drugs_retained > 0
+            ? `Nothing left to clear at ${clinic.name}. ${medicines(drugs_retained)} ${drugs_retained === 1 ? "holds" : "hold"} only units reserved for prescriptions in flight.`
+            : `There was nothing on the shelves at ${clinic.name}.`,
+        );
+      } else {
+        const cleared = `${clinic.name} cleared. ${medicines(drugs_cleared)} removed and ${units_destroyed} units destroyed.`;
+        toast.success(
+          drugs_retained > 0
+            ? `${cleared} ${medicines(drugs_retained)} ${drugs_retained === 1 ? "stays" : "stay"} on the shelves holding ${units_retained} reserved units for prescriptions in flight.`
+            : cleared,
+        );
+      }
+
+      // Rows that kept a reservation are still live, so reload rather than
+      // assume the list is empty.
+      await loadInventory(clinicId, 1);
+    } catch (error) {
+      Logger.error({ msg: "Error clearing clinic inventory:", error });
+      toast.error("Failed to clear the clinic's inventory");
+    } finally {
+      setClearingInventory(false);
     }
   };
 
@@ -215,7 +316,6 @@ function RouteComponent() {
     });
   };
 
-  // Generate page numbers to display
   const getPageNumbers = () => {
     const firstPage = 1;
     const lastPage = totalPages;
@@ -241,6 +341,12 @@ function RouteComponent() {
 
   const pageNumbers = getPageNumbers();
   const selectedClinic = clinics?.find((c: any) => c.id === selectedClinicId);
+
+  // With a search active, `inventory.total` says nothing about what the
+  // clinic actually stocks.
+  const canClearShelves =
+    Boolean(selectedClinicId) &&
+    (searchQuery.trim().length > 0 || inventory.total > 0);
 
   Logger.log({ inventory });
 
@@ -278,6 +384,20 @@ function RouteComponent() {
             </SelectContent>
           </Select>
           {selectedClinicId && (
+            <Select value={sortBy} onValueChange={handleSortChange}>
+              <SelectTrigger className="w-56" aria-label="Sort inventory by">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(SORT_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {selectedClinicId && (
             <Button
               variant="outline"
               onClick={() => loadInventory(selectedClinicId, currentPage)}
@@ -288,10 +408,24 @@ function RouteComponent() {
           )}
         </div>
         {selectedClinicId && (
-          <Button onClick={handleAddNewItem}>
-            <LucidePlus />
-            Add New Item
-          </Button>
+          <div className="flex items-center gap-2">
+            {canClearShelves && (
+              <Button
+                variant="destructive"
+                onClick={handleClearClinicInventory}
+                disabled={
+                  clearingInventory || loading || removingDrugId !== null
+                }
+              >
+                <Trash />
+                {clearingInventory ? "Clearing..." : "Clear Shelves"}
+              </Button>
+            )}
+            <Button onClick={handleAddNewItem}>
+              <LucidePlus />
+              Add New Item
+            </Button>
+          </div>
         )}
       </div>
 
@@ -422,7 +556,7 @@ function RouteComponent() {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={removingDrugId !== null}
+                        disabled={removingDrugId !== null || clearingInventory}
                         onClick={() => handleRemoveDrugInventory(item)}
                       >
                         <Trash color="red" />
@@ -452,8 +586,8 @@ function RouteComponent() {
         </div>
       )}
 
-      {/* Pagination */}
-      {selectedClinicId && totalPages > 1 && (
+      {/* Also shown when the page has fallen off the end, to offer a way back. */}
+      {selectedClinicId && (totalPages > 1 || currentPage > totalPages) && (
         <div className="py-8">
           <Pagination>
             <PaginationContent>

@@ -42,15 +42,21 @@ namespace DrugCatalogue {
   }
 
   /**
-   * Display name for a drug (combines brand and generic names)
-   * @param {T} drug - The drug object
-   * @returns {string} The display name
+   * "Brand (generic)", or whichever name exists. Empty when neither does.
+   * Structural param so `T` and the model both fit; sync writes raw, so the
+   * names can arrive untrimmed.
    */
-  export const displayName = (drug: T): string => {
-    if (drug.brandName) {
-      return `${drug.brandName} (${drug.genericName})`
+  export const displayName = (drug: {
+    brandName: string | null
+    genericName: string
+  }): string => {
+    const brandName = drug.brandName?.trim() || ""
+    const genericName = drug.genericName?.trim() || ""
+
+    if (brandName && genericName) {
+      return `${brandName} (${genericName})`
     }
-    return drug.genericName
+    return brandName || genericName
   }
 
   /**

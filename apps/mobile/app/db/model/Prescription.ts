@@ -1,4 +1,4 @@
-import { Model, Q } from "@nozbe/watermelondb"
+import { Model, Q, Query } from "@nozbe/watermelondb"
 import {
   date,
   readonly,
@@ -56,13 +56,12 @@ export default class PrescriptionModel extends Model {
   @immutableRelation("users", "user_id") user!: UserModel
   @relation("clinics", "pickup_clinic_id") pickupClinic!: ClinicModel
   @children("prescription_items")
-  prescriptionItems!: PrescriptionItemModel[]
+  prescriptionItems!: Query<PrescriptionItemModel>
 
   @lazy
   drugs = this.collections
     .get<DrugCatalogueModel>("drug_catalogue")
     .query(Q.on("prescription_items", "prescription_id", this.id))
-
 }
 
 function sanitizeItems(items: Prescription.Item[]) {

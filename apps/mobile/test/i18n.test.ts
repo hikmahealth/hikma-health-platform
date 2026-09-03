@@ -55,25 +55,20 @@ function iterate(obj, stack, array) {
 
 describe("i18n", () => {
   test("There are no missing keys", () => {
-    try {
-      const command = `grep "[T\\|t]x=[{]\\?\\"\\S*\\"[}]\\?\\|translate(\\"\\S*\\"" -ohr './app' | grep -o "\\".*\\""`
-      const stdout = execSync(command, {
-        encoding: "utf8",
-        maxBuffer: 1024 * 1024 * 10, // 10MB buffer
-      })
+    const command = `grep "[T\\|t]x=[{]\\?\\"\\S*\\"[}]\\?\\|translate(\\"\\S*\\"" -ohr './app' | grep -o "\\".*\\""`
+    const stdout = execSync(command, {
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024 * 10, // 10MB buffer
+    })
 
-      const allTranslationsDefinedOld = iterate(en, "", [])
-      const allTranslationsDefined = allTranslationsDefinedOld.map((key) => key.replace(".", ":"))
-      const allTranslationsUsed = stdout.replace(/"/g, "").split("\n").filter(Boolean)
+    const allTranslationsDefinedOld = iterate(en, "", [])
+    const allTranslationsDefined = allTranslationsDefinedOld.map((key) => key.replace(".", ":"))
+    const allTranslationsUsed = stdout.replace(/"/g, "").split("\n").filter(Boolean)
 
-      for (let i = 0; i < allTranslationsUsed.length; i += 1) {
-        if (!EXCEPTIONS.includes(allTranslationsUsed[i])) {
-          expect(allTranslationsDefined).toContainEqual(allTranslationsUsed[i])
-        }
+    for (let i = 0; i < allTranslationsUsed.length; i += 1) {
+      if (!EXCEPTIONS.includes(allTranslationsUsed[i])) {
+        expect(allTranslationsDefined).toContainEqual(allTranslationsUsed[i])
       }
-    } catch (error) {
-      console.error({ msg: "Command failed:", error })
-      throw error
     }
   }, 240000)
 })

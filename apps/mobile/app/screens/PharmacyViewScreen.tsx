@@ -43,6 +43,7 @@ import { ThemedStyle } from "@/theme/types"
 import { describePrescriptionFilters } from "@/utils/filterChips"
 import { friendlyString, getPrescriptionStatusColor, toggleStringInArray } from "@/utils/misc"
 import { useSafeAreaInsetsStyle } from "@/utils/useSafeAreaInsetsStyle"
+import { If } from "@/components/If"
 
 interface PharmacyViewScreenProps extends NativeStackScreenProps<
   PharmacyNavigatorParamList,
@@ -413,6 +414,12 @@ const PatientPrescriptionsGroup = enhancePatientGroup(
     const { theme, themed } = useAppTheme()
     const Chevron = isOpen ? LucideChevronUp : LucideChevronDown
 
+    const priorityPrescriptions = group.prescriptions.filter(
+      (it) =>
+        ["pending", "prepared"].includes(it.status) &&
+        (it.priority === "high" || it.priority === "emergency"),
+    )
+
     // A prescription can outlive its patient row, and reading a name off
     // nothing would take down the whole group.
     const title = patient ? Patient.displayName(patient) : "Patient does not exist anymore."
@@ -425,6 +432,13 @@ const PatientPrescriptionsGroup = enhancePatientGroup(
 
             <View flex={1}>
               <Text testID={`pharmacy-patient-name-${group.patientId}`} text={title} size={"lg"} />
+              <If condition={priorityPrescriptions.length > 0}>
+                <View flex={1} direction="row">
+                  <View style={$highPriorityBadge}>
+                    <Text size="xxs" text={`High Priority Prescription`} />
+                  </View>
+                </View>
+              </If>
               <Text
                 testID={`pharmacy-patient-status-summary-${group.patientId}`}
                 text={Prescription.describeStatusCounts(group.statusCounts)}
@@ -525,13 +539,16 @@ const PrescriptionListItem = enhance(
 
           {prescribedDrugs.map((drug) => (
             <View key={drug.id} mb={10} testID={`pharmacy-prescription-drug-${drug.id}`}>
-              <Text testID={`pharmacy-prescription-drug-name-${drug.id}`} size={"xs"}>
-                {drug.brandName || ""} {drug.genericName || ""}
-              </Text>
+              <Text
+                testID={`pharmacy-prescription-drug-name-${drug.id}`}
+                size={"xs"}
+                text={DrugCatalogue.displayName(drug)}
+              />
               <Text size={"xxs"}>
                 {friendlyString(drug.form)} {drug.dosageQuantity}
                 {drug.dosageUnits} {drug.route}
               </Text>
+              <Text size={"xxs"}>Priority: {prescription.priority}</Text>
             </View>
           ))}
         </View>
@@ -619,6 +636,13 @@ const $statusChip: ViewStyle = {
   backgroundColor: colors.palette.neutral200,
   borderColor: colors.palette.neutral400,
   borderWidth: 1,
+}
+
+const $highPriorityBadge: ViewStyle = {
+  paddingVertical: 4,
+  paddingHorizontal: 8,
+  borderRadius: 10,
+  backgroundColor: colors.palette.accent500,
 }
 
 const $statusChipText: TextStyle = {

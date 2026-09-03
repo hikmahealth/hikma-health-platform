@@ -5,6 +5,10 @@ import DrugCatalogue from "@/models/DrugCatalogue"
 import Prescription from "@/models/Prescription"
 import PrescriptionItem from "@/models/PrescriptionItem"
 
+// observe() only fires when rows enter or leave the set. WatermelonDB touches
+// these on every write, so edits in place are caught without listing columns.
+const OBSERVED_COLUMNS = ["created_at", "updated_at"]
+
 /**
  * Higher-order component that enhances a prescription with observable data streams.
  * Observes prescription items and drugs, providing error handling for each stream.
@@ -16,8 +20,12 @@ export const enhancePrescribedDrugsItem = withObservables(
   ["prescription"],
   ({ prescription }: { prescription: Prescription.DB.T }) => ({
     prescription,
-    prescriptionItems: prescription.prescriptionItems.observe().pipe(catchError(() => of$([]))),
-    drugs: prescription.drugs.observe().pipe(catchError(() => of$(null))),
+    prescriptionItems: prescription.prescriptionItems
+      .observeWithColumns(OBSERVED_COLUMNS)
+      .pipe(catchError(() => of$([]))),
+    drugs: prescription.drugs
+      .observeWithColumns(OBSERVED_COLUMNS)
+      .pipe(catchError(() => of$(null))),
   }),
 )
 

@@ -1,4 +1,5 @@
 import db from "@/db";
+import type { DB } from "@hikmahealth/database/types/schema/hh";
 import { createServerOnlyFn } from "@tanstack/react-start";
 import { Option } from "effect";
 import {
@@ -8,6 +9,7 @@ import {
   type Insertable,
   type Updateable,
   type JSONColumnType,
+  type Transaction,
   sql,
 } from "kysely";
 import { safeJSONParse, toSafeDateString } from "@/lib/utils";
@@ -92,6 +94,24 @@ namespace ClinicInventory {
     }[];
   };
 
+  /** One token per dropdown entry, not a field/direction pair to recombine. */
+  export const SORT_OPTIONS = [
+    "brand_name",
+    "generic_name",
+    "quantity_desc",
+    "quantity_asc",
+  ] as const;
+
+  export type SortOption = (typeof SORT_OPTIONS)[number];
+
+  export const DEFAULT_SORT: SortOption = "brand_name";
+
+  /** An unrecognised sort falls back rather than failing the page. */
+  export const parseSortOption = (value: unknown): SortOption =>
+    (SORT_OPTIONS as readonly string[]).includes(value as string)
+      ? (value as SortOption)
+      : DEFAULT_SORT;
+
   /**
    * Stock held for one drug at one clinic, summed across every batch.
    *
@@ -112,6 +132,12 @@ namespace ClinicInventory {
     batches_retained: number;
     units_destroyed: number;
     units_retained: number;
+  };
+
+  /** A drug counts as retained when any one of its batches held a reservation. */
+  export type ClinicClearanceOutcome = DrugRemovalOutcome & {
+    drugs_cleared: number;
+    drugs_retained: number;
   };
 
   export namespace Table {
@@ -311,6 +337,16 @@ namespace ClinicInventory {
       },
     );
 
+    // Every sort ends on `dc.id`: without a total order, rows sharing a key can
+    // land on two pages or none. Brand falls back to generic because that is
+    // what the table renders. `quantity` is the aliased aggregate below.
+    const SORT_EXPRESSIONS = {
+      brand_name: sql`COALESCE(dc.brand_name, dc.generic_name) ASC, dc.id ASC`,
+      generic_name: sql`dc.generic_name ASC, dc.id ASC`,
+      quantity_desc: sql`quantity DESC, dc.id ASC`,
+      quantity_asc: sql`quantity ASC, dc.id ASC`,
+    } satisfies Record<SortOption, unknown>;
+
     /**
      * Get inventory items with drug information
      * @param clinicId - The ID of the clinic to retrieve inventory for
@@ -319,6 +355,7 @@ namespace ClinicInventory {
      * @param options.limit - Maximum number of items to return (default: 50)
      * @param options.offset - Number of items to skip for pagination (default: 0)
      * @param options.includeZeroStock - Whether to include items with zero quantity (default: false)
+     * @param options.sort - How to order the list (default: by brand name)
      * @returns Array of inventory items grouped by drug with batch information
      */
     export const getWithDrugInfo = createServerOnlyFn(
@@ -329,10 +366,12 @@ namespace ClinicInventory {
           limit = 50,
           offset = 0,
           includeZeroStock = true,
+          sort = DEFAULT_SORT,
         }: {
           limit?: number;
           offset?: number;
           includeZeroStock?: boolean;
+          sort?: SortOption;
         } = {},
       ): Promise<DrugWithBatchInfo[]> => {
         // Single query to get drugs with their batches using JSON aggregation
@@ -431,7 +470,7 @@ namespace ClinicInventory {
                 ${!includeZeroStock ? sql`AND ci.quantity_available > 0` : sql``}
             )`.as("batches"),
           ])
-          .orderBy("dc.generic_name", "asc")
+          .orderBy(SORT_EXPRESSIONS[sort])
           .limit(limit)
           .offset(offset)
           .execute();
@@ -741,6 +780,113 @@ namespace ClinicInventory {
       return { retained, destroyed, newAvailable, keepRow: retained > 0 };
     };
 
+    /** One inventory row as the removal path needs to see it. */
+    type RemovableRow = {
+      id: string;
+      clinic_id: string;
+      drug_id: string;
+      batch_id: string;
+      batch_number: string | null;
+      quantity_available: number;
+      reserved_quantity: number | null;
+    };
+
+    /**
+     * Write one row off inside a caller-owned transaction: destroy the free
+     * units, keep whatever is reserved, log the adjustment.
+     */
+    const removeInventoryRow = async (
+      trx: Transaction<DB>,
+      row: RemovableRow,
+      performedBy: string | null,
+      reason?: string,
+    ) => {
+      const plan = planRowRemoval(row);
+
+      await trx
+        .updateTable(Table.name)
+        .set({
+          quantity_available: plan.newAvailable,
+          is_deleted: !plan.keepRow,
+          deleted_at: plan.keepRow ? null : sql`now()::timestamp with time zone`,
+          updated_at: sql`now()::timestamp with time zone`,
+          last_modified: sql`now()::timestamp with time zone`,
+        })
+        .where("id", "=", row.id)
+        .execute();
+
+      await trx
+        .insertInto("inventory_transactions")
+        .values({
+          id: uuidV1(),
+          clinic_id: row.clinic_id,
+          drug_id: row.drug_id,
+          batch_id: row.batch_id,
+          transaction_type: InventoryTransactions.TransactionTypes.ADJUSTMENT,
+          quantity: -plan.destroyed,
+          balance_after: plan.newAvailable,
+          reference_type:
+            InventoryTransactions.ReferenceTypes.ADJUSTMENT_RECORD,
+          reference_id: null,
+          reason:
+            reason || `Drug removed from clinic - Batch #${row.batch_number}`,
+          performed_by: performedBy,
+          timestamp: sql`now()::timestamp with time zone`,
+          created_at: sql`now()::timestamp with time zone`,
+          updated_at: sql`now()::timestamp with time zone`,
+        })
+        .execute();
+
+      if (plan.destroyed > 0) {
+        // The batch total spans every clinic, so it drops by what this clinic
+        // destroyed, never to this clinic's balance.
+        await trx
+          .updateTable("drug_batches")
+          .set({
+            quantity_remaining: sql<number>`GREATEST(0, quantity_remaining - ${plan.destroyed})`,
+            updated_at: sql`now()::timestamp with time zone`,
+            last_modified: sql`now()::timestamp with time zone`,
+          })
+          .where("id", "=", row.batch_id)
+          .execute();
+      }
+
+      return plan;
+    };
+
+    const EMPTY_REMOVAL_OUTCOME: DrugRemovalOutcome = {
+      batches_cleared: 0,
+      batches_retained: 0,
+      units_destroyed: 0,
+      units_retained: 0,
+    };
+
+    const summarizeRemoval = (
+      plans: ReturnType<typeof planRowRemoval>[],
+    ): DrugRemovalOutcome =>
+      plans.reduce<DrugRemovalOutcome>(
+        (total, plan) => ({
+          batches_cleared: total.batches_cleared + (plan.keepRow ? 0 : 1),
+          batches_retained: total.batches_retained + (plan.keepRow ? 1 : 0),
+          units_destroyed: total.units_destroyed + plan.destroyed,
+          units_retained: total.units_retained + plan.retained,
+        }),
+        EMPTY_REMOVAL_OUTCOME,
+      );
+
+    const assertClinicAdmin = async (clinicId: string) => {
+      const clinicIds =
+        await UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
+          "is_clinic_admin",
+        );
+
+      if (!clinicIds.includes(clinicId)) {
+        throw new Error(
+          "Unauthorized: No inventory management permissions for this clinic",
+        );
+      }
+    };
+
     /**
      * Write a drug's stock off at one clinic and take it off its shelves.
      *
@@ -761,16 +907,7 @@ namespace ClinicInventory {
         performedBy: string | null;
         reason?: string;
       }): Promise<DrugRemovalOutcome> => {
-        const clinicIds =
-          await UserClinicPermissions.API.getClinicIdsWithPermissionFromToken(
-            "is_clinic_admin",
-          );
-
-        if (!clinicIds.includes(clinicId)) {
-          throw new Error(
-            "Unauthorized: No inventory management permissions for this clinic",
-          );
-        }
+        await assertClinicAdmin(clinicId);
 
         return await db.transaction().execute(async (trx) => {
           const rows = await trx
@@ -782,76 +919,70 @@ namespace ClinicInventory {
             .forUpdate()
             .execute();
 
+          const plans = [];
           for (const row of rows) {
-            const plan = planRowRemoval(row);
-
-            await trx
-              .updateTable(Table.name)
-              .set({
-                quantity_available: plan.newAvailable,
-                is_deleted: !plan.keepRow,
-                deleted_at: plan.keepRow
-                  ? null
-                  : sql`now()::timestamp with time zone`,
-                updated_at: sql`now()::timestamp with time zone`,
-                last_modified: sql`now()::timestamp with time zone`,
-              })
-              .where("id", "=", row.id)
-              .execute();
-
-            await trx
-              .insertInto("inventory_transactions")
-              .values({
-                id: uuidV1(),
-                clinic_id: clinicId,
-                drug_id: drugId,
-                batch_id: row.batch_id,
-                transaction_type:
-                  InventoryTransactions.TransactionTypes.ADJUSTMENT,
-                quantity: -plan.destroyed,
-                balance_after: plan.newAvailable,
-                reference_type:
-                  InventoryTransactions.ReferenceTypes.ADJUSTMENT_RECORD,
-                reference_id: null,
-                reason:
-                  reason ||
-                  `Drug removed from clinic - Batch #${row.batch_number}`,
-                performed_by: performedBy,
-                timestamp: sql`now()::timestamp with time zone`,
-                created_at: sql`now()::timestamp with time zone`,
-                updated_at: sql`now()::timestamp with time zone`,
-              })
-              .execute();
-
-            if (plan.destroyed > 0) {
-              // The batch total spans every clinic, so it drops by what this
-              // clinic destroyed, never to this clinic's balance.
-              await trx
-                .updateTable("drug_batches")
-                .set({
-                  quantity_remaining: sql<number>`GREATEST(0, quantity_remaining - ${plan.destroyed})`,
-                  updated_at: sql`now()::timestamp with time zone`,
-                  last_modified: sql`now()::timestamp with time zone`,
-                })
-                .where("id", "=", row.batch_id)
-                .execute();
-            }
+            plans.push(await removeInventoryRow(trx, row, performedBy, reason));
           }
 
-          return rows.map(planRowRemoval).reduce<DrugRemovalOutcome>(
-            (total, plan) => ({
-              batches_cleared: total.batches_cleared + (plan.keepRow ? 0 : 1),
-              batches_retained: total.batches_retained + (plan.keepRow ? 1 : 0),
-              units_destroyed: total.units_destroyed + plan.destroyed,
-              units_retained: total.units_retained + plan.retained,
-            }),
-            {
-              batches_cleared: 0,
-              batches_retained: 0,
-              units_destroyed: 0,
-              units_retained: 0,
-            },
-          );
+          return summarizeRemoval(plans);
+        });
+      },
+    );
+
+    /**
+     * `removeDrugFromClinic` over every drug the clinic stocks, in one
+     * transaction. Reserved units survive on live rows; the catalogue, other
+     * clinics and dispensing history are untouched. Clearing an empty clinic
+     * is a no-op. No filter by design — a partial clearance reads as total.
+     */
+    export const clearClinicInventory = createServerOnlyFn(
+      async ({
+        clinicId,
+        performedBy,
+        reason,
+      }: {
+        clinicId: string;
+        performedBy: string | null;
+        reason?: string;
+      }): Promise<ClinicClearanceOutcome> => {
+        await assertClinicAdmin(clinicId);
+
+        return await db.transaction().execute(async (trx) => {
+          const rows = await trx
+            .selectFrom(Table.name)
+            .selectAll()
+            .where("clinic_id", "=", clinicId)
+            .where("is_deleted", "=", false)
+            .forUpdate()
+            .execute();
+
+          const plans = [];
+          // Keyed on whether any batch held a reservation, not on row counts.
+          const drugRetained = new Map<string, boolean>();
+
+          for (const row of rows) {
+            const plan = await removeInventoryRow(
+              trx,
+              row,
+              performedBy,
+              reason ?? "Clinic inventory cleared",
+            );
+            plans.push(plan);
+            drugRetained.set(
+              row.drug_id,
+              (drugRetained.get(row.drug_id) ?? false) || plan.keepRow,
+            );
+          }
+
+          const retainedDrugs = [...drugRetained.values()].filter(
+            Boolean,
+          ).length;
+
+          return {
+            ...summarizeRemoval(plans),
+            drugs_cleared: drugRetained.size - retainedDrugs,
+            drugs_retained: retainedDrugs,
+          };
         });
       },
     );

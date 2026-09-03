@@ -106,12 +106,12 @@ export function useDBPrescriptionsFilter(
       { offset: 0, limit: DAY_ROW_CEILING },
     )
 
-    // `observe()` alone misses a status change that keeps the row in the set,
-    // leaving the breakdown claiming a status the row no longer has.
+    // `observe()` alone misses an edit that keeps the row in the set. `rawToT`
+    // snapshots each row, so a column absent here can never be re-read later.
     const sub = database
       .get<PrescriptionModel>("prescriptions")
       .query(...conditions)
-      .observeWithColumns(["status"])
+      .observeWithColumns(["status", "priority"])
       .subscribe((prescriptions) => {
         const results = prescriptions.map(Prescription.DB.rawToT)
         setDayGroups(Prescription.groupByPatient(results))

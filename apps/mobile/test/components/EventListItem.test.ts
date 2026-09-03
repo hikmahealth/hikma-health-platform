@@ -11,6 +11,7 @@
 import fc from "fast-check"
 
 import { getDiagnosesFromFormData, getHtmlEventDisplay } from "../../app/components/EventListItem"
+import { displayDateValue } from "../../app/utils/date"
 import type Event from "../../app/models/Event"
 
 
@@ -95,7 +96,6 @@ describe("getDiagnosesFromFormData", () => {
     // value is not an array → the map returns undefined → filtered out
     const result = getDiagnosesFromFormData(formData)
     expect(Array.isArray(result)).toBe(true)
-    // Should not contain undefined
     expect(result.every((item) => item !== undefined)).toBe(true)
   })
 
@@ -198,9 +198,7 @@ describe("getHtmlEventDisplay", () => {
       { inputType: "text", fieldType: "text", name: xssPayload, value: "safe", fieldId: "1" },
     ])
     const result = getHtmlEventDisplay(event, "en")
-    // Raw XSS payload must NOT appear in output
     expect(result).not.toContain("<script>")
-    // Escaped version should be present
     expect(result).toContain("&lt;script&gt;")
   })
 
@@ -234,7 +232,6 @@ describe("getHtmlEventDisplay", () => {
         fieldId: "1",
       },
     ])
-    // Should not crash — uses String(med.dose || "") pattern
     const result = getHtmlEventDisplay(event, "en")
     expect(typeof result).toBe("string")
   })
@@ -249,7 +246,6 @@ describe("getHtmlEventDisplay", () => {
         fieldId: "1",
       },
     ])
-    // The guard `if (Array.isArray(value))` should prevent crash
     const result = getHtmlEventDisplay(event, "en")
     expect(typeof result).toBe("string")
   })
@@ -293,5 +289,75 @@ describe("getHtmlEventDisplay", () => {
     const result = getHtmlEventDisplay(event, "en")
     expect(typeof result).toBe("string")
     expect(result).toContain("100 mg")
+  })
+
+  // The report is the printed copy of the list; disagreeing about the same
+  // stored date is a discrepancy in the patient's record.
+  it("formats a date field the same way the on-screen list does", () => {
+    const event = makeEvent([
+      { inputType: "date", fieldType: "date", name: "Onset", value: "2026-09-03", fieldId: "1" },
+    ])
+    const result = getHtmlEventDisplay(event, "en")
+    expect(result).toContain("Sep 03, 2026")
+    expect(result).not.toContain("2026-09-03")
+  })
+
+  it("keeps an unparseable date visible in the report", () => {
+    const event = makeEvent([
+      {
+        inputType: "date",
+        fieldType: "date",
+        name: "Onset",
+        value: "sometime last week",
+        fieldId: "1",
+      },
+    ])
+    expect(getHtmlEventDisplay(event, "en")).toContain("sometime last week")
+  })
+
+  it("XSS: the date fallback is still HTML-escaped", () => {
+    const event = makeEvent([
+      {
+        inputType: "date",
+        fieldType: "date",
+        name: "Onset",
+        value: '<img src=x onerror=alert(1)>',
+        fieldId: "1",
+      },
+    ])
+    const result = getHtmlEventDisplay(event, "en")
+    expect(result).not.toContain("<img")
+    expect(result).toContain("&lt;img")
+  })
+})
+
+describe("displayDateValue", () => {
+  it("formats a civil date without shifting the day", () => {
+    expect(displayDateValue("2026-09-03")).toBe("Sep 03, 2026")
+  })
+
+  it("formats an epoch value held as a string", () => {
+    expect(displayDateValue(String(Date.UTC(2026, 8, 3, 12)))).toBe("Sep 03, 2026")
+  })
+
+  it("renders nothing for an absent value rather than the literal null", () => {
+    expect(displayDateValue(null)).toBe("")
+    expect(displayDateValue(undefined)).toBe("")
+    expect(displayDateValue("")).toBe("")
+  })
+
+  it("keeps a value it cannot parse visible", () => {
+    expect(displayDateValue("sometime last week")).toBe("sometime last week")
+    expect(displayDateValue("2026-13-45")).toBe("2026-13-45")
+    expect(displayDateValue(["a", "b"])).toBe("a,b")
+  })
+
+  it("never blanks a value that had visible content", () => {
+    fc.assert(
+      fc.property(fc.string(), (value) => {
+        fc.pre(value.trim() !== "")
+        expect(displayDateValue(value)).not.toBe("")
+      }),
+    )
   })
 })

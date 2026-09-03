@@ -12,8 +12,6 @@ import {
 import { Schema } from "effect";
 import db from "@/db";
 import { createServerOnlyFn } from "@tanstack/react-start";
-import type Clinic from "./clinic";
-import type Patient from "./patient";
 import User from "./user";
 import { isValidUUID, safeJSONParse, toSafeDateString } from "@/lib/utils";
 import { v1 as uuidV1 } from "uuid";
@@ -186,15 +184,52 @@ namespace Prescription {
   }
 
   export namespace API {
-    export const getAll = createServerOnlyFn(
-      async (): Promise<Prescription.EncodedT[]> => {
-        const res = await db
-          .selectFrom(Prescription.Table.name)
-          .where("is_deleted", "=", false)
-          .selectAll()
-          .execute();
+    /** One page of prescriptions across every patient, most recent first. */
+    export const getPage = createServerOnlyFn(
+      async (options: {
+        limit: number;
+        offset: number;
+      }): Promise<{
+        items: Prescription.EncodedT[];
+        pagination: {
+          offset: number;
+          limit: number;
+          total: number;
+          hasMore: boolean;
+        };
+      }> => {
+        const { limit, offset } = options;
 
-        return res as unknown as Prescription.EncodedT[];
+        // `updated_at` moves when a status is toggled from this very list, so
+        // ordering on it would shuffle rows between pages. `id` makes it total.
+        const [items, countRow] = await Promise.all([
+          db
+            .selectFrom(Prescription.Table.name)
+            .where("is_deleted", "=", false)
+            .selectAll()
+            .orderBy("created_at", "desc")
+            .orderBy("id", "desc")
+            .limit(limit)
+            .offset(offset)
+            .execute(),
+          db
+            .selectFrom(Prescription.Table.name)
+            .select(db.fn.countAll().as("count"))
+            .where("is_deleted", "=", false)
+            .executeTakeFirst(),
+        ]);
+
+        const total = Number(countRow?.count ?? 0);
+
+        return {
+          items: items as unknown as Prescription.EncodedT[],
+          pagination: {
+            offset,
+            limit,
+            total,
+            hasMore: offset + items.length < total,
+          },
+        };
       },
     );
 
@@ -228,6 +263,9 @@ namespace Prescription {
           .where("patient_id", "=", patientId)
           .where("is_deleted", "=", false)
           .orderBy("created_at", "desc")
+          // Prescriptions from one visit share a `created_at`; without the
+          // tiebreak those rows can repeat or vanish across pages.
+          .orderBy("id", "desc")
           .limit(limit)
           .offset(offset)
           .execute();
@@ -278,30 +316,6 @@ namespace Prescription {
           .execute();
       },
     );
-
-    export const getAllWithDetails = createServerOnlyFn(async () => {
-      const res = await db.executeQuery<{
-        prescription: Prescription.EncodedT;
-        patient: Patient.EncodedT;
-        clinic: Clinic.EncodedT;
-        provider: User.EncodedT;
-      }>(
-        sql`
-        SELECT
-          row_to_json(prescriptions.*) as prescription,
-          row_to_json(patients.*) as patient,
-          row_to_json(clinics.*) as clinic,
-          row_to_json(users.*) as provider
-        FROM prescriptions
-        INNER JOIN patients ON prescriptions.patient_id = patients.id
-        INNER JOIN clinics ON prescriptions.clinic_id = clinics.id
-        INNER JOIN users ON prescriptions.provider_id = users.id
-        WHERE prescriptions.is_deleted = false
-      `.compile(db),
-      );
-
-      return res.rows;
-    });
 
     /** Upsert a prescription. */
     export const save = createServerOnlyFn(

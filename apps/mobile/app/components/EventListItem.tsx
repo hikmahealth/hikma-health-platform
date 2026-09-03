@@ -27,6 +27,8 @@ import { getProviderAuthHeader, refreshProviderToken } from "@/utils/authHeader"
 import { requestWithSessionRetry } from "@/utils/authorizedRequest"
 
 import { If } from "./If"
+import { displayDateValue } from "@/utils/date"
+import { escapeHtml } from "@/utils/html"
 
 type AttachmentKind = "image" | "pdf" | "file"
 
@@ -228,12 +230,14 @@ const getEventDisplay = (event: EventModel, language: string): React.JSX.Element
             </If>
             <If
               condition={
-                fieldType !== "diagnosis" &&
-                inputType !== "input-group" &&
-                inputType !== "file"
+                fieldType !== "diagnosis" && inputType !== "input-group" && inputType !== "file"
               }
             >
-              <Text text={String(value)} />
+              {fieldType === "date" ? (
+                <Text text={displayDateValue(value)} />
+              ) : (
+                <Text text={String(value)} />
+              )}
             </If>
           </View>
         )
@@ -277,8 +281,7 @@ function FileAttachmentField({
       }
 
       const storedKind = attachmentKind(mimetype)
-      const extension =
-        storedKind === "pdf" ? ".pdf" : storedKind === "image" ? ".png" : ""
+      const extension = storedKind === "pdf" ? ".pdf" : storedKind === "image" ? ".png" : ""
       const target = `${FileSystem.cacheDirectory}hh_attachment_${resourceId}${extension}`
 
       const url = `${apiUrl}/api/events/${eventId}/attachments/${resourceId}`
@@ -313,8 +316,7 @@ function FileAttachmentField({
         UTI: shareType === "application/pdf" ? "com.adobe.pdf" : undefined,
       })
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : "Could not open attachment."
+      const message = error instanceof Error ? error.message : "Could not open attachment."
       Alert.alert("Attachment", message)
     } finally {
       setIsLoading(false)
@@ -347,11 +349,7 @@ function FileAttachmentField({
       >
         <Pressable style={$modalBackdrop} onPress={() => setImageUri(null)}>
           {imageUri !== null && (
-            <Image
-              source={{ uri: imageUri }}
-              style={$modalImage}
-              resizeMode="contain"
-            />
+            <Image source={{ uri: imageUri }} style={$modalImage} resizeMode="contain" />
           )}
         </Pressable>
       </Modal>
@@ -389,16 +387,6 @@ const $modalImage: ImageStyle = {
  * @param {string} language - The language code
  * @returns {JSX.Element} - The JSX element to display
  */
-/** Escape HTML special characters to prevent XSS in generated reports */
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;")
-}
-
 export const getHtmlEventDisplay = (event: EventModel, language: string): string => {
   const { eventType, formData } = event
 
@@ -427,7 +415,8 @@ export const getHtmlEventDisplay = (event: EventModel, language: string): string
         })
       }
     } else if (fieldType !== "diagnosis" && inputType !== "input-group") {
-      display += `<div>${escapeHtml(String(value))}</div>`
+      const text = fieldType === "date" ? displayDateValue(value) : String(value)
+      display += `<div>${escapeHtml(text)}</div>`
     }
 
     display += `</div>`

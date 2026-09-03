@@ -11,6 +11,8 @@ import ICDEntry from "./ICDEntry"
 import { isValid } from "date-fns"
 import { Logger } from "@hikmahealth/js-utils"
 import * as Problems from "@hikmahealth/forms/Problems"
+import { displayDateValue } from "@/utils/date"
+import { escapeHtml } from "@/utils/html"
 import { isValidUUID } from "@/utils/misc"
 import EventForm from "./EventForm"
 import PatientProblems from "./PatientProblems"
@@ -133,36 +135,33 @@ namespace Event {
     formData.forEach((field, idx) => {
       const { fieldId, fieldType, inputType, name, value } = field
 
+      // Every field name and value below is clinician-entered and arrives over
+      // sync, so none of it reaches the template unescaped.
       display += `<div style="margin: 5px 0px;">`
-      display += `<span style="text-decoration: underline;">${name}:</span>`
+      display += `<span style="text-decoration: underline;">${escapeHtml(name)}:</span>`
 
       if (fieldType === "diagnosis") {
         if (Array.isArray(value)) {
           value?.forEach((val) => {
-            display += `<div>${ICDEntry.ICD10RecordLabel(val, language)}</div>`
+            display += `<div>${escapeHtml(ICDEntry.ICD10RecordLabel(val, language))}</div>`
           })
         }
       } else if (inputType === "input-group" && fieldType === "medicine") {
         if (Array.isArray(value)) {
           value.forEach((med) => {
-            display += `<div>${String(med.dose || "")} ${med.doseUnits || ""}</div>`
-            display += `<div>${upperFirst(med?.route || "")} ${upperFirst(med?.form || "")}: ${String(
-              med?.frequency || "",
-            )}</div>`
+            display += `<div>${escapeHtml(med?.dose)} ${escapeHtml(med?.doseUnits)}</div>`
+            display += `<div>${escapeHtml(upperFirst(med?.route || ""))} ${escapeHtml(
+              upperFirst(med?.form || ""),
+            )}: ${escapeHtml(med?.frequency)}</div>`
           })
         }
       } else if (inputType === "file") {
-        // The report references each attachment by name rather than embedding
-        // the bytes. Filenames are user-supplied and interpolated into HTML.
-        readAttachments(field).forEach((attachment) => {
-          const safeName = (attachment.fileName ?? "file")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-          display += `<div>[Attachment: ${safeName}]</div>`
-        })
+        // A printed report cannot carry the files. The count also keeps
+        // user-supplied filenames out of the HTML.
+        const fileCount = readAttachments(field).length
+        display += `<div>${fileCount} ${fileCount === 1 ? "file" : "files"}</div>`
       } else if (fieldType !== "diagnosis" && inputType !== "input-group") {
-        display += `<div>${value}</div>`
+        display += `<div>${escapeHtml(fieldType === "date" ? displayDateValue(value) : value)}</div>`
       }
 
       display += `</div>`

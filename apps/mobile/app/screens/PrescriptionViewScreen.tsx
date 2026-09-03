@@ -269,7 +269,6 @@ export const PrescriptionViewScreen: FC<PrescriptionViewScreenProps> = ({ route,
           onItemCancelled={handleItemCancelled}
         />
       </View>
-
     </Screen>
   )
 }
@@ -314,7 +313,6 @@ function DiagnosisSnippet({ diagnosis }: { diagnosis: PatientProblem }) {
   )
 }
 
-// TODO: unused — intended to replace the inline drug list above.
 const PrescriptionDrugsItem = enhancePrescribedDrugsItem(
   ({
     prescription,
@@ -355,7 +353,6 @@ const PrescriptionDrugsItem = enhancePrescribedDrugsItem(
                 <Pressable onPress={() => onItemDispensed(item)} style={$prescriptionItemActionBtn}>
                   <Text size="xs">Dispense Medication</Text>
                 </Pressable>
-
               </View>
             </View>
           )
