@@ -20,6 +20,7 @@ import Patient from "./model/Patient"
 import PatientAdditionalAttribute from "./model/PatientAdditionalAttribute"
 import PatientProblems from "./model/PatientProblems"
 import PatientRegistrationForm from "./model/PatientRegistrationForm"
+import PatientRiskProfile from "./model/PatientRiskProfile"
 import PatientVitals from "./model/PatientVitals"
 import Peer from "./model/Peer"
 import Prescription from "./model/Prescription"
@@ -29,6 +30,7 @@ import UserClinicPermissions from "./model/UserClinicPermissions"
 import Visit from "./model/Visit"
 
 export const modelClasses = [
+  PatientRiskProfile,
   PatientRegistrationForm,
   Patient,
   Visit,

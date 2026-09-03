@@ -1,4 +1,4 @@
-import { FC, useMemo } from "react"
+import { FC, useEffect, useMemo, useState } from "react"
 import { ActivityIndicator, Pressable, ViewStyle, Dimensions } from "react-native"
 import * as Print from "expo-print"
 import { shareAsync } from "expo-sharing"
@@ -18,13 +18,18 @@ import {
   LucideGalleryVerticalEnd,
   LucideIcon,
   LucidePillBottle,
+  HeartPulse,
   LucidePlus,
   PencilIcon,
   PlusIcon,
+  Wind,
 } from "lucide-react-native"
+import { Q } from "@nozbe/watermelondb"
 import Toast from "react-native-root-toast"
 
 import logoStr from "@/assets/images/logoStr"
+import database from "@/db"
+import PatientRiskProfileAttributeModel from "@/db/model/PatientRiskProfile"
 import { Card } from "@/components/Card"
 import { If } from "@/components/If"
 import { PatientProfileSummary } from "@/components/PatientProfileSummary"
@@ -61,6 +66,41 @@ import { Logger } from "@hikmahealth/js-utils"
 
 const { height } = Dimensions.get("window")
 
+type RiskPrediction = { type: string; score: string }
+
+function usePatientRiskPredictions(patientId: string) {
+  const [predictions, setPredictions] = useState<RiskPrediction[]>([])
+
+  useEffect(() => {
+    const sub = database
+      .get<PatientRiskProfileAttributeModel>("patient_risk_profiles")
+      .query(
+        // Q.where("patient_id", patientId),
+        // Q.where("profile_key", "risk_prediction"),
+        // Q.where("is_deleted", false),
+      )
+      .observe()
+      .subscribe((records) => {
+        console.log("details: ", records)
+        const parsed = records
+          .map((r) => {
+            try {
+              const data = JSON.parse(r.stringValue ?? "")
+              return { type: data.type as string, score: data.score as string }
+            } catch {
+              return null
+            }
+          })
+          .filter((r): r is RiskPrediction => r !== null)
+        setPredictions(parsed)
+      })
+
+    return () => sub.unsubscribe()
+  }, [patientId])
+
+  return { predictions }
+}
+
 interface PatientViewScreenProps extends NativeStackScreenProps<
   PatientNavigatorParamList,
   "PatientView"
@@ -81,6 +121,7 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
   const isLoading = isOnline ? onlinePatientQuery.isLoading : isLoadingOffline
 
   const { hersEnabled } = useSelector(appStateStore, (store) => store.context)
+  const { predictions: riskPredictions } = usePatientRiskPredictions(patientId)
   const language = useSelector(languageStore, (store) => store.context.language)
   const { forms: eventForms, isLoading: isLoadingForms } = useEventForms(
     Option.fromNullable(language),
@@ -305,40 +346,46 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
         </View>
 
         <View px={16} py={20} gap={10} mb={18}>
-          <If condition={hersEnabled && false}>
-            <View
-              direction="row"
-              alignItems="center"
-              gap={5}
-              style={{
-                borderRadius: 8,
-                borderColor: colors.error,
-                borderWidth: 1,
-                backgroundColor: colors.errorBackground,
-              }}
-              p={3}
-              mt={10}
-            >
-              <LucideCircleDot size={16} color={colors.error} />
-              <Text text={"High: Asthma worsening risk"} size="xs" />
-            </View>
+          <If condition={hersEnabled && riskPredictions.length > 0}>
+            <View gap={6} mb={4}>
+              <Text preset="formLabel" text="Environmental Risk Profile" />
+              <View gap={6}>
+                {riskPredictions.map((prediction) => {
+                  const isHigh = prediction.score === "high"
+                  const isMedium = prediction.score === "medium" || prediction.score === "moderate"
+                  const scoreColor = isHigh ? colors.error : isMedium ? "#f59e0b" : "#16a34a"
+                  const bgColor = isHigh ? colors.errorBackground : isMedium ? "#fef3c7" : "#dcfce7"
+                  const Icon = prediction.type === "cvd" ? HeartPulse : Wind
+                  const typeLabel =
+                    prediction.type === "cvd" ? "Cardiovascular" : upperFirst(prediction.type)
 
-            <View
-              direction="row"
-              alignItems="center"
-              gap={5}
-              style={{
-                borderRadius: 8,
-                borderColor: "#facc15",
-                borderWidth: 1,
-                backgroundColor: "#fef9c3",
-              }}
-              p={3}
-              mt={0}
-              mb={10}
-            >
-              <LucideCircleDot size={16} color={"#facc15"} />
-              <Text text={"Low: Increased risk of stress & anxiety"} size="xs" />
+                  return (
+                    <View
+                      key={prediction.type}
+                      direction="row"
+                      alignItems="center"
+                      gap={8}
+                      style={{
+                        borderRadius: 8,
+                        borderColor: scoreColor,
+                        borderWidth: 1,
+                        backgroundColor: bgColor,
+                        padding: 8,
+                      }}
+                    >
+                      <Icon size={16} color={scoreColor} />
+                      <View flex={1}>
+                        <Text text={typeLabel} size="xs" />
+                        <Text
+                          text={`Risk: ${upperFirst(prediction.score)}`}
+                          size="xxs"
+                          style={{ color: scoreColor }}
+                        />
+                      </View>
+                    </View>
+                  )
+                })}
+              </View>
             </View>
           </If>
 

@@ -3,19 +3,20 @@ import { createFileRoute } from "@tanstack/react-router";
 import { sql } from "kysely";
 import { uuidv7 } from "uuidv7";
 
+type DateString = string;
+
 export const Route = createFileRoute("/api/hers/output/prediction")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        // .... after getting the data, write this to
         const input = (await request.json()) as {
-          id: string;
+          generated_at: DateString;
+          metadata?: Record<string, string>;
           results: Array<
             [
               id: string,
               Array<{
-                score: number;
-                level: "low" | "high" | "medium";
+                score: "low" | "high" | "medium";
                 type: "cvd" | "respiratory";
               }>,
             ]
@@ -24,41 +25,38 @@ export const Route = createFileRoute("/api/hers/output/prediction")({
 
         const batch = [];
 
-        // use this information to write to patient additional attributes
-        for (const [id, _data] of input.results) {
-          // get the high score that best reflects the patient's risk
-          batch.push({
-            id: uuidv7(),
-            attribute_id: uuidv7(),
-            patient_id: id,
-            attribute: "patient_chart_data",
-            unique_reference: "risk_profile_notification",
-            string_value: JSON.stringify({
-              text: "This is a serious note",
-              level: "high",
-              profile: "cvd",
-            }),
-            is_deleted: false,
-            deleted_at: null,
-            created_at: sql`now()`,
-            updated_at: sql`now()`,
-          });
+        for (const [patientId, results] of input.results) {
+          for (const result of results) {
+            batch.push({
+              id: uuidv7(),
+              patient_id: patientId,
+              kind: "risk_prediction",
+              target: result.type,
+              value_type: "json" as const,
+              json_value: {
+                score: result.score,
+                type: result.type,
+              },
+              source: "hers",
+              version: "hers-dev",
+              is_deleted: false,
+              deleted_at: null,
+              created_at: sql`now()`,
+              updated_at: sql`now()`,
+              last_modified: sql`now()`,
+              server_created_at: sql`now()`,
+            });
+          }
         }
 
-        await db
-          .insertInto("patient_additional_attributes")
-          .values(batch)
-          .onConflict((eb) =>
-            eb.columns(["patient_id", "unique_reference"]).doUpdateSet((eb) => {
-              return {
-                string_value: eb.ref("excluded.string_value"),
-                is_deleted: false,
-                deleted_at: null,
-                updated_at: eb.ref("excluded.updated_at"),
-              };
-            }),
-          )
-          .execute();
+        if (batch.length > 0) {
+          await db.insertInto("patient_risk_profiles").values(batch).execute();
+        }
+
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
       },
     },
   },

@@ -517,9 +517,41 @@ export const peersSchema = tableSchema({
   ],
 })
 
+export const patientRiskProfile = tableSchema({
+  name: "patient_risk_profiles",
+  columns: [
+    { name: "patient_id", type: "string", isIndexed: true },
+    { name: "clinic_id", type: "string", isOptional: true, isIndexed: true },
+    { name: "kind", type: "string", isIndexed: true },
+    { name: "source", type: "string" },
+    { name: "target", type: "string", isOptional: true },
+    { name: "version", type: "string" },
+    // 'string' | 'numeric' | 'integer' | 'boolean' | 'datetime' | 'json'
+    { name: "value_type", type: "string" },
+    { name: "string_value", type: "string", isOptional: true },
+    { name: "boolean_value", type: "boolean", isOptional: true },
+    { name: "integer_value", type: "number", isOptional: true },
+    { name: "numerical_value", type: decimal, isOptional: true }, // stored as string to preserve decimal precision
+    { name: "datetime_value", type: "number", isOptional: true }, // Unix timestamp
+    { name: "json_value", type: "string", isOptional: true }, // JSON string
+    { name: "metadata", type: "string", isOptional: true }, // JSON string
+    { name: "is_deleted", type: "boolean" },
+    { name: "created_at", type: "number" },
+    { name: "updated_at", type: "number" },
+    { name: "last_modified", type: "number" },
+    { name: "server_created_at", type: "number" },
+    { name: "deleted_at", type: "number", isOptional: true },
+  ],
+})
+
 export default appSchema({
-  version: 11, // 🔥 IMPORTANT!! 🔥 when migrating dont forget to change this number
+  version: 12, // 🔥 IMPORTANT!! 🔥 when migrating dont forget to change this number
   tables: [
+    // v12
+    patientRiskProfile,
+
+    // v0
+
     patientSchema,
     clinicSchema,
     userSchema,

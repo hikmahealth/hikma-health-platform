@@ -20,6 +20,7 @@ import PrescriptionItem from "./prescription-items";
 import User from "./user";
 import Device from "./device";
 import DevicePinCode from "./device-pin-code";
+import PatientRiskProfile from "./patient-risk-profile";
 
 /**
  * These entities are synced to mobile. They should not contain information that is not needed for mobile use.
@@ -35,6 +36,7 @@ import DevicePinCode from "./device-pin-code";
 export const ENTITIES_TO_PUSH_TO_MOBILE = [
   Patient,
   PatientAdditionalAttribute,
+  PatientRiskProfile,
   Clinic,
   Visit,
   Event,
@@ -78,6 +80,7 @@ export const ENTITIES_TO_PUSH_TO_HUB = [
  * 4. User
  * 5. PatientRegistrationForm
  * 6. EventForm
+ * 7. PatientRiskProfile — server-managed, one-way push to mobile only
  */
 export const ENTITIES_TO_PULL_FROM_MOBILE = [
   Patient,
@@ -150,6 +153,8 @@ export const EXEMPT_FROM_HISTORY_LIMIT = [
   "drug_catalogue",
   "clinic_departments",
   "clinic_inventory", // this should synced for just the signed in clinic??
+  // Risk profile attributes are server-managed; all records must reach mobile regardless of age
+  "patient_risk_profiles",
 ];
 
 /**
@@ -316,6 +321,7 @@ export const CLINIC_COLUMN_BY_TABLE: Record<string, string> = {
   dispensing_records: "clinic_id",
   prescription_items: "clinic_id",
   patient_registration_forms: "clinic_id",
+  patient_risk_profiles: "clinic_id",
   users: "clinic_id",
   user_clinic_permissions: "clinic_id",
 };

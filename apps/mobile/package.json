@@ -6,7 +6,7 @@
   "scripts": {
     "eas-build-post-install": "pnpm --filter @hikmahealth/forms run build",
     "start": "expo start --dev-client",
-    "android": "expo run:android",
+    "android": "expo run:android --device",
     "ios": "expo run:ios --device",
     "web": "expo start --web",
     "bundle:web": "npx expo export --platform web",
