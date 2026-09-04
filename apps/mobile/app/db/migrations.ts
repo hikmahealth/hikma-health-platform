@@ -13,7 +13,7 @@ export default schemaMigrations({
           columns: [
             { name: "patient_id", type: "string", isIndexed: true },
             { name: "clinic_id", type: "string", isOptional: true, isIndexed: true },
-            { name: "key", type: "string", isIndexed: true },
+            { name: "kind", type: "string", isIndexed: true },
             { name: "target", type: "string", isOptional: true },
             // 'string' | 'numeric' | 'integer' | 'boolean' | 'datetime'
             { name: "value_type", type: "string" },
@@ -22,6 +22,7 @@ export default schemaMigrations({
             { name: "numerical_value", type: decimal, isOptional: true }, // stored as string to preserve decimal precision
             { name: "datetime_value", type: "number", isOptional: true }, // Unix timestamp
             { name: "json_value", type: "string", isOptional: true },
+            { name: "metadata", type: "string", isOptional: true },
             { name: "source", type: "string" },
             { name: "version", type: "string" },
             { name: "is_deleted", type: "boolean" },

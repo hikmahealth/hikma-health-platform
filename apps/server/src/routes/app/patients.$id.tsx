@@ -217,6 +217,29 @@ function RiskRelatedInformation({ id }: { id: string }) {
     return <></>;
   }
 
+  // Group by type, sort descending by recorded_at, keep latest + previous
+  const grouped = Object.entries(
+    results.data.reduce<Record<string, RiskPrediction[]>>((acc, entry) => {
+      const type = entry.value.type;
+      if (!acc[type]) acc[type] = [];
+      acc[type].push(entry);
+      return acc;
+    }, {}),
+  ).map(([type, entries]) => {
+    const sorted = [...entries].sort((a, b) => {
+      if (!a.recorded_at) return 1;
+      if (!b.recorded_at) return -1;
+      return (
+        new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime()
+      );
+    });
+    return {
+      type: type as RiskPrediction["value"]["type"],
+      latest: sorted[0],
+      previous: sorted[1] ?? null,
+    };
+  });
+
   return (
     <Card className="border-yellow-500 [*>[data-slot=card-title]]:text-yellow-900 [*>[data-slot=card-description]]:text-yellow-700">
       <CardHeader>
@@ -232,34 +255,43 @@ function RiskRelatedInformation({ id }: { id: string }) {
       </CardHeader>
       <CardContent>
         <div className="flex flex-wrap gap-4">
-          {results.data.map((entry) => {
-            const meta = RISK_TYPE_META[entry.value.type] ?? RISK_TYPE_META.cvd;
+          {grouped.map(({ type, latest, previous }) => {
+            const meta = RISK_TYPE_META[type] ?? RISK_TYPE_META.cvd;
             const { Icon, label } = meta;
             return (
               <div
-                key={entry.value.type}
+                key={type}
                 className="flex flex-1 min-w-[180px] items-center justify-between gap-4 rounded-lg border p-4"
               >
                 <div className="flex items-center gap-2">
                   <Icon className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">{label}</p>
-                    {entry.recorded_at && (
+                    {latest.recorded_at && (
                       <p className="text-xs text-muted-foreground">
                         Updated{" "}
                         {format(
-                          new Date(entry.recorded_at as string),
+                          new Date(latest.recorded_at as string),
                           "MMM dd, yyyy",
                         )}
                       </p>
                     )}
                   </div>
                 </div>
-                <Badge
-                  variant={RISK_SCORE_VARIANT[entry.value.score] ?? "outline"}
-                >
-                  {entry.value.score.toUpperCase()}
-                </Badge>
+                <div className="flex flex-col items-end gap-1">
+                  <Badge
+                    variant={
+                      RISK_SCORE_VARIANT[latest.value.score] ?? "outline"
+                    }
+                  >
+                    {latest.value.score.toUpperCase()}
+                  </Badge>
+                  {previous && previous.value.score !== latest.value.score && (
+                    <span className="text-xs text-muted-foreground">
+                      prev: {previous.value.score.toUpperCase()}
+                    </span>
+                  )}
+                </div>
               </div>
             );
           })}

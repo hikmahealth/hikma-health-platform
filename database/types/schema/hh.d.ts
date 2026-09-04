@@ -477,7 +477,6 @@ export interface PatientRiskProfiles {
   datetime_value: Timestamp | null;
   deleted_at: Timestamp | null;
   id: string;
-  integer_value: number | null;
   is_deleted: Generated<boolean>;
   json_value: Json | null;
   kind: string;

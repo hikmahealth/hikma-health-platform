@@ -219,6 +219,15 @@ export const updateDates = (changes: SyncDatabaseChangeSet): void => {
             "check_in_timestamp",
             recordId,
           )
+        // patient_risk_profiles: server stores this as a timestamptz, mobile as a
+        // Unix timestamp number.
+        if (record.datetime_value)
+          record.datetime_value = convertToTimestamp(
+            record.datetime_value,
+            defaultDate,
+            "datetime_value",
+            recordId,
+          )
 
         // `image_timestamp` is deliberately NOT touched here. It is a server-only
         // column absent from the mobile schema; zeroing it did nothing inbound but
@@ -227,6 +236,10 @@ export const updateDates = (changes: SyncDatabaseChangeSet): void => {
         // JSON fields (JSONB → string for WatermelonDB) ───────────
         if (record.departments) record.departments = safeStringify(record.departments, "[]")
         if (record.metadata) record.metadata = safeStringify(record.metadata, "{}")
+        // json_value is a jsonb column on the server; serialize it so WatermelonDB
+        // can store it in its text column. Use != null so falsy JSON primitives
+        // (false, 0) are still stringified rather than left as raw JS values.
+        if (record.json_value != null) record.json_value = safeStringify(record.json_value, "null")
         if (record.form_fields) record.form_fields = safeStringify(record.form_fields, "[]")
         if (record.translations) record.translations = safeStringify(record.translations, "[]")
         // The falsy guard is load-bearing for app_config.clinic_ids: it lets

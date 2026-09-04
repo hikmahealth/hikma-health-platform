@@ -282,7 +282,10 @@ namespace Sync {
       db
         .selectFrom(tableName as "clinics")
         .where((eb) =>
-          eb.or([eb("is_deleted", "=", true), eb("deleted_at", "is not", null)]),
+          eb.or([
+            eb("is_deleted", "=", true),
+            eb("deleted_at", "is not", null),
+          ]),
         )
         .select("id"),
       tableName,

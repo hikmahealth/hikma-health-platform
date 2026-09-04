@@ -85,6 +85,7 @@ export const ENTITIES_TO_PUSH_TO_HUB = [
 export const ENTITIES_TO_PULL_FROM_MOBILE = [
   Patient,
   PatientAdditionalAttribute,
+  PatientRiskProfile,
   Visit,
   Event,
   Appointment,
@@ -153,8 +154,6 @@ export const EXEMPT_FROM_HISTORY_LIMIT = [
   "drug_catalogue",
   "clinic_departments",
   "clinic_inventory", // this should synced for just the signed in clinic??
-  // Risk profile attributes are server-managed; all records must reach mobile regardless of age
-  "patient_risk_profiles",
 ];
 
 /**

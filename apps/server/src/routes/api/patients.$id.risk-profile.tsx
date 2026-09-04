@@ -18,16 +18,14 @@ export const Route = createFileRoute("/api/patients/$id/risk-profile")({
 
         const rows = await db
           .selectFrom("patient_risk_profiles")
-          .select(["string_value", "updated_at"])
+          .select(["json_value", "updated_at"])
           .where("patient_id", "=", patientId)
-          .where("profile_key", "=", "risk_prediction")
+          .where("kind", "=", "risk_prediction")
           .where("is_deleted", "=", false)
           .execute();
 
         const predictions: RiskPrediction[] = rows.map((row) => ({
-          value: JSON.parse(
-            row.string_value as string,
-          ) as RiskPrediction["value"],
+          value: row.json_value as RiskPrediction["value"],
           recorded_at: row.updated_at,
         }));
 
