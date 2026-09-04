@@ -11,14 +11,10 @@ import { sql } from "kysely";
 import { toSafeDateString } from "@/lib/utils";
 
 type ProfileValueType =
-  | "string"
-  | "numeric"
-  | "integer"
-  | "boolean"
-  | "datetime"
-  | "json";
+  "string" | "numeric" | "integer" | "boolean" | "datetime" | "json";
 
-type Json = Record<string, unknown> | unknown[] | string | number | boolean | null;
+type Json =
+  Record<string, unknown> | unknown[] | string | number | boolean | null;
 
 namespace PatientRiskProfile {
   export type T = {
@@ -179,7 +175,7 @@ namespace PatientRiskProfile {
             value_type: profile.value_type,
             string_value: profile.string_value ?? null,
             boolean_value: profile.boolean_value ?? null,
-            integer_value: profile.integer_value ?? null,
+            // integer_value: profile.integer_value ?? null,
             numerical_value: profile.numerical_value ?? null,
             datetime_value: profile.datetime_value
               ? sql`${toSafeDateString(profile.datetime_value)}::timestamp with time zone`
@@ -199,29 +195,29 @@ namespace PatientRiskProfile {
             server_created_at: sql`now()::timestamp with time zone`,
             deleted_at: null,
           })
-          .onConflict((oc) =>
-            oc
-              .columns(["patient_id", "kind", "source"])
-              .doUpdateSet({
-                value_type: (eb) => eb.ref("excluded.value_type"),
-                target: (eb) => eb.ref("excluded.target"),
-                version: (eb) => eb.ref("excluded.version"),
-                string_value: (eb) => eb.ref("excluded.string_value"),
-                boolean_value: (eb) => eb.ref("excluded.boolean_value"),
-                integer_value: (eb) => eb.ref("excluded.integer_value"),
-                numerical_value: (eb) => eb.ref("excluded.numerical_value"),
-                datetime_value: (eb) => eb.ref("excluded.datetime_value"),
-                json_value: (eb) => eb.ref("excluded.json_value"),
-                metadata: (eb) => eb.ref("excluded.metadata"),
-                is_deleted: (eb) => eb.ref("excluded.is_deleted"),
-                updated_at: sql`now()::timestamp with time zone`,
-                last_modified: sql`now()::timestamp with time zone`,
-              })
-              // Only update when the incoming record is newer than the stored one
-              .where(
-                sql<boolean>`excluded.updated_at > patient_risk_profiles.updated_at`,
-              ),
-          )
+          // .onConflict((oc) =>
+          //   oc
+          //     .columns(["patient_id", "kind", "source"])
+          //     .doUpdateSet({
+          //       value_type: (eb) => eb.ref("excluded.value_type"),
+          //       target: (eb) => eb.ref("excluded.target"),
+          //       version: (eb) => eb.ref("excluded.version"),
+          //       string_value: (eb) => eb.ref("excluded.string_value"),
+          //       boolean_value: (eb) => eb.ref("excluded.boolean_value"),
+          //       // integer_value: (eb) => eb.ref("excluded.integer_value"),
+          //       numerical_value: (eb) => eb.ref("excluded.numerical_value"),
+          //       datetime_value: (eb) => eb.ref("excluded.datetime_value"),
+          //       json_value: (eb) => eb.ref("excluded.json_value"),
+          //       metadata: (eb) => eb.ref("excluded.metadata"),
+          //       is_deleted: (eb) => eb.ref("excluded.is_deleted"),
+          //       updated_at: sql`now()::timestamp with time zone`,
+          //       last_modified: sql`now()::timestamp with time zone`,
+          //     })
+          //     // Only update when the incoming record is newer than the stored one
+          //     .where(
+          //       sql<boolean>`excluded.updated_at > patient_risk_profiles.updated_at`,
+          //     ),
+          // )
           .executeTakeFirst();
       },
     );

@@ -246,9 +246,10 @@ namespace Peer {
      * @returns Promise<string> where the string is the peerId
      */
     export const upsertCloud = async (url: string): Promise<string> => {
-      if (!url.startsWith("https://")) {
-        throw new Error("Cloud peer URL must use HTTPS")
-      }
+      // TODO: this is temporary
+      // if (!url.startsWith("https://")) {
+      //   throw new Error("Cloud peer URL must use HTTPS")
+      // }
       const existing = await getActiveByType("cloud_server")
       for (const peer of existing) {
         if (peer.peerId !== `cloud:${url}`) {
@@ -620,7 +621,8 @@ namespace Peer {
 
     const preferred = usable.find((peer) => peer.status === "active") ?? usable[0]
     const url = getUrl(preferred)
-    return url?.startsWith("https://") ? url : null
+    return url
+    // return url?.startsWith("https://") ? url : null
   }
 
   /**

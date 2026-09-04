@@ -29,7 +29,7 @@ import Toast from "react-native-root-toast"
 
 import logoStr from "@/assets/images/logoStr"
 import database from "@/db"
-import PatientRiskProfileAttributeModel from "@/db/model/PatientRiskProfile"
+import PatientRiskProfile from "@/db/model/PatientRiskProfile"
 import { Card } from "@/components/Card"
 import { If } from "@/components/If"
 import { PatientProfileSummary } from "@/components/PatientProfileSummary"
@@ -73,26 +73,36 @@ function usePatientRiskPredictions(patientId: string) {
 
   useEffect(() => {
     const sub = database
-      .get<PatientRiskProfileAttributeModel>("patient_risk_profiles")
+      .get<PatientRiskProfile>("patient_risk_profiles")
       .query(
-        // Q.where("patient_id", patientId),
-        // Q.where("profile_key", "risk_prediction"),
-        // Q.where("is_deleted", false),
+        Q.where("patient_id", patientId),
+        Q.where("kind", "risk_prediction"),
+        Q.where("is_deleted", false),
       )
       .observe()
       .subscribe((records) => {
-        console.log("details: ", records)
+        // Parse each record, keeping updatedAt for recency comparison
         const parsed = records
           .map((r) => {
             try {
-              const data = JSON.parse(r.stringValue ?? "")
-              return { type: data.type as string, score: data.score as string }
+              const value = JSON.parse(r.jsonValue ?? "") as RiskPrediction
+              return { value, updatedAt: r.updatedAt }
             } catch {
               return null
             }
           })
-          .filter((r): r is RiskPrediction => r !== null)
-        setPredictions(parsed)
+          .filter((r): r is { value: RiskPrediction; updatedAt: Date } => r !== null)
+
+        // Group by type, keep only the most recent entry per type
+        const byType = new Map<string, { value: RiskPrediction; updatedAt: Date }>()
+        for (const item of parsed) {
+          const existing = byType.get(item.value.type)
+          if (!existing || item.updatedAt > existing.updatedAt) {
+            byType.set(item.value.type, item)
+          }
+        }
+
+        setPredictions([...byType.values()].map((item) => item.value))
       })
 
     return () => sub.unsubscribe()
@@ -346,7 +356,8 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
         </View>
 
         <View px={16} py={20} gap={10} mb={18}>
-          <If condition={hersEnabled && riskPredictions.length > 0}>
+          {/*<If condition={hersEnabled && riskPredictions.length > 0}>*/}
+          <If condition={riskPredictions.length > 0}>
             <View gap={6} mb={4}>
               <Text preset="formLabel" text="Environmental Risk Profile" />
               <View gap={6}>

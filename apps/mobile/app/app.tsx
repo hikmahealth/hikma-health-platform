@@ -177,12 +177,14 @@ export function App() {
   if (
     !isNavigationStateRestored ||
     !isI18nInitialized ||
-    (!areFontsLoaded && !fontLoadError) ||
-    !isProviderStoreInitialized
+    (!areFontsLoaded && !fontLoadError)
+    // || !isProviderStoreInitiarlized
   ) {
     console.log("YOU SHOULDN'T SEE THIS")
     return null
   }
+
+  // console.log("this is the it!")
 
   const linking = {
     prefixes: [prefix],

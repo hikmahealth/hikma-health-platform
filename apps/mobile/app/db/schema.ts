@@ -530,7 +530,6 @@ export const patientRiskProfile = tableSchema({
     { name: "value_type", type: "string" },
     { name: "string_value", type: "string", isOptional: true },
     { name: "boolean_value", type: "boolean", isOptional: true },
-    { name: "integer_value", type: "number", isOptional: true },
     { name: "numerical_value", type: decimal, isOptional: true }, // stored as string to preserve decimal precision
     { name: "datetime_value", type: "number", isOptional: true }, // Unix timestamp
     { name: "json_value", type: "string", isOptional: true }, // JSON string
@@ -547,7 +546,7 @@ export const patientRiskProfile = tableSchema({
 export default appSchema({
   version: 12, // 🔥 IMPORTANT!! 🔥 when migrating dont forget to change this number
   tables: [
-    // v12
+    // v12-v13
     patientRiskProfile,
 
     // v0

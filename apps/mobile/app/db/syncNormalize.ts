@@ -120,12 +120,32 @@ export const updateDates = (changes: SyncDatabaseChangeSet): void => {
         const recordId = record.id || "unknown"
 
         // Timestamps
-        record.created_at = convertToTimestamp(record.created_at, defaultDate, "created_at", recordId)
-        record.updated_at = convertToTimestamp(record.updated_at, defaultDate, "updated_at", recordId)
+        record.created_at = convertToTimestamp(
+          record.created_at,
+          defaultDate,
+          "created_at",
+          recordId,
+        )
+        record.updated_at = convertToTimestamp(
+          record.updated_at,
+          defaultDate,
+          "updated_at",
+          recordId,
+        )
         if (record.deleted_at)
-          record.deleted_at = convertToTimestamp(record.deleted_at, defaultDate, "deleted_at", recordId)
+          record.deleted_at = convertToTimestamp(
+            record.deleted_at,
+            defaultDate,
+            "deleted_at",
+            recordId,
+          )
         if (record.timestamp)
-          record.timestamp = convertToTimestamp(record.timestamp, defaultDate, "timestamp", recordId)
+          record.timestamp = convertToTimestamp(
+            record.timestamp,
+            defaultDate,
+            "timestamp",
+            recordId,
+          )
         if (record.prescribed_at)
           record.prescribed_at = convertToTimestamp(
             record.prescribed_at,
@@ -134,7 +154,12 @@ export const updateDates = (changes: SyncDatabaseChangeSet): void => {
             recordId,
           )
         if (record.filled_at)
-          record.filled_at = convertToTimestamp(record.filled_at, defaultDate, "filled_at", recordId)
+          record.filled_at = convertToTimestamp(
+            record.filled_at,
+            defaultDate,
+            "filled_at",
+            recordId,
+          )
         if (record.expiration_date)
           record.expiration_date = convertToTimestamp(
             record.expiration_date,
@@ -156,6 +181,15 @@ export const updateDates = (changes: SyncDatabaseChangeSet): void => {
             "check_in_timestamp",
             recordId,
           )
+        // patient_risk_profiles: server stores this as a timestamptz, mobile as a
+        // Unix timestamp number.
+        if (record.datetime_value)
+          record.datetime_value = convertToTimestamp(
+            record.datetime_value,
+            defaultDate,
+            "datetime_value",
+            recordId,
+          )
 
         // `image_timestamp` is deliberately NOT touched here. It is a server-only
         // column absent from the mobile schema; zeroing it did nothing inbound but
@@ -164,6 +198,10 @@ export const updateDates = (changes: SyncDatabaseChangeSet): void => {
         // ── JSON fields (JSONB → string for WatermelonDB) ───────────
         if (record.departments) record.departments = safeStringify(record.departments, "[]")
         if (record.metadata) record.metadata = safeStringify(record.metadata, "{}")
+        // json_value is a jsonb column on the server; serialize it so WatermelonDB
+        // can store it in its text column. Use != null so falsy JSON primitives
+        // (false, 0) are still stringified rather than left as raw JS values.
+        if (record.json_value != null) record.json_value = safeStringify(record.json_value, "null")
         if (record.form_fields) record.form_fields = safeStringify(record.form_fields, "[]")
         if (record.translations) record.translations = safeStringify(record.translations, "[]")
         // The falsy guard is load-bearing for app_config.clinic_ids: it lets
