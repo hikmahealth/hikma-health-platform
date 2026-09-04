@@ -4,7 +4,7 @@ import * as Notifications from "expo-notifications"
 import { useNetInfo } from "@react-native-community/netinfo"
 import { useSelector } from "@xstate/react"
 import { Option } from "effect"
-import { ChevronRight } from "lucide-react-native"
+import { ChevronRight, Menu } from "lucide-react-native"
 import Toast from "react-native-root-toast"
 
 import { Button } from "@/components/Button"
@@ -207,6 +207,18 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
 
   return (
     <Screen style={$root} safeAreaEdges={["top"]} preset="scroll">
+      <View
+        direction="row"
+        alignItems="center"
+        gap={8}
+        py={12}
+        style={{ borderBottomColor: colors.border, borderBottomWidth: 1 }}
+      >
+        <Pressable onPress={() => navigation.openDrawer()} hitSlop={8}>
+          <Menu size={22} color={colors.palette.primary700} />
+        </Pressable>
+        <Text tx="settingsScreen:settings" size="lg" />
+      </View>
       <View py={12} style={{ borderBottomColor: colors.border, borderBottomWidth: 1 }}>
         <Image source={launchIcon} style={{ height: 80, width: 80 }} resizeMode="contain" />
         <View style={{ flexShrink: 1 }}>
@@ -274,6 +286,28 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
                 ? { borderWidth: 4, borderColor: colors.palette.accent500, borderRadius: 20 }
                 : {},
             ]}
+          />
+        </View>
+
+        <View style={$withBottomBorder} py={12}>
+          <View direction="row" justifyContent="space-between" alignItems="center">
+            <Text text="Risk Prediction by HERS" size="sm" />
+            <Switch
+              value={appState.hersEnabled}
+              onValueChange={(value) =>
+                appStateStore.trigger.SET_HERS_ENABLED({ hersEnabled: value })
+              }
+              containerStyle={[
+                appState.hersEnabled
+                  ? { borderWidth: 4, borderColor: colors.palette.accent500, borderRadius: 20 }
+                  : {},
+              ]}
+            />
+          </View>
+          <Text
+            size="xxs"
+            color={colors.palette.neutral500}
+            text="Show environmental risk predictions on patient profiles"
           />
         </View>
 

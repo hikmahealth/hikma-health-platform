@@ -356,8 +356,8 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
         </View>
 
         <View px={16} py={20} gap={10} mb={18}>
-          {/*<If condition={hersEnabled && riskPredictions.length > 0}>*/}
-          <If condition={riskPredictions.length > 0}>
+          <If condition={hersEnabled && riskPredictions.length > 0}>
+            {/*<If condition={riskPredictions.length > 0}>*/}
             <View gap={6} mb={4}>
               <Text preset="formLabel" text="Environmental Risk Profile" />
               <View gap={6}>
