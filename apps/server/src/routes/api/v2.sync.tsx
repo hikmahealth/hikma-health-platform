@@ -27,7 +27,10 @@ export const Route = createFileRoute("/api/v2/sync")({
       GET: async ({ request }) => {
         const ip = getClientIp(request);
         const limit = syncLimiter.check(ip);
-        if (!limit.allowed) return tooManyRequestsResponse(limit.retryAfterMs);
+        if (!limit.allowed) {
+          Logger.Production.error("[HHE001] Too many sync requests");
+          return tooManyRequestsResponse(limit.retryAfterMs);
+        }
 
         try {
           const url = new URL(request.url);
@@ -144,7 +147,7 @@ export const Route = createFileRoute("/api/v2/sync")({
             })
             .exhaustive();
         } catch (error) {
-          Logger.error(error);
+          Logger.Production.error(error);
           const message =
             error instanceof Error ? error.message : "Internal server error";
           const isAuthError =
@@ -224,7 +227,7 @@ const authenticateRequest = createServerOnlyFn(
         clinic,
       });
     } catch (error: any) {
-      Logger.error({
+      Logger.Production.error({
         msg: "[authenticatedRequest] Error authenticating a request. Error: ",
         error,
       });
