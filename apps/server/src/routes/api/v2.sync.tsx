@@ -18,7 +18,7 @@ import { Logger } from "@hikmahealth/js-utils";
 
 const syncLimiter = createRateLimiter({
   windowMs: minutesToMilliseconds(1),
-  maxRequests: 60,
+  maxRequests: 120,
 });
 
 export const Route = createFileRoute("/api/v2/sync")({
@@ -42,7 +42,7 @@ export const Route = createFileRoute("/api/v2/sync")({
             (url.searchParams.get("peerType") as Device.DeviceTypeT) ||
             "unknown"; // Get the peer type or else return "unknown". Unknown is treated as a mobile to be a safe fallback.
 
-          Logger.Production.info("Sync Attempt started")
+          Logger.Production.info("Sync Attempt started");
           const authenticatedCaller = await authenticateRequest(
             request,
             peerType,
@@ -93,7 +93,7 @@ export const Route = createFileRoute("/api/v2/sync")({
         } catch (error) {
           const message =
             error instanceof Error ? error.message : "Internal server error";
-          Logger.Production.error({ error })
+          Logger.Production.error({ error });
           const isAuthError =
             message.includes("Unauthorized") ||
             message.includes("Authorization header") ||
