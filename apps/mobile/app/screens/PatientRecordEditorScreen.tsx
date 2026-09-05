@@ -78,7 +78,8 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
   const [uniqueViolations, setUniqueViolations] = useState<Record<string, boolean>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const { paddingTop: safeAreaPaddingTop } = useSafeAreaInsetsStyle(["top"])
+  const { paddingTop: safeAreaPaddingTop, paddingBottom: safeAreaPaddingBottom } =
+    useSafeAreaInsetsStyle(["top", "bottom"])
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { clinics, isLoading: isLoadingClinics } = useClinics()
@@ -115,9 +116,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
   // intent (RHF touchedFields analog). Only JSX onChange goes through
   // `userUpdateField`; the hook's writebacks and primary-clinic auto-set use
   // the raw `updateField` so they don't mark fields touched.
-  const [interactedFieldIds, setInteractedFieldIds] = useState<Set<string>>(
-    () => new Set(),
-  )
+  const [interactedFieldIds, setInteractedFieldIds] = useState<Set<string>>(() => new Set())
   useEffect(() => {
     setInteractedFieldIds(new Set())
   }, [editPatientId])
@@ -401,192 +400,188 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
           formFields.filter((field) => field.visible),
           ruleEvaluation,
         ).map((field) => {
-            const { type, label, value } = field
-            const fieldErrors = errorsByFieldId.get(field.id)
+          const { type, label, value } = field
+          const fieldErrors = errorsByFieldId.get(field.id)
 
-            // Computed fields render as a read-only labelled display of the
-            // computed value. The writeback effect keeps patientRecord.values
-            // in sync; submit reads from there.
-            if (hasComputed(ruleEvaluation, field.id)) {
-              const computed = getComputed(ruleEvaluation, field.id)
-              return (
-                <View key={field.id}>
-                  <Text preset="formLabel" text={label} withAsterisk={field.required} />
-                  <Text text={formatComputedValue(computed)} />
-                  {fieldErrors && fieldErrors.length > 0 && (
-                    <View pt={4}>
-                      {fieldErrors.map((err) => (
-                        <Text key={err.validatorId} style={$validatorErrorText}>
-                          {err.message}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              )
-            }
-
+          // Computed fields render as a read-only labelled display of the
+          // computed value. The writeback effect keeps patientRecord.values
+          // in sync; submit reads from there.
+          if (hasComputed(ruleEvaluation, field.id)) {
+            const computed = getComputed(ruleEvaluation, field.id)
             return (
               <View key={field.id}>
-                {(type === "text" || type === "number") && field.column !== "primary_clinic_id" && (
-                  <TextField
-                    keyboardType={type === "number" ? "number-pad" : "default"}
-                    value={String(value)}
-                    onChangeText={(t) =>
-                      userUpdateField(field.id, type === "number" ? Number(t) : t)
-                    }
-                    label={label}
-                    required={field.required}
-                    testID={`patient_form_input__${field.type}__${field.column}`}
-                    inputWrapperStyle={
-                      uniqueViolations[field.id]
-                        ? {
-                            borderColor: colors.palette.angry500,
-                          }
-                        : {}
-                    }
-                  />
-                )}
-                <If condition={!!uniqueViolations[field.id]}>
-                  <Text tx={"newPatient:uniqueFieldTaken"} style={$validatorErrorText} />
-                </If>
-
-                <If condition={field.column === "primary_clinic_id"}>
-                  <View>
-                    <Text preset="formLabel" text={label} withAsterisk={field.required} />
-                    <DropDownPicker
-                      open={openDropdown === field.column}
-                      setOpen={(open) => {
-                        if (open as unknown as boolean) setOpenDropdown(field.column as any)
-                        else setOpenDropdown(null)
-                      }}
-                      testID={`patient_form_input__${field.type}__${field.column}`}
-                      modalTitle="Primary Clinic"
-                      rtl={isRTL}
-                      style={$dropDownPickerStyle}
-                      zIndex={990000}
-                      zIndexInverse={990000}
-                      listMode="MODAL"
-                      modalContentContainerStyle={[
-                        $modalContentContainerStyle,
-                        { paddingTop: safeAreaPaddingTop },
-                      ]}
-                      items={clinicOptionsList}
-                      value={value}
-                      setValue={(cb) => {
-                        const data = cb(value)
-                        userUpdateField(field.id, data)
-                      }}
-                    />
-                  </View>
-                </If>
-
-                {type === "date" && field.column === "date_of_birth" && (
-                  <View>
-                    <DateOfBirthInput
-                      label={label}
-                      required={field.required}
-                      testId={`patient_form_input__${field.type}__${field.column}`}
-                      date={parseYYYYMMDD(value, new Date())}
-                      onChangeDate={(d) => {
-                        if (d && parseYYYYMMDD(d.toDateString(), undefined)) {
-                          userUpdateField(field.id, format(d, "yyyy-MM-dd"))
-                        }
-                      }}
-                      ageEntryProps={{ day: 1, month: 0 }}
-                    />
+                <Text preset="formLabel" text={label} withAsterisk={field.required} />
+                <Text text={formatComputedValue(computed)} />
+                {fieldErrors && fieldErrors.length > 0 && (
+                  <View pt={4}>
+                    {fieldErrors.map((err) => (
+                      <Text key={err.validatorId} style={$validatorErrorText}>
+                        {err.message}
+                      </Text>
+                    ))}
                   </View>
                 )}
-
-                {type === "date" && field.column !== "date_of_birth" && (
-                  <View>
-                    <View style={$rtl}>
-                      <Text text={label} preset="formLabel" withAsterisk={field.required} />
-                    </View>
-                    <View>
-                      <DatePickerButton
-                        locale="en-US"
-                        modal
-                        testID={`patient_form_input__${field.type}__${field.column}`}
-                        theme="light"
-                        maximumDate={new Date()}
-                        title={label}
-                        date={parseYYYYMMDD(value, new Date())}
-                        onDateChange={(d) =>
-                          d &&
-                          parseYYYYMMDD(d.toDateString(), undefined) &&
-                          userUpdateField(field.id, format(d, "yyyy-MM-dd"))
-                        }
-                      />
-                    </View>
-                  </View>
-                )}
-
-                {type === "select" && (
-                  <View>
-                    <View style={$rtl}>
-                      <Text text={label} preset="formLabel" withAsterisk={field.required} />
-                    </View>
-                    <View gap={6} pt={6}>
-                      {field.options.map((fieldOption) => (
-                        <Radio
-                          key={fieldOption.en}
-                          label={upperFirst(getTranslation(fieldOption, language))}
-                          value={value === getTranslation(fieldOption, language)}
-                          onValueChange={(value) => {
-                            if (value) {
-                              userUpdateField(field.id, getTranslation(fieldOption, language))
-                            }
-                          }}
-                        />
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                {type === "checkbox" && (
-                  <View>
-                    <View style={$rtl}>
-                      <Text text={label} preset="formLabel" withAsterisk={field.required} />
-                    </View>
-                    <View gap={6} pt={6}>
-                      {field.options.map((fieldOption) => {
-                        const optionLabel = getTranslation(fieldOption, language)
-                        const selected = splitCheckboxValues(typeof value === "string" ? value : "")
-                        return (
-                          <Checkbox
-                            key={fieldOption.en}
-                            label={upperFirst(optionLabel)}
-                            value={selected.includes(optionLabel)}
-                            onValueChange={() => {
-                              userUpdateField(
-                                field.id,
-                                joinCheckboxValues(toggleStringInArray(optionLabel, selected)),
-                              )
-                            }}
-                          />
-                        )
-                      })}
-                    </View>
-                  </View>
-                )}
-                {/* Gated on user interaction so an untouched field whose
-                    rule fails against undefined doesn't flash red on first
-                    render. Submit consolidation still surfaces everything. */}
-                {interactedFieldIds.has(field.id) &&
-                  fieldErrors &&
-                  fieldErrors.length > 0 && (
-                    <View pt={4}>
-                      {fieldErrors.map((err) => (
-                        <Text key={err.validatorId} style={$validatorErrorText}>
-                          {err.message}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
               </View>
             )
-          })}
+          }
+
+          return (
+            <View key={field.id}>
+              {(type === "text" || type === "number") && field.column !== "primary_clinic_id" && (
+                <TextField
+                  keyboardType={type === "number" ? "number-pad" : "default"}
+                  value={String(value)}
+                  onChangeText={(t) => userUpdateField(field.id, type === "number" ? Number(t) : t)}
+                  label={label}
+                  required={field.required}
+                  testID={`patient_form_input__${field.type}__${field.column}`}
+                  inputWrapperStyle={
+                    uniqueViolations[field.id]
+                      ? {
+                          borderColor: colors.palette.angry500,
+                        }
+                      : {}
+                  }
+                />
+              )}
+              <If condition={!!uniqueViolations[field.id]}>
+                <Text tx={"newPatient:uniqueFieldTaken"} style={$validatorErrorText} />
+              </If>
+
+              <If condition={field.column === "primary_clinic_id"}>
+                <View>
+                  <Text preset="formLabel" text={label} withAsterisk={field.required} />
+                  <DropDownPicker
+                    open={openDropdown === field.column}
+                    setOpen={(open) => {
+                      if (open as unknown as boolean) setOpenDropdown(field.column as any)
+                      else setOpenDropdown(null)
+                    }}
+                    testID={`patient_form_input__${field.type}__${field.column}`}
+                    modalTitle="Primary Clinic"
+                    rtl={isRTL}
+                    style={$dropDownPickerStyle}
+                    zIndex={990000}
+                    zIndexInverse={990000}
+                    listMode="MODAL"
+                    modalContentContainerStyle={[
+                      $modalContentContainerStyle,
+                      { paddingTop: safeAreaPaddingTop, marginBottom: safeAreaPaddingBottom },
+                    ]}
+                    items={clinicOptionsList}
+                    value={value}
+                    setValue={(cb) => {
+                      const data = cb(value)
+                      userUpdateField(field.id, data)
+                    }}
+                  />
+                </View>
+              </If>
+
+              {type === "date" && field.column === "date_of_birth" && (
+                <View>
+                  <DateOfBirthInput
+                    label={label}
+                    required={field.required}
+                    testId={`patient_form_input__${field.type}__${field.column}`}
+                    date={parseYYYYMMDD(value, new Date())}
+                    onChangeDate={(d) => {
+                      if (d && parseYYYYMMDD(d.toDateString(), undefined)) {
+                        userUpdateField(field.id, format(d, "yyyy-MM-dd"))
+                      }
+                    }}
+                    ageEntryProps={{ day: 1, month: 0 }}
+                  />
+                </View>
+              )}
+
+              {type === "date" && field.column !== "date_of_birth" && (
+                <View>
+                  <View style={$rtl}>
+                    <Text text={label} preset="formLabel" withAsterisk={field.required} />
+                  </View>
+                  <View>
+                    <DatePickerButton
+                      locale="en-US"
+                      modal
+                      testID={`patient_form_input__${field.type}__${field.column}`}
+                      theme="light"
+                      maximumDate={new Date()}
+                      title={label}
+                      date={parseYYYYMMDD(value, new Date())}
+                      onDateChange={(d) =>
+                        d &&
+                        parseYYYYMMDD(d.toDateString(), undefined) &&
+                        userUpdateField(field.id, format(d, "yyyy-MM-dd"))
+                      }
+                    />
+                  </View>
+                </View>
+              )}
+
+              {type === "select" && (
+                <View>
+                  <View style={$rtl}>
+                    <Text text={label} preset="formLabel" withAsterisk={field.required} />
+                  </View>
+                  <View gap={6} pt={6}>
+                    {field.options.map((fieldOption) => (
+                      <Radio
+                        key={fieldOption.en}
+                        label={upperFirst(getTranslation(fieldOption, language))}
+                        value={value === getTranslation(fieldOption, language)}
+                        onValueChange={(value) => {
+                          if (value) {
+                            userUpdateField(field.id, getTranslation(fieldOption, language))
+                          }
+                        }}
+                      />
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {type === "checkbox" && (
+                <View>
+                  <View style={$rtl}>
+                    <Text text={label} preset="formLabel" withAsterisk={field.required} />
+                  </View>
+                  <View gap={6} pt={6}>
+                    {field.options.map((fieldOption) => {
+                      const optionLabel = getTranslation(fieldOption, language)
+                      const selected = splitCheckboxValues(typeof value === "string" ? value : "")
+                      return (
+                        <Checkbox
+                          key={fieldOption.en}
+                          label={upperFirst(optionLabel)}
+                          value={selected.includes(optionLabel)}
+                          onValueChange={() => {
+                            userUpdateField(
+                              field.id,
+                              joinCheckboxValues(toggleStringInArray(optionLabel, selected)),
+                            )
+                          }}
+                        />
+                      )
+                    })}
+                  </View>
+                </View>
+              )}
+              {/* Gated on user interaction so an untouched field whose
+                    rule fails against undefined doesn't flash red on first
+                    render. Submit consolidation still surfaces everything. */}
+              {interactedFieldIds.has(field.id) && fieldErrors && fieldErrors.length > 0 && (
+                <View pt={4}>
+                  {fieldErrors.map((err) => (
+                    <Text key={err.validatorId} style={$validatorErrorText}>
+                      {err.message}
+                    </Text>
+                  ))}
+                </View>
+              )}
+            </View>
+          )
+        })}
 
         <If condition={similarPatients.length > 0 && typeof editPatientId !== "string"}>
           <View gap={8} style={$similarPatientsContainer}>

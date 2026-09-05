@@ -206,7 +206,8 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
   const updateEventMutation = useUpdateEvent()
   const { can, checkEditEvent } = usePermissionGuard()
 
-  const { paddingTop: safeAreaPaddingTop } = useSafeAreaInsetsStyle(["top"])
+  const { paddingTop: safeAreaPaddingTop, paddingBottom: safeAreaPaddingBottom } =
+    useSafeAreaInsetsStyle(["top", "bottom"])
 
   // get the provider/user who created the form or the event
   const eventProvider = useEventProvider(eventId)
@@ -1050,9 +1051,7 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
             // about a blocking validator is to see the message). The
             // submit-time consolidated toast surfaces everything either way.
             const fieldName = sanitizeFieldName(field.name)
-            const fieldInteracted = Boolean(
-              touchedFields[fieldName] || dirtyFields[fieldName],
-            )
+            const fieldInteracted = Boolean(touchedFields[fieldName] || dirtyFields[fieldName])
 
             // A field with a successful computedValue rule renders as a
             // read-only labelled display of the computed value (skipping the
@@ -1063,19 +1062,12 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
               const computed = getComputed(ruleEvaluation, field.id)
               return (
                 <View key={field.id}>
-                  <Text
-                    text={resolved?.fieldNames[field.id] ?? field.name}
-                    preset="formLabel"
-                  />
+                  <Text text={resolved?.fieldNames[field.id] ?? field.name} preset="formLabel" />
                   <Text text={formatComputedValue(computed)} />
                   {fieldErrors && fieldErrors.length > 0 ? (
                     <View pt={4}>
                       {fieldErrors.map((err) => (
-                        <Text
-                          key={err.validatorId}
-                          text={err.message}
-                          color={colors.error}
-                        />
+                        <Text key={err.validatorId} text={err.message} color={colors.error} />
                       ))}
                     </View>
                   ) : null}
@@ -1190,7 +1182,10 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                             multiple={isMulti}
                             modalContentContainerStyle={[
                               $modalContentContainerStyle,
-                              { paddingTop: safeAreaPaddingTop },
+                              {
+                                paddingTop: safeAreaPaddingTop,
+                                marginBottom: safeAreaPaddingBottom,
+                              },
                             ]}
                             mode="BADGE"
                             searchPlaceholder={
@@ -1295,10 +1290,7 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                                 gap={8}
                                 style={$inputWrapperStyle as unknown as ViewStyle}
                               >
-                                <ActivityIndicator
-                                  size="small"
-                                  color={colors.palette.primary400}
-                                />
+                                <ActivityIndicator size="small" color={colors.palette.primary400} />
                                 <Text text="Uploading..." />
                               </View>
                             ) : (
@@ -1319,9 +1311,7 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
                                 />
                               </View>
                             )}
-                            {upload?.error && (
-                              <Text text={upload.error} color={colors.error} />
-                            )}
+                            {upload?.error && <Text text={upload.error} color={colors.error} />}
                           </View>
                         </View>
                       )
@@ -1491,7 +1481,9 @@ export const EventFormScreen: FC<EventFormScreenProps> = ({ navigation, route })
 
       <CameraCaptureModal
         visible={captureField !== null}
-        label={captureField ? (resolved?.fieldNames[captureField.id] ?? captureField.name) : undefined}
+        label={
+          captureField ? (resolved?.fieldNames[captureField.id] ?? captureField.name) : undefined
+        }
         quality={CAMERA_CAPTURE_QUALITY}
         onCapture={handlePhotoCaptured}
         onClose={() => setCaptureFieldId(null)}

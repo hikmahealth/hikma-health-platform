@@ -166,7 +166,8 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
     const [openDropdown, setOpenDropdown] = useState<
       "clinic" | "status" | "department" | "country" | "city" | null
     >(null)
-    const { paddingTop: safeAreaPaddingTop } = useSafeAreaInsetsStyle(["top"])
+    const { paddingTop: safeAreaPaddingTop, paddingBottom: safeAreaPaddingBottom } =
+      useSafeAreaInsetsStyle(["top", "bottom"])
 
     const countryOptions = useMemo(() => Clinic.countryOptions(clinicsList), [clinicsList])
     const cityOptions = useMemo(
@@ -239,7 +240,7 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
               style={$dropDownPickerStyle}
               modalContentContainerStyle={[
                 $modalContentContainerStyle,
-                { paddingTop: safeAreaPaddingTop },
+                { paddingTop: safeAreaPaddingTop, marginBottom: safeAreaPaddingBottom },
               ]}
               zIndex={990000}
               zIndexInverse={990000}
@@ -271,7 +272,7 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
               style={$dropDownPickerStyle}
               modalContentContainerStyle={[
                 $modalContentContainerStyle,
-                { paddingTop: safeAreaPaddingTop },
+                { paddingTop: safeAreaPaddingTop, marginBottom: safeAreaPaddingBottom },
               ]}
               zIndex={990000}
               zIndexInverse={990000}
@@ -301,7 +302,7 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
               style={$dropDownPickerStyle}
               modalContentContainerStyle={[
                 $modalContentContainerStyle,
-                { paddingTop: safeAreaPaddingTop },
+                { paddingTop: safeAreaPaddingTop, marginBottom: safeAreaPaddingBottom },
               ]}
               zIndex={990000}
               zIndexInverse={990000}
@@ -337,7 +338,7 @@ export const AppointmentListHeader: FC<AppointmentListHeaderProps> = enhanceHead
               listMode="MODAL"
               modalContentContainerStyle={[
                 $modalContentContainerStyle,
-                { paddingTop: safeAreaPaddingTop },
+                { paddingTop: safeAreaPaddingTop, marginBottom: safeAreaPaddingBottom },
               ]}
               items={departmentList.map((department) => ({
                 label: department.name,
@@ -661,6 +662,7 @@ const $summaryDot: ViewStyle = {
 
 const $modalContentContainerStyle: ViewStyle = {
   marginTop: 4,
+  // marginBottom: 40,
   borderWidth: 1,
   borderRadius: 4,
   backgroundColor: colors.palette.neutral200,

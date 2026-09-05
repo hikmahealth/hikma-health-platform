@@ -4,6 +4,7 @@ import { useDebounceValue } from "usehooks-ts"
 
 import database from "@/db"
 import PrescriptionModel from "@/db/model/Prescription"
+import { observerWithFallback } from "@/db/observerWithFallback"
 import { useFollowCurrentDay } from "@/hooks/useFollowCurrentDay"
 import Clinic from "@/models/Clinic"
 import Prescription from "@/models/Prescription"
@@ -112,12 +113,23 @@ export function useDBPrescriptionsFilter(
       .get<PrescriptionModel>("prescriptions")
       .query(...conditions)
       .observeWithColumns(["status", "priority"])
-      .subscribe((prescriptions) => {
-        const results = prescriptions.map(Prescription.DB.rawToT)
-        setDayGroups(Prescription.groupByPatient(results))
-        setIsTruncated(results.length >= DAY_ROW_CEILING)
-        setLoading(false)
-      })
+      .subscribe(
+        observerWithFallback(
+          (prescriptions: PrescriptionModel[]) => {
+            const results = prescriptions.map(Prescription.DB.rawToT)
+            setDayGroups(Prescription.groupByPatient(results))
+            setIsTruncated(results.length >= DAY_ROW_CEILING)
+            setLoading(false)
+          },
+          (error) => {
+            // `isTruncated` clears too: a ceiling warning over no rows is a false claim.
+            Logger.error(error)
+            setDayGroups([])
+            setIsTruncated(false)
+            setLoading(false)
+          },
+        ),
+      )
 
     return () => {
       sub.unsubscribe()

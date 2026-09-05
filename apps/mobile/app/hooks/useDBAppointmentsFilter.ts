@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react"
+import { Logger } from "@hikmahealth/js-utils"
 import { isValid, startOfDay } from "date-fns"
 import { useDebounceValue } from "usehooks-ts"
 
 import database from "@/db"
+import { observerWithFallback } from "@/db/observerWithFallback"
 import { useFollowCurrentDay } from "@/hooks/useFollowCurrentDay"
 import Appointment from "@/models/Appointment"
 import Clinic from "@/models/Clinic"
@@ -106,13 +108,22 @@ export function useDBAppointmentsFilter(
       .get<Appointment.DBAppointment>("appointments")
       .query(...conditions)
       .observe()
-      .subscribe((appointments) => {
-        const results = appointments
-          .map(Appointment.DB.rawToT)
-          .filter((appointment) => inSelectedDepartments(appointment, departmentIds))
-        setAppointmentResults(results)
-        setLoading(false)
-      })
+      .subscribe(
+        observerWithFallback(
+          (appointments: Appointment.DBAppointment[]) => {
+            const results = appointments
+              .map(Appointment.DB.rawToT)
+              .filter((appointment) => inSelectedDepartments(appointment, departmentIds))
+            setAppointmentResults(results)
+            setLoading(false)
+          },
+          (error) => {
+            Logger.error(error)
+            setAppointmentResults([])
+            setLoading(false)
+          },
+        ),
+      )
 
     return () => {
       sub.unsubscribe()
@@ -146,13 +157,22 @@ export function useDBAppointmentsFilter(
     const sub = database
       .get<Appointment.DBAppointment>("appointments")
       .query(...conditions)
-      .observe()
-      .subscribe((appointments) => {
-        const statuses = appointments
-          .filter((appointment) => inSelectedDepartments(appointment, departmentIds))
-          .map((appointment) => appointment.status)
-        setSummary(Appointment.summarizeStatuses(statuses))
-      })
+      .observeWithColumns(["status", "updated_at", "created_at"])
+      .subscribe(
+        observerWithFallback(
+          (appointments: Appointment.DBAppointment[]) => {
+            const statuses = appointments
+              .filter((appointment) => inSelectedDepartments(appointment, departmentIds))
+              .map((appointment) => appointment.status)
+            setSummary(Appointment.summarizeStatuses(statuses))
+          },
+          (error) => {
+            // Zeroed rather than `null`: `null` is the "still counting" sentinel.
+            Logger.error(error)
+            setSummary(Appointment.summarizeStatuses([]))
+          },
+        ),
+      )
 
     return () => {
       sub.unsubscribe()

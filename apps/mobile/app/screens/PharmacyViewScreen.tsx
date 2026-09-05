@@ -190,7 +190,8 @@ const PrescriptionsListHeader: FC<PrescriptionListHeaderProps> = ({
   onFiltersChange,
 }: PrescriptionListHeaderProps) => {
   const { themed } = useAppTheme()
-  const { paddingTop: safeAreaPaddingTop } = useSafeAreaInsetsStyle(["top"])
+  const { paddingTop: safeAreaPaddingTop, paddingBottom: safeAreaPaddingBottom } =
+    useSafeAreaInsetsStyle(["top", "bottom"])
   const [openDropdown, setOpenDropdown] = useState<
     "clinic" | "status" | "department" | "country" | "city" | null
   >(null)
@@ -267,7 +268,7 @@ const PrescriptionsListHeader: FC<PrescriptionListHeaderProps> = ({
             style={$dropDownPickerStyle}
             modalContentContainerStyle={[
               $modalContentContainerStyle,
-              { paddingTop: safeAreaPaddingTop },
+              { paddingTop: safeAreaPaddingTop, marginBottom: safeAreaPaddingBottom },
             ]}
             zIndex={990000}
             zIndexInverse={990000}
@@ -299,7 +300,7 @@ const PrescriptionsListHeader: FC<PrescriptionListHeaderProps> = ({
             style={$dropDownPickerStyle}
             modalContentContainerStyle={[
               $modalContentContainerStyle,
-              { paddingTop: safeAreaPaddingTop },
+              { paddingTop: safeAreaPaddingTop, marginBottom: safeAreaPaddingBottom },
             ]}
             zIndex={990000}
             zIndexInverse={990000}
@@ -330,7 +331,7 @@ const PrescriptionsListHeader: FC<PrescriptionListHeaderProps> = ({
             zIndex={990000}
             modalContentContainerStyle={[
               $modalContentContainerStyle,
-              { paddingTop: safeAreaPaddingTop },
+              { paddingTop: safeAreaPaddingTop, marginBottom: safeAreaPaddingBottom },
             ]}
             zIndexInverse={990000}
             listMode="MODAL"
