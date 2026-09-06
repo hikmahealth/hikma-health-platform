@@ -159,4 +159,4 @@ packages/**/.bsb.lock
 
 # docker related files
 .docker
-scripts/load-test.js
+./scripts/load-test.js
