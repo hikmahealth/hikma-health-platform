@@ -19,6 +19,7 @@
     "resolveJsonModule": true,
     "paths": {
       "@/*": ["./app/*"],
+      "@/next/*": ["./_next/app/*"],
       "@assets/*": ["./assets/*"],
     },
     "typeRoots": ["./node_modules/@types", "./types"],

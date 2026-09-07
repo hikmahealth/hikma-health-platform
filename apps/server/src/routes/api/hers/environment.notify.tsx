@@ -1,6 +1,6 @@
+import { hersclient, serverUrl } from "@/clients/base";
 import db from "@/db";
 import { createFileRoute } from "@tanstack/react-router";
-import { hersclient, serverUrl } from "./hers.subscription";
 import { subDays } from "date-fns";
 import { uuidv7 } from "uuidv7";
 

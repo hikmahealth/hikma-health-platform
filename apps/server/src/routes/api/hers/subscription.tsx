@@ -1,6 +1,5 @@
+import { hersclient, serverUrl } from "@/clients/base";
 import db from "@/db";
-import { getHersClient } from "@/hers.node";
-import { JURL } from "@/hers.node/utils";
 import { createFileRoute } from "@tanstack/react-router";
 
 // TODO: replace this location with values that's replaced on the `clinic` record
@@ -8,15 +7,6 @@ import { createFileRoute } from "@tanstack/react-router";
 //
 // This should come from the database "clinic"
 const locationToListen = ["25.795592", "-80.196705"] as const;
-
-export const hersclient = getHersClient();
-
-if (!process.env.SERVER_URL) {
-  throw new Error("missing SERVER_URL from environment variables");
-}
-
-// NOTE(@ally): how is this loaded onto the server dynamically?
-export const serverUrl = new JURL(process.env.SERVER_URL);
 
 type DateString = string;
 

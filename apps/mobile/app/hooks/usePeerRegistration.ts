@@ -14,6 +14,7 @@ import Peer from "@/models/Peer"
 import type { HubSession } from "@/rpc/handshake"
 import { parseQRCode, isHubQR } from "@/rpc/qrParser"
 import { Logger } from "@hikmahealth/js-utils"
+import PeerState from "@/next/peers/state"
 
 // export type PeerConnectionType = "sync_hub" | "cloud"
 
@@ -53,11 +54,13 @@ export function usePeerRegistration() {
         }
         setHubSession(result.data)
         setConnectionType("sync_hub")
+
+        PeerState.trigger.setHub(result.data)
         return { ok: true, type: "sync_hub", hubSession: result.data }
       }
 
       // Cloud QR: plain URL
-      const url = qr ? qr.url : data
+      let url = qr ? qr.url : data
 
       // Validate the URL is reachable
       let canOpen = false
@@ -73,10 +76,14 @@ export function usePeerRegistration() {
       }
 
       // Register as a cloud peer (Peer table is the source of truth for URLs)
-      const peerId = await Peer.DB.upsertCloud(url)
+      await Peer.DB.upsertCloud(url)
       setConnectionType("cloud_server")
+      PeerState.trigger.setCloudUrl({ url })
 
       return { ok: true, type: "cloud_server", url }
+    } catch (err) {
+      PeerState.trigger.errored(err)
+      throw err
     } finally {
       setIsRegistering(false)
     }

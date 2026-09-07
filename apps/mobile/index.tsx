@@ -4,7 +4,9 @@ import { registerRootComponent } from "expo"
 import * as Sentry from "@sentry/react-native"
 import { LaunchArguments } from "react-native-launch-arguments"
 
-import { App } from "@/app"
+// import { App } from "@/app"
+
+import App from "@/_next_app"
 
 if (LaunchArguments.value().isE2E) {
   LogBox.ignoreAllLogs()

@@ -424,7 +424,6 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
               </View>
             )
           }
-
           return (
             <View key={field.id}>
               {(type === "text" || type === "number") && field.column !== "primary_clinic_id" && (
@@ -447,7 +446,6 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
               <If condition={!!uniqueViolations[field.id]}>
                 <Text tx={"newPatient:uniqueFieldTaken"} style={$validatorErrorText} />
               </If>
-
               <If condition={field.column === "primary_clinic_id"}>
                 <View>
                   <Text preset="formLabel" text={label} withAsterisk={field.required} />
@@ -466,7 +464,7 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                     listMode="MODAL"
                     modalContentContainerStyle={[
                       $modalContentContainerStyle,
-                      { paddingTop: safeAreaPaddingTop, marginBottom: safeAreaPaddingBottom },
+                      { paddingTop: safeAreaPaddingTop },
                     ]}
                     items={clinicOptionsList}
                     value={value}
@@ -477,7 +475,6 @@ export const PatientRecordEditorScreen: FC<PatientRecordEditorScreenProps> = ({
                   />
                 </View>
               </If>
-
               {type === "date" && field.column === "date_of_birth" && (
                 <View>
                   <DateOfBirthInput

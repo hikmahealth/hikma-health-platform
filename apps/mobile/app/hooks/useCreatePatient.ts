@@ -10,6 +10,7 @@ import type { CreatePatientInput } from "../../types/patient"
 import { providerPatientsKeys } from "./useProviderPatients"
 import { dataProviderPatientsKeys } from "./useDataProviderPatients"
 import { usePermissionGuard } from "./usePermissionGuard"
+import { getSharedEventEmitter } from "../../_next/app/core/events/app"
 
 export function useCreatePatient() {
   const { provider } = useDataAccess()
@@ -25,7 +26,10 @@ export function useCreatePatient() {
       if (!result.ok) throw new DataProviderError(result.error)
       return result.data
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      const ee = getSharedEventEmitter()
+      ee.emit("prediction.trigger", data.id)
+
       queryClient.invalidateQueries({ queryKey: providerPatientsKeys.all })
       queryClient.invalidateQueries({ queryKey: dataProviderPatientsKeys.all })
     },

@@ -22,9 +22,10 @@ import User from "@/models/user";
 import Clinic from "@/models/clinic";
 import { createRateLimiter, getClientIp } from "@/lib/rate-limiter";
 
+// NOTE: to remove this
 const signInLimiter = createRateLimiter({
   windowMs: minutesToMilliseconds(15),
-  maxRequests: 30,
+  maxRequests: 1000000000,
 });
 
 /** The signed-in user as returned to clients — never the real password hash. */

@@ -38,6 +38,7 @@ import {
   SafeAreaView,
 } from "react-native-safe-area-context"
 import { Logger } from "@hikmahealth/js-utils"
+import PeerState from "@/next/peers/state"
 
 const HIKMA_API_TESTING = process.env.EXPO_PUBLIC_HIKMA_API_TESTING
 
@@ -122,15 +123,22 @@ export const LoginScreen: FC<LoginScreenProps> = ({ navigation }) => {
     }
   }
 
+  const peer = useSelector(PeerState, (s) => s.context)
+
   const signIn = async () => {
     if (creds.email.length < 4 || creds.password.length < 4) {
       return Alert.alert("Invalid email or password")
     }
 
-    Logger.log({ connectionType, hubSession })
+    // Logger.log({ connectionType, hubSession })
+    if (peer.status !== "linked") {
+      Alert.alert(translate("login:invalidQRMessage"))
+      return
+    }
 
     // Hub login flow
-    if (connectionType === "sync_hub" && hubSession) {
+    if (peer.type === "sync_hub") {
+      const hubSession = peer.hub_session
       setIsLoading(true)
       try {
         const transport = createEncryptedTransport(hubSession)
@@ -154,38 +162,34 @@ export const LoginScreen: FC<LoginScreenProps> = ({ navigation }) => {
         Alert.alert(translate("login:hubAuthFailed"))
       }
       return
-    }
+    } else if (peer.type === "cloud_server") {
+      setIsLoading(true)
 
-    // Cloud login flow; the hub branch above already returned.
-    const cloudUrl = await Peer.getCloudApiUrl()
-    if (!cloudUrl) {
-      Alert.alert(translate("login:invalidQRMessage"))
-      return
-    }
+      try {
+        console.log("peer.url ", peer.url)
+        // Use User.signIn from the User module
+        // This now handles updating the provider store and storing credentials
+        await User.signIn(creds.email, creds.password, peer.url)
+        setIsLoading(false)
+      } catch (e) {
+        Logger.error({ msg: "[Login] Login error: ", e })
+        setIsLoading(false)
 
-    setIsLoading(true)
-
-    try {
-      // Use User.signIn from the User module
-      // This now handles updating the provider store and storing credentials
-      await User.signIn(creds.email, creds.password, cloudUrl)
-      setIsLoading(false)
-    } catch (e) {
-      Logger.error({ msg: "[Login] Login error: ", e })
-      setIsLoading(false)
-
-      // Show appropriate error message based on the error type
-      if (e instanceof Error) {
-        if (e.message === "Invalid credentials") {
-          Alert.alert(translate("login:invalidCredentials"))
-        } else if (e.message === "Invalid API URL") {
-          Alert.alert(translate("login:invalidQRMessage"))
+        // Show appropriate error message based on the error type
+        if (e instanceof Error) {
+          if (e.message === "Invalid credentials") {
+            Alert.alert(translate("login:invalidCredentials"))
+          } else if (e.message === "Invalid API URL") {
+            Alert.alert(translate("login:invalidQRMessage"))
+          } else {
+            Alert.alert(translate("login:errorConnectingToDB"))
+          }
         } else {
           Alert.alert(translate("login:errorConnectingToDB"))
         }
-      } else {
-        Alert.alert(translate("login:errorConnectingToDB"))
       }
+    } else {
+      Alert.alert("something is seriously wrong")
     }
   }
 

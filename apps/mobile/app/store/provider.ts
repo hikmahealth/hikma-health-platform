@@ -6,6 +6,7 @@ import { Option } from "effect"
 import User from "@/models/User"
 import UserClinicPermissions from "@/models/UserClinicPermissions"
 import { Logger } from "@hikmahealth/js-utils"
+import { UserStore } from "@/next/store-user"
 
 export const PROVIDER_STORAGE_KEY = "providerStore"
 
@@ -93,4 +94,20 @@ export const providerStore = createStore({
       }
     },
   },
+})
+
+// to keep the UserState and providerStore in sync
+providerStore.subscribe(({ context }) => {
+  if (context.id.trim()) {
+    // this should skip the `null` logic
+    UserStore.trigger.write({
+      id: context.id,
+      name: context.name,
+      email: context.email,
+      role: Option.getOrNull(context.role),
+      clinic_id: Option.getOrNull(context.clinic_id),
+      clinic_name: Option.getOrNull(context.clinic_name),
+      permissions: {}, // Record<string, boolean>
+    })
+  }
 })

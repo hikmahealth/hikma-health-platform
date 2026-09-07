@@ -9,6 +9,7 @@ export const Route = createFileRoute("/api/hers/output/prediction")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        console.log("RECEIVED NEW DATA");
         const input = (await request.json()) as {
           generated_at: DateString;
           metadata?: Record<string, string>;
@@ -52,6 +53,8 @@ export const Route = createFileRoute("/api/hers/output/prediction")({
         if (batch.length > 0) {
           await db.insertInto("patient_risk_profiles").values(batch).execute();
         }
+
+        console.log("done writing data! " + batch.length);
 
         return new Response(JSON.stringify({ success: true }), {
           headers: { "Content-Type": "application/json" },

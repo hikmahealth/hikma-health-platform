@@ -64,53 +64,11 @@ import { resolveActionOrder } from "@/utils/actionOrder"
 import { localeDate } from "@/utils/date"
 import { escapeHtml } from "@/utils/html"
 import { Logger } from "@hikmahealth/js-utils"
+import AppState from "@/next/core/store"
+import { Button } from "@/components/Button"
+import { HERSRiskProfile } from "../../_next/sections/hers"
 
 const { height } = Dimensions.get("window")
-
-type RiskPrediction = { type: string; score: string }
-
-function usePatientRiskPredictions(patientId: string) {
-  const [predictions, setPredictions] = useState<RiskPrediction[]>([])
-
-  useEffect(() => {
-    const sub = database
-      .get<PatientRiskProfile>("patient_risk_profiles")
-      .query(
-        Q.where("patient_id", patientId),
-        Q.where("kind", "risk_prediction"),
-        Q.where("is_deleted", false),
-      )
-      .observe()
-      .subscribe((records) => {
-        // Parse each record, keeping updatedAt for recency comparison
-        const parsed = records
-          .map((r) => {
-            try {
-              const value = JSON.parse(r.jsonValue ?? "") as RiskPrediction
-              return { value, updatedAt: r.updatedAt }
-            } catch {
-              return null
-            }
-          })
-          .filter((r): r is { value: RiskPrediction; updatedAt: Date } => r !== null)
-
-        // Group by type, keep only the most recent entry per type
-        const byType = new Map<string, { value: RiskPrediction; updatedAt: Date }>()
-        for (const item of parsed) {
-          const existing = byType.get(item.value.type)
-          if (!existing || item.updatedAt > existing.updatedAt) {
-            byType.set(item.value.type, item)
-          }
-        }
-
-        setPredictions([...byType.values()].map((item) => item.value))
-      })
-
-    return () => sub.unsubscribe()
-  }, [patientId])
-
-  return { predictions }
-}
 
 interface PatientViewScreenProps extends NativeStackScreenProps<
   PatientNavigatorParamList,
@@ -130,7 +88,6 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
   const isLoading = isOnline ? onlinePatientQuery.isLoading : isLoadingOffline
 
   const { hersEnabled } = useSelector(appStateStore, (store) => store.context)
-  const { predictions: riskPredictions } = usePatientRiskPredictions(patientId)
   const language = useSelector(languageStore, (store) => store.context.language)
   const { forms: eventForms, isLoading: isLoadingForms } = useEventForms(
     Option.fromNullable(language),
@@ -355,50 +312,7 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
         </View>
 
         <View px={16} py={20} gap={10} mb={18}>
-          <If condition={hersEnabled && riskPredictions.length > 0}>
-            {/*<If condition={riskPredictions.length > 0}>*/}
-            <View gap={6} mb={4}>
-              <Text preset="formLabel" text="Environmental Risk Profile" />
-              <View gap={6}>
-                {riskPredictions.map((prediction) => {
-                  const isHigh = prediction.score === "high"
-                  const isMedium = prediction.score === "medium" || prediction.score === "moderate"
-                  const scoreColor = isHigh ? colors.error : isMedium ? "#f59e0b" : "#16a34a"
-                  const bgColor = isHigh ? colors.errorBackground : isMedium ? "#fef3c7" : "#dcfce7"
-                  const Icon = prediction.type === "cvd" ? HeartPulse : Wind
-                  const typeLabel =
-                    prediction.type === "cvd" ? "Cardiovascular" : upperFirst(prediction.type)
-
-                  return (
-                    <View
-                      key={prediction.type}
-                      direction="row"
-                      alignItems="center"
-                      gap={8}
-                      style={{
-                        borderRadius: 8,
-                        borderColor: scoreColor,
-                        borderWidth: 1,
-                        backgroundColor: bgColor,
-                        padding: 8,
-                      }}
-                    >
-                      <Icon size={16} color={scoreColor} />
-                      <View flex={1}>
-                        <Text text={typeLabel} size="xs" />
-                        <Text
-                          text={`Risk: ${upperFirst(prediction.score)}`}
-                          size="xxs"
-                          style={{ color: scoreColor }}
-                        />
-                      </View>
-                    </View>
-                  )
-                })}
-              </View>
-            </View>
-          </If>
-
+          <HERSRiskProfile patientId={patientId} />
           <View gap={24}>
             <View gap={10} mb={4} style={$appointmentContainer}>
               <View direction="row" gap={10} alignItems="center">

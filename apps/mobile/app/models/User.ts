@@ -10,6 +10,8 @@ import UserModel from "@/db/model/User"
 import { Q } from "@nozbe/watermelondb"
 import { LoginResponse } from "@/rpc/types"
 import { Logger } from "@hikmahealth/js-utils"
+import PeerState from "@/next/peers/state"
+import { UserStore } from "@/next/store-user"
 
 /** How long a login request may go unanswered. Generous for a few hundred bytes. */
 const SIGN_IN_TIMEOUT_MS = 60_000
@@ -132,6 +134,8 @@ namespace User {
           clinic_name: Option.fromNullable(result.clinic_name),
         })
 
+        PeerState.trigger.setCloudUrl({ url: apiUrl })
+
         return {
           id: result.id,
           name: result.name,
@@ -204,6 +208,7 @@ namespace User {
     }
 
     providerStore.trigger.reset()
+    UserStore.trigger.reset()
   }
 
   export namespace DB {

@@ -137,6 +137,7 @@
     "@babel/runtime": "^7.29.7",
     "@expo/config-plugins": "~57.0.6",
     "@expo/config-types": "~57.0.2",
+    "@expo/ngrok": "^4.1.3",
     "@faker-js/faker": "^10.5.0",
     "@hikmahealth/eslint-config": "workspace:*",
     "@hikmahealth/typescript-config": "workspace:*",

@@ -2,7 +2,6 @@ import { FC, useEffect, useState } from "react"
 import { ActivityIndicator, Alert, Linking, Pressable, ViewStyle, Image } from "react-native"
 import * as Notifications from "expo-notifications"
 import { useNetInfo } from "@react-native-community/netinfo"
-import { useSelector } from "@xstate/react"
 import { Option } from "effect"
 import { ChevronRight, Menu } from "lucide-react-native"
 import Toast from "react-native-root-toast"
@@ -26,13 +25,40 @@ import { generateDummyPatients, insertBenchmarkingData } from "@/utils/benchmark
 import Peer from "@/models/Peer"
 import User from "@/models/User"
 import { Logger } from "@hikmahealth/js-utils"
+import AppState from "@/next/core/store"
+import { useSelector } from "@xstate/store-react"
 
 interface SettingsScreenProps extends AppStackScreenProps<"Settings"> {}
 
+function HersOption() {
+  const isHersEnabled = useSelector(AppState, (s) => s.context.is_hers_enabled)
+  return (
+    <View style={$withBottomBorder} py={12}>
+      <View direction="row" justifyContent="space-between" alignItems="center">
+        <Text text="Risk Prediction by HERS" size="sm" />
+        <Switch
+          value={isHersEnabled ?? undefined}
+          onValueChange={(value) => AppState.trigger.set({ is_hers_enabled: value })}
+          containerStyle={[
+            isHersEnabled
+              ? { borderWidth: 2, borderColor: colors.palette.accent500, borderRadius: 20 }
+              : {},
+          ]}
+        />
+      </View>
+      <Text
+        size="xxs"
+        color={colors.palette.neutral500}
+        text="Show environmental risk predictions on patient profiles"
+      />
+    </View>
+  )
+}
 export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
   const { appVersion } = useOTAVersion()
   const provider = useSelector(providerStore, (state) => state.context)
   const appState = useSelector(appStateStore, (state) => state.context)
+
   const { mode, serverConfig, isTransitioning } = useSelector(
     operationModeStore,
     (state) => state.context,
@@ -289,27 +315,7 @@ export const SettingsScreen: FC<SettingsScreenProps> = ({ navigation }) => {
           />
         </View>
 
-        <View style={$withBottomBorder} py={12}>
-          <View direction="row" justifyContent="space-between" alignItems="center">
-            <Text text="Risk Prediction by HERS" size="sm" />
-            <Switch
-              value={appState.hersEnabled}
-              onValueChange={(value) =>
-                appStateStore.trigger.SET_HERS_ENABLED({ hersEnabled: value })
-              }
-              containerStyle={[
-                appState.hersEnabled
-                  ? { borderWidth: 4, borderColor: colors.palette.accent500, borderRadius: 20 }
-                  : {},
-              ]}
-            />
-          </View>
-          <Text
-            size="xxs"
-            color={colors.palette.neutral500}
-            text="Show environmental risk predictions on patient profiles"
-          />
-        </View>
+        <HersOption />
 
         {/* Disable for now. TODO: turn back on with cloud side pin code setting */}
         <If condition={false}>

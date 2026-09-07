@@ -40,6 +40,7 @@ import {
 import { useAppConfigValue } from "@/hooks/useAppConfigValue"
 import AppConfig from "@/models/AppConfig"
 import { Logger } from "@hikmahealth/js-utils"
+import { useHERS } from "@/next/hers/provider"
 
 /**
  * This type allows TypeScript to know what routes are defined in this navigator
@@ -280,6 +281,8 @@ export const AppNavigator = (props: NavigationProps) => {
     },
     [onStateChange],
   )
+
+  useHERS()
 
   return (
     <NavigationContainer

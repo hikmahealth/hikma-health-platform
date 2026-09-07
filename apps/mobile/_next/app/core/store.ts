@@ -3,21 +3,22 @@ import { z } from "zod"
 import Language from "./language"
 import * as Sentry from "@sentry/react-native"
 import * as SecureStore from "expo-secure-store"
+
+import { storage } from "@/utils/storage"
 import { Logger } from "@hikmahealth/js-utils"
 import { LIGHT_THEME, schema as appThemeSchema } from "./theme"
 
 const appContextSchema = z.object({
-  ready: z.boolean().nullish().default(false),
   version: z.number().nullish().default(1),
   notifications_enabled: z.boolean().nullish().default(false),
-  // lock_when_idle: z.boolean().nullish().default(false),
+  lock_when_idle: z.boolean().nullish().default(false),
   last_active_time: z.date().or(z.string().transform(Date)).nullish(),
   is_hers_enabled: z.boolean().nullish().default(false),
 
   /**
    * Application theme schema
    */
-  theme: appThemeSchema,
+  theme: appThemeSchema.optional(),
 
   /**
    * Langauge related configuration
@@ -29,11 +30,10 @@ const appContextSchema = z.object({
 })
 
 /**
- * Combines the entire application state
+ * Combines the entire application state. Shouldn't be used to store sensitive information
  */
-const INITIAL_APP_STATE = appContextSchema.parse({
+export const INITIAL_APP_STATE = appContextSchema.parse({
   version: 1,
-  ready: false,
   theme: LIGHT_THEME,
   language: {
     locale: Language.LOCALE_MAP["en-US"],
@@ -46,7 +46,24 @@ const AppState = createStore({
     context: appContextSchema,
   },
   context: INITIAL_APP_STATE,
-  on: {},
+  on: {
+    writeFromString(_context, payload: string) {
+      AppState.trigger.write(JSON.parse(payload) as z.input<typeof appContextSchema>)
+    },
+    write(_context, payload: z.input<typeof appContextSchema>) {
+      return appContextSchema.parse(payload)
+    },
+
+    /**
+     * Can be used to partially to the context
+     * @param _context
+     * @param data
+     * @returns
+     */
+    set(_context, data: Partial<z.output<typeof appContextSchema>>) {
+      return { ..._context, ...data }
+    },
+  },
 })
 
 /**
@@ -60,6 +77,7 @@ export const APP_STATE_STORAGE_KEY = "appStateStore.v2"
  * storage
  */
 AppState.subscribe((snapshot) => {
+  // note might cause double writing, since
   if (snapshot.status === "done") {
     SecureStore.setItemAsync(APP_STATE_STORAGE_KEY, JSON.stringify(snapshot.context)).catch(
       (error) => {

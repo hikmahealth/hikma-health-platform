@@ -178,7 +178,7 @@ export function App() {
     !isNavigationStateRestored ||
     !isI18nInitialized ||
     (!areFontsLoaded && !fontLoadError)
-    // || !isProviderStoreInitiarlized
+    //|| !isProviderStoreInitiarlized
   ) {
     console.log("YOU SHOULDN'T SEE THIS")
     return null

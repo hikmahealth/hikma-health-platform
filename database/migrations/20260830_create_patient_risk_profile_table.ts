@@ -56,13 +56,13 @@ export async function up(db: Kysely<any>): Promise<void> {
     )
     .addColumn("deleted_at", "timestamptz")
     .addColumn("is_deleted", "boolean", (col) => col.notNull().defaultTo(false))
-    .addForeignKeyConstraint(
-      "patient_risk_attribute_fk",
-      ["patient_id"],
-      "patients",
-      ["id"],
-      (fk) => fk.onDelete("no action").onUpdate("cascade"),
-    )
+    // .addForeignKeyConstraint(
+    //   "patient_risk_attribute_fk",
+    //   ["patient_id"],
+    //   "patients",
+    //   ["id"],
+    //   (fk) => fk.onDelete("no action").onUpdate("cascade"),
+    // )
     .execute();
 
   await db.schema
