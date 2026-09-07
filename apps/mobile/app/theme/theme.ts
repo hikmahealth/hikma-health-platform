@@ -14,6 +14,7 @@ export const lightTheme: Theme = {
   timing,
   isDark: false,
 }
+
 export const darkTheme: Theme = {
   colors: colorsDark,
   spacing: spacingDark,
