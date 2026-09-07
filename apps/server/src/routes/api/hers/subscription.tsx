@@ -1,5 +1,4 @@
 import db from "@/db";
-import { env } from "@/env";
 import { getHersClient } from "@/hers.node";
 import { JURL } from "@/hers.node/utils";
 import { createFileRoute } from "@tanstack/react-router";
