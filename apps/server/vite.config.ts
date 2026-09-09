@@ -30,6 +30,7 @@ export default defineConfig({
   plugins: [
     devtools(),
     nitro({
+      minify: ["production", "preview"].includes(process.env.NODE_ENV ?? ""),
       builder: "rolldown",
       rolldownConfig: {
         // rollupConfig: {

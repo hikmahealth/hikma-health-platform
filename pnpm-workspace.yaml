@@ -21,6 +21,7 @@ allowBuilds:
   "@biomejs/biome": false
   lefthook: false
   '@parcel/watcher': true
+  libpq: true
 
 # CVE pins on transitive dependencies. pnpm 11 drops these silently if they
 # are left in package.json#pnpm, reverting the tree to vulnerable versions.

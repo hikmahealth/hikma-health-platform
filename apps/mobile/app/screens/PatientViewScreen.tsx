@@ -309,10 +309,13 @@ export const PatientViewScreen: FC<PatientViewScreenProps> = ({ route, navigatio
               <Text text="Download" />
             </Pressable>
           </View>
+
+          <View mt={10} px={16}>
+            <HERSRiskProfile patientId={patientId} />
+          </View>
         </View>
 
         <View px={16} py={20} gap={10} mb={18}>
-          <HERSRiskProfile patientId={patientId} />
           <View gap={24}>
             <View gap={10} mb={4} style={$appointmentContainer}>
               <View direction="row" gap={10} alignItems="center">
