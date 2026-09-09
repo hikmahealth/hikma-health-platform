@@ -1,5 +1,5 @@
 {
-  "name": "server",
+  "name": "hikma-health-server",
   "sources": {
     "dir": "src",
     "subdirs": true

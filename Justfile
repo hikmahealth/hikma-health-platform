@@ -1,5 +1,7 @@
 set export := true
 
+export NODE_OPTIONS := "--max-old-space-size=8192"
+
 # HikmaHealth monorepo task runner. Recipes are split by domain into
 # ./just/*.just and imported into one flat namespace, so a recipe in one file
 # may depend on a recipe in another.
