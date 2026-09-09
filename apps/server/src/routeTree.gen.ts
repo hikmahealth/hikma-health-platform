@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as EducationRouteImport } from './routes/education'
 import { Route as ApiLoginRouteImport } from './routes/api/login'
-import { Route as ApiStorageRouteImport } from './routes/api/storage'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppEntriesRouteImport } from './routes/app/entries'
 import { Route as EducationIndexRouteImport } from './routes/education/index'
@@ -86,11 +85,6 @@ const EducationRoute = EducationRouteImport.update({
 const ApiLoginRoute = ApiLoginRouteImport.update({
   id: '/api/login',
   path: '/api/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiStorageRoute = ApiStorageRouteImport.update({
-  id: '/api/storage',
-  path: '/api/storage',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppIndexRoute = AppIndexRouteImport.update({
@@ -379,7 +373,6 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRouteWithChildren
   '/education': typeof EducationRouteWithChildren
   '/api/login': typeof ApiLoginRoute
-  '/api/storage': typeof ApiStorageRoute
   '/app/entries': typeof AppEntriesRoute
   '/education/$id': typeof EducationIdRoute
   '/rpc/heartbeat': typeof RpcHeartbeatRoute
@@ -437,7 +430,6 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/login': typeof ApiLoginRoute
-  '/api/storage': typeof ApiStorageRoute
   '/app/entries': typeof AppEntriesRoute
   '/education/$id': typeof EducationIdRoute
   '/rpc/heartbeat': typeof RpcHeartbeatRoute
@@ -498,7 +490,6 @@ export interface FileRoutesById {
   '/app': typeof AppRouteWithChildren
   '/education': typeof EducationRouteWithChildren
   '/api/login': typeof ApiLoginRoute
-  '/api/storage': typeof ApiStorageRoute
   '/app/entries': typeof AppEntriesRoute
   '/education/$id': typeof EducationIdRoute
   '/rpc/heartbeat': typeof RpcHeartbeatRoute
@@ -560,7 +551,6 @@ export interface FileRouteTypes {
     | '/app'
     | '/education'
     | '/api/login'
-    | '/api/storage'
     | '/app/entries'
     | '/education/$id'
     | '/rpc/heartbeat'
@@ -618,7 +608,6 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/api/login'
-    | '/api/storage'
     | '/app/entries'
     | '/education/$id'
     | '/rpc/heartbeat'
@@ -678,7 +667,6 @@ export interface FileRouteTypes {
     | '/app'
     | '/education'
     | '/api/login'
-    | '/api/storage'
     | '/app/entries'
     | '/education/$id'
     | '/rpc/heartbeat'
@@ -739,7 +727,6 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   EducationRoute: typeof EducationRouteWithChildren
   ApiLoginRoute: typeof ApiLoginRoute
-  ApiStorageRoute: typeof ApiStorageRoute
   RpcHeartbeatRoute: typeof RpcHeartbeatRoute
   ApiAuthIsValidTokenRoute: typeof ApiAuthIsValidTokenRoute
   ApiAuthSignInRoute: typeof ApiAuthSignInRoute
@@ -787,13 +774,6 @@ declare module '@tanstack/react-router' {
       path: '/api/login'
       fullPath: '/api/login'
       preLoaderRoute: typeof ApiLoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/storage': {
-      id: '/api/storage'
-      path: '/api/storage'
-      fullPath: '/api/storage'
-      preLoaderRoute: typeof ApiStorageRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/': {
@@ -1269,7 +1249,6 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   EducationRoute: EducationRouteWithChildren,
   ApiLoginRoute: ApiLoginRoute,
-  ApiStorageRoute: ApiStorageRoute,
   RpcHeartbeatRoute: RpcHeartbeatRoute,
   ApiAuthIsValidTokenRoute: ApiAuthIsValidTokenRoute,
   ApiAuthSignInRoute: ApiAuthSignInRoute,
