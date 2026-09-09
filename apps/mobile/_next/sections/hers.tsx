@@ -2,6 +2,7 @@ import { Text } from "@/components/Text"
 import { View } from "@/components/View"
 import database from "@/db"
 import PatientRiskProfile from "@/db/model/PatientRiskProfile"
+import { useSync } from "@/hooks/useSync"
 import { getSharedEventEmitter, useSharedEventEmitter } from "@/next/core/events/app"
 import AppState from "@/next/core/store"
 import { colors } from "@/theme/colors"
@@ -10,7 +11,7 @@ import { useSelector } from "@xstate/store-react"
 import { upperFirst } from "es-toolkit/compat"
 import { useEventListener } from "expo"
 import { Asterisk, HeartPulse, Wind } from "lucide-react-native"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { Pressable } from "react-native"
 import Animated, {
   cancelAnimation,
@@ -94,6 +95,7 @@ export function HERSRiskProfile({ patientId }: { patientId: string }) {
   }>({ loading: false, data: [] })
 
   const ee = useSharedEventEmitter()
+  const { startSync } = useSync()
 
   // Attaches an event listener to listen to changes that involve
   // getting patient predictions
@@ -107,26 +109,31 @@ export function HERSRiskProfile({ patientId }: { patientId: string }) {
           d.queued = false
         })
       case "completed":
-        return set((d) => {
+        set((d) => {
           d.loading = false
           d.queued = false
           d.data = state.data
         })
+        startSync()
+        return
       case "error":
         return set((d) => {
           d.loading = false
           d.queued = false
-          d.data = []
           d.error = state.err as Error
+          // Preserve previous predictions on failure
         })
       case "queued":
         // TRIGGER SYNC here...
         // should enable syncing
-        return set((d) => {
+        set((d) => {
           d.loading = false
-          d.data = []
           d.queued = true
+          // Preserve existing predictions while waiting for the new run
         })
+
+        setTimeout(startSync, 500)
+        return
     }
   })
 
@@ -187,7 +194,7 @@ export function HERSRiskProfile({ patientId }: { patientId: string }) {
           flexDirection: "row",
           alignItems: "center",
           gap: 6,
-          alignSelf: "flex-start",
+          alignSelf: "center",
           paddingVertical: 6,
           paddingHorizontal: 12,
           borderRadius: 20,
@@ -228,8 +235,11 @@ export function HERSRiskProfile({ patientId }: { patientId: string }) {
           if (!ee.current) return
           ee.current.emit("prediction.trigger", patientId)
         }}
-        style={{ padding: 4 }}
+        style={{ flexDirection: "row", alignItems: "center", gap: 4, padding: 4 }}
       >
+        {predictions.loading && (
+          <Text size="xxs" color={colors.palette.primary400} text="re-computing" />
+        )}
         <SpinningAsterisk
           spinning={predictions.loading}
           size={18}

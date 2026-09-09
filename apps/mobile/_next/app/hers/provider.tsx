@@ -10,6 +10,7 @@ import { uuidv7 } from "uuidv7"
 import { subDays } from "date-fns"
 import { appStateStore } from "@/store/appState"
 import PeerState from "../peers/state"
+import { useSync } from "@/hooks/useSync"
 
 const hersURL = process.env.EXPO_PUBLIC_HERS_API_URL
 
@@ -87,6 +88,8 @@ function useHERSEventsSusbcriptions(ee: HikmaHealthEventEmitter | null) {
       q.set("data_bins", BIN_WINDOW_DAYS.toString())
 
       const url = `${hersURL}/v1/api/compute/risk/async?=${q.toString()}`
+      console.log("running the prediction here: ", hersURL)
+      console.log("full url: ", url)
 
       for (let p of patients) {
         ee.emit("prediction.status.patient", p.id, { status: "processing" })
