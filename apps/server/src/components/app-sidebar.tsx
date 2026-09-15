@@ -14,6 +14,7 @@ import {
   Box,
   LucideSchool2,
   ClipboardEditIcon,
+  HatGlassesIcon,
 } from "lucide-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -237,6 +238,19 @@ export const navData = {
         // },
       ],
     },
+    {
+      title: "Audit",
+      url: "#",
+      icon: HatGlassesIcon,
+      isActive: true,
+      items: [
+        {
+          title: "Sync Attempts",
+          url: "/app/audit/sync-attempts",
+        },
+      ],
+    },
+
     // {
     //   title: "Patient Entries",
     //   url: "/app/entries",

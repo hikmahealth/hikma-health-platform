@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createRateLimiter } from "@/lib/rate-limiter";
+import { claimedAccountKey, createRateLimiter } from "@/lib/rate-limiter";
 
 // `createRateLimiter` is already key-agnostic — every existing call site just
 // happens to pass an IP. These pin the property the backfill limiter depends
@@ -30,4 +30,42 @@ describe("rate limiter keyed on identity", () => {
     }
     expect(limiter.check("caller").allowed).toBe(false);
   });
+});
+
+describe("claimedAccountKey", () => {
+  const withAuth = (authorization?: string) =>
+    new Request("http://localhost/", {
+      headers: authorization ? { Authorization: authorization } : {},
+    });
+  const basic = (credentials: string) =>
+    withAuth(`Basic ${Buffer.from(credentials).toString("base64")}`);
+
+  it("keys a Basic request on its email, not its password", () => {
+    expect(claimedAccountKey(basic("a@x.org:one"))).toBe(
+      claimedAccountKey(basic("a@x.org:two")),
+    );
+  });
+
+  it("gives different emails different keys", () => {
+    expect(claimedAccountKey(basic("a@x.org:pw"))).not.toBe(
+      claimedAccountKey(basic("b@x.org:pw")),
+    );
+  });
+
+  it("never holds the email itself", () => {
+    expect(claimedAccountKey(basic("a@x.org:pw"))).not.toContain("a@x.org");
+  });
+
+  it("keys a Bearer request on a hash of its token", () => {
+    const key = claimedAccountKey(withAuth("Bearer secret-token"));
+    expect(key).toMatch(/^t:[0-9a-f]{32}$/);
+    expect(key).not.toContain("secret-token");
+  });
+
+  it.each([undefined, "", "Bearer ", "Basic ", "Digest abc"])(
+    "names no account for %j",
+    (authorization) => {
+      expect(claimedAccountKey(withAuth(authorization))).toBeNull();
+    },
+  );
 });

@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { persistClientChanges, recordManualSyncAudit } = vi.hoisted(() => ({
+const { persistClientChanges, recordSyncAudit } = vi.hoisted(() => ({
   persistClientChanges: vi.fn(),
-  recordManualSyncAudit: vi.fn(async (_args: any) => undefined),
+  recordSyncAudit: vi.fn(async (_args: any) => undefined),
 }));
 
 vi.mock("@/models/sync", () => ({ default: { persistClientChanges } }));
-vi.mock("@/models/sync-audit", () => ({ recordManualSyncAudit }));
+vi.mock("@/models/sync-audit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/models/sync-audit")>()),
+  recordSyncAudit,
+}));
 vi.mock("@/models/user", () => ({
   default: {
     API: { getById: async () => ({ id: "u1", clinic_id: null }) },
@@ -35,14 +38,14 @@ const call = createCallerFactory(syncCommandRouter);
 const ctx = { authHeader: "Bearer test-token" } as any;
 
 const auditCalls = (outcome: string) =>
-  recordManualSyncAudit.mock.calls
+  recordSyncAudit.mock.calls
     .map(([args]) => args)
     .filter((args: any) => args.outcome === outcome);
 
 beforeEach(() => {
   persistClientChanges.mockReset();
-  recordManualSyncAudit.mockReset();
-  recordManualSyncAudit.mockResolvedValue(undefined);
+  recordSyncAudit.mockReset();
+  recordSyncAudit.mockResolvedValue(undefined);
 });
 
 describe("sync.backfillPush", () => {
@@ -117,7 +120,7 @@ describe("sync.backfillPush audit trail", () => {
       peer_type: "android",
     });
 
-    expect(recordManualSyncAudit).toHaveBeenCalledTimes(1);
+    expect(recordSyncAudit).toHaveBeenCalledTimes(1);
     const [completed] = auditCalls("completed");
     expect(completed.direction).toBe("push");
     expect(completed.peerType).toBe("android");
@@ -136,5 +139,49 @@ describe("sync.backfillPush audit trail", () => {
     const [failed] = auditCalls("failed");
     expect(failed).toBeDefined();
     expect(failed.error).toContain("deadlock detected");
+  });
+});
+
+describe("sync.push audit trail", () => {
+  const pushAudits = () =>
+    recordSyncAudit.mock.calls
+      .map(([args]) => args)
+      .filter((args: any) => args.feature === "sync");
+
+  it("records one completed row with what was accepted and what was not", async () => {
+    persistClientChanges.mockResolvedValue({
+      accepted: 2,
+      rejected: { patients: ["p1"] },
+      byTable: { patients: { accepted: 2, rejected: 1 } },
+    });
+
+    await call(ctx).push({ last_pulled_at: 7, changes: {} });
+
+    const audits = pushAudits();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      userId: "u1",
+      direction: "push",
+      since: 7,
+      counts: { patients: 2 },
+      byTable: { patients: { accepted: 2, rejected: 1 } },
+      outcome: "completed",
+    });
+    expect(audits[0].startedAt).toBeTypeOf("number");
+  });
+
+  it("records the failure, with its reason, when the push throws", async () => {
+    persistClientChanges.mockRejectedValue(new Error("constraint violation"));
+
+    await expect(
+      call(ctx).push({ last_pulled_at: 0, changes: {} }),
+    ).rejects.toThrow();
+
+    const audits = pushAudits();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      outcome: "failed",
+      error: "constraint violation",
+    });
   });
 });

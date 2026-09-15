@@ -1,6 +1,6 @@
 {
   "name": "hikma-health-mobile",
-  "version": "1.7.5",
+  "version": "1.7.6",
   "private": true,
   "main": "index.tsx",
   "scripts": {

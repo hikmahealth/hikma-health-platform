@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Logger } from "@hikmahealth/js-utils";
 
 type RateLimiterConfig = {
@@ -72,6 +73,30 @@ export const createRateLimiter = (config: RateLimiterConfig) => {
 export const getClientIp = (request: Request): string => {
   const forwarded = request.headers.get("x-forwarded-for");
   return forwarded ? forwarded.split(",")[0].trim() : "unknown";
+};
+
+const hashKey = (value: string) =>
+  createHash("sha256").update(value).digest("hex").slice(0, 32);
+
+/** Rate-limit key for an email, hashed so it never sits in a limiter's map. */
+export const emailAccountKey = (email: string): string => `u:${hashKey(email)}`;
+
+/**
+ * Hashed rate-limit key for the account in the Authorization header, or null
+ * when there is none. Unverified, so pair it with a per-IP backstop.
+ */
+export const claimedAccountKey = (request: Request): string | null => {
+  const authorization = request.headers.get("Authorization") ?? "";
+  const [scheme, credential = ""] = authorization.split(" ");
+
+  if (scheme === "Basic") {
+    const email = Buffer.from(credential, "base64").toString().split(":")[0];
+    return email ? emailAccountKey(email) : null;
+  }
+  if (scheme === "Bearer" && credential.trim().length > 0) {
+    return `t:${hashKey(credential.trim())}`;
+  }
+  return null;
 };
 
 /** Build a 429 Too Many Requests response. */

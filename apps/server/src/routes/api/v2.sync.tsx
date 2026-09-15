@@ -5,9 +5,11 @@ import Sync from "@/models/sync";
 import { match, P } from "ts-pattern";
 import Device from "@/models/device";
 import {
+  claimedAccountKey,
   createRateLimiter,
   getClientIp,
   tooManyRequestsResponse,
+  type RateLimitResult,
 } from "@/lib/rate-limiter";
 import type { RequestCaller } from "@/types";
 import Clinic from "@/models/clinic";
@@ -15,26 +17,52 @@ import { Option } from "@/lib/option";
 import { Result } from "@/lib/result";
 import { minutesToMilliseconds } from "date-fns";
 import { Logger } from "@hikmahealth/js-utils";
+import {
+  acceptedCounts,
+  countChanges,
+  recordSyncAudit,
+} from "@/models/sync-audit";
 
-const syncLimiter = createRateLimiter({
+/** Per account per IP, so devices behind one router don't share a budget. */
+const perAccountLimiter = createRateLimiter({
   windowMs: minutesToMilliseconds(1),
   maxRequests: 120,
 });
+
+/** Per-IP backstop: claimed accounts are unverified and could be rotated. */
+const perIpLimiter = createRateLimiter({
+  windowMs: minutesToMilliseconds(1),
+  maxRequests: 1_200,
+});
+
+/** Backstop first, so a refused request never spends an account's budget. */
+const checkSyncLimit = (request: Request, ip: string): RateLimitResult => {
+  const byIp = perIpLimiter.check(`ip:${ip}`);
+  if (!byIp.allowed) return byIp;
+  return perAccountLimiter.check(
+    `${ip}|${claimedAccountKey(request) ?? "anonymous"}`,
+  );
+};
 
 export const Route = createFileRoute("/api/v2/sync")({
   server: {
     handlers: {
       GET: async ({ request }) => {
         const ip = getClientIp(request);
-        const limit = syncLimiter.check(ip);
+        const limit = checkSyncLimit(request, ip);
         if (!limit.allowed) {
           Logger.Production.error("[HHE001] Too many sync requests");
           return tooManyRequestsResponse(limit.retryAfterMs);
         }
 
+        const startedAt = Date.now();
+        let caller: RequestCaller | null = null;
+        let last_synced_at = 0;
+        let peerTypeForAudit = "unknown";
+
         try {
           const url = new URL(request.url);
-          const last_synced_at = Number(
+          last_synced_at = Number(
             url.searchParams.get("last_pulled_at") ||
               url.searchParams.get("lastPulledAt") ||
               0,
@@ -44,20 +72,34 @@ export const Route = createFileRoute("/api/v2/sync")({
           const peerType: Device.DeviceTypeT =
             (url.searchParams.get("peerType") as Device.DeviceTypeT) ||
             "unknown"; // Get the peer type or else return "unknown". Unknown is treated as a mobile to be a safe fallback.
+          peerTypeForAudit = peerType;
 
           Logger.Production.info("Sync Attempt started");
           const authenticatedCaller = await authenticateRequest(
             request,
             peerType,
           );
-          return match(authenticatedCaller)
-            .with({ ok: false }, () => {
+          return await match(authenticatedCaller)
+            .with({ ok: false }, async () => {
+              await recordSyncAudit({
+                feature: "sync",
+                userId: "unauthenticated",
+                direction: "pull",
+                peerType,
+                since: last_synced_at,
+                startedAt,
+                counts: {},
+                outcome: "failed",
+                error: "Unauthorized",
+                ipAddress: ip,
+              });
               return new Response(JSON.stringify({ error: "Unauthorized" }), {
                 headers: { "Content-Type": "application/json" },
                 status: 401,
               });
             })
-            .with({ ok: true }, async ({ data: caller }) => {
+            .with({ ok: true }, async ({ data }) => {
+              caller = data;
               // Stamped before the queries run, so the client's next sync covers
               // anything written while they execute.
               const syncTimestamp = Date.now();
@@ -80,23 +122,47 @@ export const Route = createFileRoute("/api/v2/sync")({
                 dataPulled: changeSetSize,
               });
 
-              return new Response(
-                JSON.stringify({
-                  success: true,
-                  changes: dbChangeSet,
-                  timestamp: syncTimestamp,
-                }),
-                {
-                  headers: { "Content-Type": "application/json" },
-                  status: 200,
-                },
-              );
+              const responseBody = JSON.stringify({
+                success: true,
+                changes: dbChangeSet,
+                timestamp: syncTimestamp,
+              });
+
+              await recordSyncAudit({
+                feature: "sync",
+                userId: auditUserId(caller),
+                direction: "pull",
+                peerType,
+                since: last_synced_at,
+                snapshotTs: syncTimestamp,
+                startedAt,
+                counts: countChanges(dbChangeSet),
+                outcome: "completed",
+                ipAddress: ip,
+              });
+
+              return new Response(responseBody, {
+                headers: { "Content-Type": "application/json" },
+                status: 200,
+              });
             })
             .exhaustive();
         } catch (error) {
           const message =
             error instanceof Error ? error.message : "Internal server error";
           Logger.Production.error({ error });
+          await recordSyncAudit({
+            feature: "sync",
+            userId: auditUserId(caller),
+            direction: "pull",
+            peerType: peerTypeForAudit,
+            since: last_synced_at,
+            startedAt,
+            counts: {},
+            outcome: "failed",
+            error: message,
+            ipAddress: ip,
+          });
           const isAuthError =
             message.includes("Unauthorized") ||
             message.includes("Authorization header") ||
@@ -109,37 +175,74 @@ export const Route = createFileRoute("/api/v2/sync")({
       },
       POST: async ({ request }) => {
         const postIp = getClientIp(request);
-        const postLimit = syncLimiter.check(postIp);
+        const postLimit = checkSyncLimit(request, postIp);
         if (!postLimit.allowed) {
           return tooManyRequestsResponse(postLimit.retryAfterMs);
         }
 
+        const startedAt = Date.now();
+        let caller: RequestCaller | null = null;
+        let last_synced_at = 0;
+        let peerTypeForAudit = "unknown";
+
         try {
           const url = new URL(request.url);
-          const last_synced_at = Number(
-            url.searchParams.get("last_pulled_at") || 0,
+          last_synced_at = Number(
+            url.searchParams.get("last_pulled_at") ||
+              url.searchParams.get("lastPulledAt") ||
+              0,
           );
           const schemaVersion = url.searchParams.get("schemaVersion");
           const migration = url.searchParams.get("migration");
           const peerType: Device.DeviceTypeT =
             (url.searchParams.get("peerType") as Device.DeviceTypeT) ||
             "unknown"; // Get the peer type or else return "android"
+          peerTypeForAudit = peerType;
           const authenticatedCaller = await authenticateRequest(
             request,
             peerType,
           );
 
-          return match(authenticatedCaller)
-            .with({ ok: false }, () => {
+          return await match(authenticatedCaller)
+            .with({ ok: false }, async () => {
+              await recordSyncAudit({
+                feature: "sync",
+                userId: "unauthenticated",
+                direction: "push",
+                peerType,
+                since: last_synced_at,
+                startedAt,
+                counts: {},
+                outcome: "failed",
+                error: "Unauthorized",
+                ipAddress: postIp,
+              });
               return new Response(JSON.stringify({ error: "Unauthorized" }), {
                 headers: { "Content-Type": "application/json" },
                 status: 401,
               });
             })
-            .with({ ok: true }, async ({ data: caller }) => {
+            .with({ ok: true }, async ({ data }) => {
+              caller = data;
               const body = (await request.json()) as Sync.PushRequest;
 
-              await Sync.persistClientChanges(body, peerType, caller);
+              const outcome = await Sync.persistClientChanges(
+                body,
+                peerType,
+                caller,
+              );
+              await recordSyncAudit({
+                feature: "sync",
+                userId: auditUserId(caller),
+                direction: "push",
+                peerType,
+                since: last_synced_at,
+                startedAt,
+                counts: acceptedCounts(outcome.byTable),
+                byTable: outcome.byTable,
+                outcome: "completed",
+                ipAddress: postIp,
+              });
               return new Response(JSON.stringify({ success: true }), {
                 headers: { "Content-Type": "application/json" },
                 status: 200,
@@ -150,6 +253,18 @@ export const Route = createFileRoute("/api/v2/sync")({
           Logger.Production.error(error);
           const message =
             error instanceof Error ? error.message : "Internal server error";
+          await recordSyncAudit({
+            feature: "sync",
+            userId: auditUserId(caller),
+            direction: "push",
+            peerType: peerTypeForAudit,
+            since: last_synced_at,
+            startedAt,
+            counts: {},
+            outcome: "failed",
+            error: message,
+            ipAddress: postIp,
+          });
           const isAuthError =
             message.includes("Unauthorized") ||
             message.includes("Authorization header") ||
@@ -165,6 +280,12 @@ export const Route = createFileRoute("/api/v2/sync")({
     },
   },
 });
+
+/** Hub callers have no user, so their rows are attributed to the device. */
+const auditUserId = (caller: RequestCaller | null): string => {
+  if (!caller) return "unauthenticated";
+  return "user" in caller ? caller.user.id : `device:${caller.device.id}`;
+};
 
 const authenticateRequest = createServerOnlyFn(
   async (

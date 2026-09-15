@@ -23,8 +23,8 @@ vi.mock("@hikmahealth/js-utils", () => ({
 
 const { attemptSignIn } = await import("../../src/lib/auth/sign-in");
 
-// The limiter is a module singleton keyed on client IP, so every test uses its
-// own IP rather than trying to reset shared state between runs.
+// The limiters are module singletons keyed on client IP (and email), so every
+// test uses its own IP rather than trying to reset shared state between runs.
 let ipCounter = 0;
 const requestFrom = (body: unknown, ip = `10.0.0.${++ipCounter}`) =>
   new Request("http://localhost/api/auth/sign-in", {
@@ -110,11 +110,11 @@ describe("attemptSignIn", () => {
     expect(setCookie).not.toHaveBeenCalled();
   });
 
-  it("rate-limits a single IP after 30 attempts and reports a retry delay", async () => {
+  it("rate-limits one account behind an IP after 10 attempts and reports a retry delay", async () => {
     signIn.mockRejectedValue(new Error("Invalid password"));
     const ip = "10.9.9.9";
 
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 10; i++) {
       expect((await attemptSignIn(requestFrom(credentials, ip))).kind).toBe(
         "invalid",
       );
@@ -134,7 +134,7 @@ describe("attemptSignIn", () => {
       token: "t",
     });
     const ip = "10.8.8.8";
-    for (let i = 0; i < 30; i++)
+    for (let i = 0; i < 10; i++)
       await attemptSignIn(requestFrom(credentials, ip));
     signIn.mockClear();
 
@@ -151,7 +151,7 @@ describe("attemptSignIn", () => {
     signIn.mockRejectedValue(new Error("Invalid password"));
     const ip = "10.7.7.7";
 
-    for (let i = 0; i < 30; i++)
+    for (let i = 0; i < 10; i++)
       await attemptSignIn(requestFrom(credentials, ip));
 
     const viaOtherRoute = await attemptSignIn(
@@ -162,6 +162,66 @@ describe("attemptSignIn", () => {
       }),
     );
     expect(viaOtherRoute.kind).toBe("rate-limited");
+  });
+
+  // A whole site behind one router must not lock itself out.
+  it("gives each account behind a shared IP its own budget", async () => {
+    signIn.mockRejectedValue(new Error("Invalid password"));
+    const ip = "10.6.6.6";
+
+    for (let i = 0; i < 10; i++)
+      await attemptSignIn(requestFrom(credentials, ip));
+
+    expect((await attemptSignIn(requestFrom(credentials, ip))).kind).toBe(
+      "rate-limited",
+    );
+    const colleague = await attemptSignIn(
+      requestFrom({ ...credentials, email: "colleague@example.com" }, ip),
+    );
+    expect(colleague.kind).toBe("invalid");
+  });
+
+  it("lets a 30-person site all log in from one IP", async () => {
+    signIn.mockResolvedValue({ user: { id: "u", clinic_id: null }, token: "t" });
+    const ip = "10.5.5.5";
+
+    for (let i = 0; i < 30; i++) {
+      const result = await attemptSignIn(
+        requestFrom({ ...credentials, email: `staff${i}@example.com` }, ip),
+      );
+      expect(result.kind).toBe("ok");
+    }
+  });
+
+  // The email is unverified, so rotating it must not be a bypass.
+  it("caps an IP rotating emails at 300 attempts, without checking credentials", async () => {
+    signIn.mockRejectedValue(new Error("Invalid password"));
+    const ip = "10.4.4.4";
+
+    for (let i = 0; i < 300; i++) {
+      const result = await attemptSignIn(
+        requestFrom({ ...credentials, email: `guess${i}@example.com` }, ip),
+      );
+      expect(result.kind).toBe("invalid");
+    }
+    signIn.mockClear();
+
+    const blocked = await attemptSignIn(
+      requestFrom({ ...credentials, email: "fresh@example.com" }, ip),
+    );
+    expect(blocked.kind).toBe("rate-limited");
+    expect(signIn).not.toHaveBeenCalled();
+  });
+
+  it("puts attempts with no usable email in one shared bucket", async () => {
+    signIn.mockRejectedValue(new Error("Invalid password"));
+    const ip = "10.3.3.3";
+
+    for (let i = 0; i < 10; i++)
+      await attemptSignIn(requestFrom({ password: "x" }, ip));
+
+    const blocked = await attemptSignIn(requestFrom({ email: 42 }, ip));
+    expect(blocked.kind).toBe("rate-limited");
   });
 });
 

@@ -31,7 +31,7 @@ type Options = {
   /**
    * Add the `com.apple.developer.kernel.increased-memory-limit` entitlement for iOS.
    *
-   * On supported devices running iOS 13+ this allows the app to exceed the default
+   * On supported devices running iOS 15+ this allows the app to exceed the default
    * per-process memory limit imposed by the OS. Unlike Android's fixed heap ceiling,
    * iOS OOM kills are driven by overall system pressure; this entitlement signals to
    * the kernel that the process may legitimately hold a larger footprint.
@@ -50,6 +50,11 @@ type Options = {
  * Sets `org.gradle.jvmargs=-Xmx<N>m` in `android/gradle.properties` so the
  * Gradle daemon has enough heap to handle large dependency graphs and resource
  * processing without running out of memory during the build.
+ *
+ * TODO: revisit once largeHeap is validated in the field. This is build-time only and
+ * does nothing for the runtime OOM the rest of this plugin targets, and the Kotlin
+ * daemon inherits `-Xmx`/`MaxMetaspaceSize` when `kotlin.daemon.jvmargs` is unset, so
+ * 4096 puts two daemons at ~9.2 GB of a 16 GB medium EAS worker. 2048 was working.
  */
 const withGradleJvmHeap: ConfigPlugin<Options> = (config, { gradleJvmHeapMB = 4096 } = {}) => {
   return withGradleProperties(config, (modConfig) => {
@@ -117,6 +122,8 @@ const withIosIncreasedMemoryLimit: ConfigPlugin<Options> = (
  * the kernel enforces a per-process limit that varies by device. This entitlement
  * tells the kernel the process is allowed a larger footprint before it is killed
  * under memory pressure.
+ *
+ * Register this last in the plugins array: it overwrites any org.gradle.jvmargs set earlier.
  *
  * Usage in app.config.ts
  * ----------------------

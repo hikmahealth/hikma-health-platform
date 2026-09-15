@@ -27,6 +27,7 @@ import { Route as ApiHubVerifyKeyRouteImport } from './routes/api/hub.verify-key
 import { Route as ApiResourcesIdRouteImport } from './routes/api/resources.$id'
 import { Route as ApiV2SyncRouteImport } from './routes/api/v2.sync'
 import { Route as AppAppointmentsIndexRouteImport } from './routes/app/appointments.index'
+import { Route as AppAuditSyncAttemptsRouteImport } from './routes/app/audit.sync-attempts'
 import { Route as AppClinicsIndexRouteImport } from './routes/app/clinics.index'
 import { Route as AppDataEventsRouteImport } from './routes/app/data.events'
 import { Route as AppEducationIndexRouteImport } from './routes/app/education/index'
@@ -149,6 +150,11 @@ const ApiV2SyncRoute = ApiV2SyncRouteImport.update({
 const AppAppointmentsIndexRoute = AppAppointmentsIndexRouteImport.update({
   id: '/appointments/',
   path: '/appointments/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAuditSyncAttemptsRoute = AppAuditSyncAttemptsRouteImport.update({
+  id: '/audit/sync-attempts',
+  path: '/audit/sync-attempts',
   getParentRoute: () => AppRoute,
 } as any)
 const AppClinicsIndexRoute = AppClinicsIndexRouteImport.update({
@@ -348,6 +354,7 @@ export interface FileRoutesByFullPath {
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
   '/api/v2/sync': typeof ApiV2SyncRoute
+  '/app/audit/sync-attempts': typeof AppAuditSyncAttemptsRoute
   '/app/data/events': typeof AppDataEventsRoute
   '/app/patients/$id': typeof AppPatientsIdRoute
   '/app/patients/customize-registration-form': typeof AppPatientsCustomizeRegistrationFormRoute
@@ -399,6 +406,7 @@ export interface FileRoutesByTo {
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
   '/api/v2/sync': typeof ApiV2SyncRoute
+  '/app/audit/sync-attempts': typeof AppAuditSyncAttemptsRoute
   '/app/data/events': typeof AppDataEventsRoute
   '/app/patients/$id': typeof AppPatientsIdRoute
   '/app/patients/customize-registration-form': typeof AppPatientsCustomizeRegistrationFormRoute
@@ -453,6 +461,7 @@ export interface FileRoutesById {
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
   '/api/v2/sync': typeof ApiV2SyncRoute
+  '/app/audit/sync-attempts': typeof AppAuditSyncAttemptsRoute
   '/app/data/events': typeof AppDataEventsRoute
   '/app/patients/$id': typeof AppPatientsIdRoute
   '/app/patients/customize-registration-form': typeof AppPatientsCustomizeRegistrationFormRoute
@@ -508,6 +517,7 @@ export interface FileRouteTypes {
     | '/api/hub/verify-key'
     | '/api/resources/$id'
     | '/api/v2/sync'
+    | '/app/audit/sync-attempts'
     | '/app/data/events'
     | '/app/patients/$id'
     | '/app/patients/customize-registration-form'
@@ -559,6 +569,7 @@ export interface FileRouteTypes {
     | '/api/hub/verify-key'
     | '/api/resources/$id'
     | '/api/v2/sync'
+    | '/app/audit/sync-attempts'
     | '/app/data/events'
     | '/app/patients/$id'
     | '/app/patients/customize-registration-form'
@@ -612,6 +623,7 @@ export interface FileRouteTypes {
     | '/api/hub/verify-key'
     | '/api/resources/$id'
     | '/api/v2/sync'
+    | '/app/audit/sync-attempts'
     | '/app/data/events'
     | '/app/patients/$id'
     | '/app/patients/customize-registration-form'
@@ -793,6 +805,13 @@ declare module '@tanstack/react-router' {
       path: '/appointments'
       fullPath: '/app/appointments/'
       preLoaderRoute: typeof AppAppointmentsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/audit/sync-attempts': {
+      id: '/app/audit/sync-attempts'
+      path: '/audit/sync-attempts'
+      fullPath: '/app/audit/sync-attempts'
+      preLoaderRoute: typeof AppAuditSyncAttemptsRouteImport
       parentRoute: typeof AppRoute
     }
     '/app/clinics/': {
@@ -1032,6 +1051,7 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppEntriesRoute: typeof AppEntriesRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppAuditSyncAttemptsRoute: typeof AppAuditSyncAttemptsRoute
   AppDataEventsRoute: typeof AppDataEventsRoute
   AppPatientsIdRoute: typeof AppPatientsIdRoute
   AppPatientsCustomizeRegistrationFormRoute: typeof AppPatientsCustomizeRegistrationFormRoute
@@ -1068,6 +1088,7 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppEntriesRoute: AppEntriesRoute,
   AppIndexRoute: AppIndexRoute,
+  AppAuditSyncAttemptsRoute: AppAuditSyncAttemptsRoute,
   AppDataEventsRoute: AppDataEventsRoute,
   AppPatientsIdRoute: AppPatientsIdRoute,
   AppPatientsCustomizeRegistrationFormRoute:

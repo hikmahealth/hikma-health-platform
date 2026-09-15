@@ -1,15 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-const { getDeltaPage, recordManualSyncAudit } = vi.hoisted(() => ({
+const { getDeltaPage, getDeltaRecords, recordSyncAudit } = vi.hoisted(() => ({
   getDeltaPage: vi.fn(),
-  recordManualSyncAudit: vi.fn(async (_args: any) => undefined),
+  getDeltaRecords: vi.fn(),
+  recordSyncAudit: vi.fn(async (_args: any) => undefined),
 }));
+
+vi.mock("@/models/sync", () => ({ default: { getDeltaRecords } }));
 
 vi.mock("@/models/sync-paged", () => ({
   getDeltaPage,
   DEFAULT_PAGE_ROWS: 500,
 }));
-vi.mock("@/models/sync-audit", () => ({ recordManualSyncAudit }));
+vi.mock("@/models/sync-audit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/models/sync-audit")>()),
+  recordSyncAudit,
+}));
 vi.mock("@/models/user", () => ({
   default: {
     API: { getById: async () => ({ id: "u1", clinic_id: null }) },
@@ -51,14 +57,14 @@ const page = (over: Record<string, any> = {}) => ({
 });
 
 const auditCalls = (outcome: string) =>
-  recordManualSyncAudit.mock.calls
+  recordSyncAudit.mock.calls
     .map(([args]) => args)
     .filter((args: any) => args.outcome === outcome);
 
 beforeEach(() => {
   getDeltaPage.mockReset();
-  recordManualSyncAudit.mockReset();
-  recordManualSyncAudit.mockResolvedValue(undefined);
+  recordSyncAudit.mockReset();
+  recordSyncAudit.mockResolvedValue(undefined);
 });
 
 describe("sync.backfillPull", () => {
@@ -173,7 +179,7 @@ describe("sync.backfillPull", () => {
         peer_type: "sync_hub",
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect(recordManualSyncAudit).not.toHaveBeenCalled();
+    expect(recordSyncAudit).not.toHaveBeenCalled();
   });
 });
 
@@ -228,6 +234,8 @@ describe("sync.backfillPull audit trail", () => {
     expect(completed.direction).toBe("pull");
     expect(completed.userId).toBe("u1");
     expect(completed.snapshotTs).toBe(999);
+    // Started when the run's first page did, not when this last page did.
+    expect(completed.startedAt).toBe(999);
   });
 
   it("does not record completion while pages remain", async () => {
@@ -256,5 +264,47 @@ describe("sync.backfillPull audit trail", () => {
     const [failed] = auditCalls("failed");
     expect(failed).toBeDefined();
     expect(failed.error).toContain("connection reset");
+  });
+});
+
+describe("sync.pull audit trail", () => {
+  const pullAudits = () =>
+    recordSyncAudit.mock.calls
+      .map(([args]) => args)
+      .filter((args: any) => args.feature === "sync");
+
+  beforeEach(() => {
+    getDeltaRecords.mockReset();
+  });
+
+  it("records one completed row with what was delivered", async () => {
+    getDeltaRecords.mockResolvedValue({
+      patients: { created: [{}, {}], updated: [{}], deleted: ["x"] },
+    });
+
+    await call(ctx).pull({ last_pulled_at: 5, peer_type: "android" });
+
+    const audits = pullAudits();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      userId: "u1",
+      direction: "pull",
+      peerType: "android",
+      since: 5,
+      counts: { patients: 4 },
+      outcome: "completed",
+    });
+    expect(audits[0].startedAt).toBeTypeOf("number");
+    expect(audits[0].snapshotTs).toBeTypeOf("number");
+  });
+
+  it("records the failure, with its reason, when the pull throws", async () => {
+    getDeltaRecords.mockRejectedValue(new Error("db down"));
+
+    await expect(call(ctx).pull({ last_pulled_at: 0 })).rejects.toThrow();
+
+    const audits = pullAudits();
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ outcome: "failed", error: "db down" });
   });
 });

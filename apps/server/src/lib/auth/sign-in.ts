@@ -10,7 +10,7 @@
  * routes call this function directly instead; there is no self-request to
  * redirect.
  *
- * The rate limiter lives here rather than in either route so the two entry
+ * The rate limiters live here rather than in either route so the two entry
  * points share one bucket. Splitting them would hand an attacker a second,
  * independent budget for the same credentials.
  */
@@ -20,11 +20,22 @@ import { minutesToMilliseconds } from "date-fns";
 import { Logger } from "@hikmahealth/js-utils";
 import User from "@/models/user";
 import Clinic from "@/models/clinic";
-import { createRateLimiter, getClientIp } from "@/lib/rate-limiter";
+import {
+  createRateLimiter,
+  emailAccountKey,
+  getClientIp,
+} from "@/lib/rate-limiter";
 
-const signInLimiter = createRateLimiter({
+/** Per email per IP, so a site sharing one router can still log everyone in. */
+const perAccountLimiter = createRateLimiter({
   windowMs: minutesToMilliseconds(15),
-  maxRequests: 30,
+  maxRequests: 10,
+});
+
+/** Per-IP backstop against guessing across many emails from one address. */
+const perIpLimiter = createRateLimiter({
+  windowMs: minutesToMilliseconds(15),
+  maxRequests: 300,
 });
 
 /** The signed-in user as returned to clients — never the real password hash. */
@@ -45,12 +56,22 @@ export type SignInOutcome =
  * rather than a `Response`.
  */
 export async function attemptSignIn(request: Request): Promise<SignInOutcome> {
-  const limit = signInLimiter.check(getClientIp(request));
-  if (!limit.allowed) {
-    return { kind: "rate-limited", retryAfterMs: limit.retryAfterMs };
+  const ip = getClientIp(request);
+  const byIp = perIpLimiter.check(`ip:${ip}`);
+  if (!byIp.allowed) {
+    return { kind: "rate-limited", retryAfterMs: byIp.retryAfterMs };
   }
 
   const { email, password } = await request.json();
+
+  const account =
+    typeof email === "string" && email.length > 0
+      ? emailAccountKey(email)
+      : "anonymous";
+  const byAccount = perAccountLimiter.check(`${ip}|${account}`);
+  if (!byAccount.allowed) {
+    return { kind: "rate-limited", retryAfterMs: byAccount.retryAfterMs };
+  }
 
   try {
     const { user, token } = await User.signIn(email, password);

@@ -7,7 +7,7 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { authedProcedure, createTRPCRouter } from "../../init";
 import Sync from "@/models/sync";
-import { recordManualSyncAudit } from "@/models/sync-audit";
+import { acceptedCounts, recordSyncAudit } from "@/models/sync-audit";
 import { callerFromContext, resolvePeerType } from "../../caller";
 import * as Sentry from "@sentry/tanstackstart-react";
 
@@ -48,22 +48,48 @@ export const syncCommandRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      const startedAt = Date.now();
+      let auditPeerType: string = input.peer_type ?? "unknown";
       try {
         const caller = await callerFromContext(ctx);
         const peerType = resolvePeerType(input.peer_type, caller);
-        await Sync.persistClientChanges(
+        auditPeerType = peerType;
+        const outcome = await Sync.persistClientChanges(
           input.changes as any,
           peerType,
           caller,
         );
+        await recordSyncAudit({
+          feature: "sync",
+          userId: ctx.userId,
+          direction: "push",
+          peerType,
+          since: input.last_pulled_at,
+          startedAt,
+          counts: acceptedCounts(outcome.byTable),
+          byTable: outcome.byTable,
+          outcome: "completed",
+        });
         return {};
       } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Sync push failed";
+        await recordSyncAudit({
+          feature: "sync",
+          userId: ctx.userId,
+          direction: "push",
+          peerType: auditPeerType,
+          since: input.last_pulled_at,
+          startedAt,
+          counts: {},
+          outcome: "failed",
+          error: message,
+        });
         if (error instanceof TRPCError) throw error;
         Sentry.captureException(error);
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
-          message:
-            error instanceof Error ? error.message : "Sync push failed",
+          message,
         });
       }
     }),
@@ -103,6 +129,7 @@ export const syncCommandRouter = createTRPCRouter({
       }),
     )
     .mutation(async ({ input, ctx }) => {
+      const startedAt = Date.now();
       const caller = await callerFromContext(ctx);
       const peerType = resolvePeerType(input.peer_type, caller);
 
@@ -113,18 +140,15 @@ export const syncCommandRouter = createTRPCRouter({
           caller,
         );
 
-        const counts: Record<string, number> = {};
-        for (const [table, tally] of Object.entries(outcome.byTable)) {
-          counts[table] = tally.accepted;
-        }
-
-        await recordManualSyncAudit({
+        await recordSyncAudit({
+          feature: "manual_sync",
           userId: ctx.userId,
           direction: "push",
           peerType: String(peerType),
           since: input.since,
           snapshotTs: Date.now(),
-          counts,
+          startedAt,
+          counts: acceptedCounts(outcome.byTable),
           byTable: outcome.byTable,
           outcome: "completed",
         });
@@ -138,12 +162,14 @@ export const syncCommandRouter = createTRPCRouter({
         const message =
           error instanceof Error ? error.message : "Backfill push failed";
 
-        await recordManualSyncAudit({
+        await recordSyncAudit({
+          feature: "manual_sync",
           userId: ctx.userId,
           direction: "push",
           peerType: String(peerType),
           since: input.since,
           snapshotTs: Date.now(),
+          startedAt,
           counts: {},
           outcome: "failed",
           error: message,
