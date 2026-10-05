@@ -24,6 +24,12 @@ import { createServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useImmerReducer } from "use-immer";
+import { env } from "@/env";
+import {
+  deleteCredentials,
+  readCredentials,
+  saveCredentials,
+} from "@/lib/analytics-reporting/credentials";
 
 const saveConfiguration = createServerFn({ method: "POST" })
   .validator(
@@ -54,6 +60,139 @@ const saveConfiguration = createServerFn({ method: "POST" })
       dataType,
       updatedBy,
     );
+  });
+
+type ReportingStatus = {
+  /** whether `HIKMA_REPORTER_URL` is set on this instance */
+  reporterConfigured: boolean;
+  /**
+   * - `registered`: reporting service recognises this instance
+   * - `unregistered`: no local credentials, or the service doesn't know this instance
+   * - `forbidden`: the service rejected this instance's credentials
+   * - `unreachable`: the service couldn't be contacted
+   */
+  state: "registered" | "unregistered" | "forbidden" | "unreachable";
+};
+
+// Checks whether this instance is registered with the reporting service
+const getReportingStatus = createServerFn({ method: "GET" })
+  .middleware([superAdminMiddleware])
+  .handler(async (): Promise<ReportingStatus> => {
+    if (!env.VITE_HIKMA_REPORTER_URL) {
+      return { reporterConfigured: false, state: "unregistered" };
+    }
+
+    const credentials = await readCredentials();
+    if (!credentials) {
+      return { reporterConfigured: true, state: "unregistered" };
+    }
+
+    try {
+      const res = await fetch(
+        new URL("/api/report", env.VITE_HIKMA_REPORTER_URL),
+        {
+          method: "GET",
+          headers: {
+            "Hikma-Health-Requester": credentials.client_id,
+          },
+        },
+      );
+
+      // 200 = registered; 404 = not registered; 403 = forbidden from accessing resource
+      if (res.status === 200)
+        return { reporterConfigured: true, state: "registered" };
+      if (res.status === 404)
+        return { reporterConfigured: true, state: "unregistered" };
+      if (res.status === 403)
+        return { reporterConfigured: true, state: "forbidden" };
+      return { reporterConfigured: true, state: "unreachable" };
+    } catch {
+      return { reporterConfigured: true, state: "unreachable" };
+    }
+  });
+
+// Registers this instance with the reporting service and saves the issued credentials
+const subscribeReporting = createServerFn({ method: "POST" })
+  .middleware([superAdminMiddleware])
+  .handler(async () => {
+    if (!env.VITE_HIKMA_REPORTER_URL) {
+      throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
+    }
+    if (!env.VITE_SERVER_URL) {
+      throw new Error(
+        "SERVER_URL is not configured; the reporting service needs it to reach this instance",
+      );
+    }
+
+    const response = await fetch(
+      new URL("/api/report/register", env.VITE_HIKMA_REPORTER_URL),
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          report_url: new URL("/api/hh/analytics/report", env.VITE_SERVER_URL)
+            .href,
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error(
+        `Reporting service rejected registration (status ${response.status})`,
+      );
+    }
+
+    const body = (await response.json()) as {
+      ok: boolean;
+      credentials?: {
+        client_id: string; // passed as the `Hikma-Health-Requester` header
+        client_signing_key: string; // used as part of the authorization
+        version: string;
+      };
+    };
+
+    if (!body.ok || !body.credentials) {
+      throw new Error("Reporting service returned no credentials");
+    }
+
+    await saveCredentials(body.credentials);
+    return { ok: true as const };
+  });
+
+// Unregisters this instance from the reporting service and removes local credentials
+const unsubscribeFromReporting = createServerFn({ method: "POST" })
+  .middleware([superAdminMiddleware])
+  .handler(async () => {
+    if (!env.VITE_HIKMA_REPORTER_URL) {
+      throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
+    }
+
+    const credentials = await readCredentials();
+    if (!credentials) {
+      // nothing to unregister locally
+      return { ok: true as const };
+    }
+
+    const response = await fetch(
+      new URL("/api/report/register", env.VITE_HIKMA_REPORTER_URL),
+      {
+        method: "DELETE",
+        headers: {
+          "Hikma-Health-Requester": credentials.client_id,
+        },
+      },
+    );
+
+    // 404 means the service already doesn't know us, so we can safely clean up
+    if (!response.ok && response.status !== 404) {
+      throw new Error(
+        `Reporting service rejected unsubscribe (status ${response.status})`,
+      );
+    }
+
+    // NOTE: might want to consider posting the record on to the DB
+    await deleteCredentials();
+    return { ok: true as const };
   });
 
 const getAllConfigurations = createServerFn({ method: "GET" })
@@ -101,6 +240,7 @@ export const Route = createFileRoute("/app/settings/configurations/")({
       aiUrlVariable,
       aiProxyKeyVar,
       storage,
+      reportingStatus,
     ] = await Promise.all([
       getAllConfigurations(),
       getServerVariable({
@@ -119,6 +259,7 @@ export const Route = createFileRoute("/app/settings/configurations/")({
         data: { key: ServerVariable.Keys.AI_PROXY_SERVICE_API_KEY },
       }),
       getStorageSettings(),
+      getReportingStatus(),
     ]);
     const toBytes = (data: unknown): Uint8Array | null => {
       if (data == null) return null;
@@ -149,6 +290,7 @@ export const Route = createFileRoute("/app/settings/configurations/")({
       aiProxyKeyIsSet: hasValue(aiProxyKeyVar),
       aiServiceUrl,
       storage,
+      reportingStatus,
       currentUser: await getCurrentUser(),
     };
   },
@@ -166,9 +308,11 @@ function RouteComponent() {
     aiProxyKeyIsSet,
     aiServiceUrl,
     storage,
+    reportingStatus,
     currentUser,
   } = Route.useLoaderData();
   const router = useRouter();
+  const [isUpdatingReporting, setIsUpdatingReporting] = useState(false);
   const [openDialog, setOpenDialog] = useState<{
     title: string;
     description: string;
@@ -446,6 +590,40 @@ function RouteComponent() {
     });
   };
 
+  const handleSubscribeReporting = async () => {
+    setIsUpdatingReporting(true);
+    try {
+      await subscribeReporting();
+      toast.success("Analytics reporting enabled");
+      await router.invalidate({ sync: true });
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Failed to enable analytics reporting",
+      );
+    } finally {
+      setIsUpdatingReporting(false);
+    }
+  };
+
+  const handleUnsubscribeReporting = async () => {
+    setIsUpdatingReporting(true);
+    try {
+      await unsubscribeFromReporting();
+      toast.success("Analytics reporting disabled");
+      await router.invalidate({ sync: true });
+    } catch (e) {
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : "Failed to disable analytics reporting",
+      );
+    } finally {
+      setIsUpdatingReporting(false);
+    }
+  };
+
+  console.log({ reportingStatus });
+
   return (
     <div className="container py-6">
       <div className="flex justify-between items-center mb-6">
@@ -527,6 +705,54 @@ function RouteComponent() {
           settings={storage}
           onSaved={() => router.invalidate({ sync: true })}
         />
+
+        <div className="flex flex-col gap-4 pt-4 border-t">
+          <h2 className="text-lg font-semibold">Analytics reporting</h2>
+          <div className="text-sm text-muted-foreground">
+            Allow this instance to share aggregated analytics data (e.g. patient
+            counts) when requested by the Hikma Health reporting service.
+          </div>
+
+          {!reportingStatus.reporterConfigured ? (
+            <div className="text-sm text-muted-foreground">
+              Analytics reporting is unavailable: no reporting service is
+              configured for this instance.
+            </div>
+          ) : (
+            <>
+              <div className="text-sm">
+                Status:{" "}
+                <span className="font-medium">
+                  {reportingStatus.state === "registered" && "Opted in"}
+                  {reportingStatus.state === "unregistered" && "Opted out"}
+                  {reportingStatus.state === "forbidden" &&
+                    "Registered, but access was denied by the reporting service"}
+                  {reportingStatus.state === "unreachable" &&
+                    "Unable to reach the reporting service"}
+                </span>
+              </div>
+
+              <div>
+                {reportingStatus.state === "unregistered" ? (
+                  <Button
+                    onClick={handleSubscribeReporting}
+                    disabled={isUpdatingReporting}
+                  >
+                    Opt in to analytics reporting
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    onClick={handleUnsubscribeReporting}
+                    disabled={isUpdatingReporting}
+                  >
+                    Unsubscribe from analytics reporting
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
 
         <div className="flex flex-col gap-4 pt-4 border-t">
           <h2 className="text-lg font-semibold">AI</h2>

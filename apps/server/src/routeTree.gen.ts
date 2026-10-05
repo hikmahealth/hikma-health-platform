@@ -42,6 +42,7 @@ import { Route as AppSettingsRegisterMobileAppRouteImport } from './routes/app/s
 import { Route as AppUsersIndexRouteImport } from './routes/app/users.index'
 import { Route as RpcCommandSplatRouteImport } from './routes/rpc.command.$'
 import { Route as RpcQuerySplatRouteImport } from './routes/rpc.query.$'
+import { Route as ApiHhAnalyticsReportRouteImport } from './routes/api/hh.analytics/report'
 import { Route as AppAppointmentsEditSplatRouteImport } from './routes/app/appointments.edit.$'
 import { Route as AppClinicsIdIndexRouteImport } from './routes/app/clinics.$id.index'
 import { Route as AppClinicsEditSplatRouteImport } from './routes/app/clinics.edit.$'
@@ -229,6 +230,11 @@ const RpcQuerySplatRoute = RpcQuerySplatRouteImport.update({
   path: '/rpc/query/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiHhAnalyticsReportRoute = ApiHhAnalyticsReportRouteImport.update({
+  id: '/api/hh/analytics/report',
+  path: '/api/hh/analytics/report',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppAppointmentsEditSplatRoute =
   AppAppointmentsEditSplatRouteImport.update({
     id: '/appointments/edit/$',
@@ -370,6 +376,7 @@ export interface FileRoutesByFullPath {
   '/app/prescriptions/': typeof AppPrescriptionsIndexRoute
   '/app/reports/': typeof AppReportsIndexRoute
   '/app/users/': typeof AppUsersIndexRoute
+  '/api/hh/analytics/report': typeof ApiHhAnalyticsReportRoute
   '/app/appointments/edit/$': typeof AppAppointmentsEditSplatRoute
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
@@ -422,6 +429,7 @@ export interface FileRoutesByTo {
   '/app/prescriptions': typeof AppPrescriptionsIndexRoute
   '/app/reports': typeof AppReportsIndexRoute
   '/app/users': typeof AppUsersIndexRoute
+  '/api/hh/analytics/report': typeof ApiHhAnalyticsReportRoute
   '/app/appointments/edit/$': typeof AppAppointmentsEditSplatRoute
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
@@ -477,6 +485,7 @@ export interface FileRoutesById {
   '/app/prescriptions/': typeof AppPrescriptionsIndexRoute
   '/app/reports/': typeof AppReportsIndexRoute
   '/app/users/': typeof AppUsersIndexRoute
+  '/api/hh/analytics/report': typeof ApiHhAnalyticsReportRoute
   '/app/appointments/edit/$': typeof AppAppointmentsEditSplatRoute
   '/app/clinics/edit/$': typeof AppClinicsEditSplatRoute
   '/app/education/$id/editor': typeof AppEducationIdEditorRoute
@@ -533,6 +542,7 @@ export interface FileRouteTypes {
     | '/app/prescriptions/'
     | '/app/reports/'
     | '/app/users/'
+    | '/api/hh/analytics/report'
     | '/app/appointments/edit/$'
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
@@ -585,6 +595,7 @@ export interface FileRouteTypes {
     | '/app/prescriptions'
     | '/app/reports'
     | '/app/users'
+    | '/api/hh/analytics/report'
     | '/app/appointments/edit/$'
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
@@ -639,6 +650,7 @@ export interface FileRouteTypes {
     | '/app/prescriptions/'
     | '/app/reports/'
     | '/app/users/'
+    | '/api/hh/analytics/report'
     | '/app/appointments/edit/$'
     | '/app/clinics/edit/$'
     | '/app/education/$id/editor'
@@ -676,6 +688,7 @@ export interface RootRouteChildren {
   ApiV2SyncRoute: typeof ApiV2SyncRoute
   RpcCommandSplatRoute: typeof RpcCommandSplatRoute
   RpcQuerySplatRoute: typeof RpcQuerySplatRoute
+  ApiHhAnalyticsReportRoute: typeof ApiHhAnalyticsReportRoute
   ApiEventsEventIdAttachmentsResourceIdRoute: typeof ApiEventsEventIdAttachmentsResourceIdRoute
 }
 
@@ -910,6 +923,13 @@ declare module '@tanstack/react-router' {
       path: '/rpc/query/$'
       fullPath: '/rpc/query/$'
       preLoaderRoute: typeof RpcQuerySplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/hh/analytics/report': {
+      id: '/api/hh/analytics/report'
+      path: '/api/hh/analytics/report'
+      fullPath: '/api/hh/analytics/report'
+      preLoaderRoute: typeof ApiHhAnalyticsReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/appointments/edit/$': {
@@ -1158,6 +1178,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiV2SyncRoute: ApiV2SyncRoute,
   RpcCommandSplatRoute: RpcCommandSplatRoute,
   RpcQuerySplatRoute: RpcQuerySplatRoute,
+  ApiHhAnalyticsReportRoute: ApiHhAnalyticsReportRoute,
   ApiEventsEventIdAttachmentsResourceIdRoute:
     ApiEventsEventIdAttachmentsResourceIdRoute,
 }
