@@ -42,6 +42,7 @@ namespace ServerVariable {
     ANTHROPIC_API_KEY: "anthropic_api_key",
     OPENAI_API_KEY: "openai_api_key",
     GEMINI_API_KEY: "gemini_api_key",
+    HIKMA_REPORTER_CREDENTIALS: "hikma_reporter_credentials",
   } as const;
 
   export type T = {
@@ -220,9 +221,7 @@ namespace ServerVariable {
    * no row, or a row with no value, map to null.
    */
   export const getManyAsStrings = createServerOnlyFn(
-    async (
-      keys: readonly string[],
-    ): Promise<Record<string, string | null>> => {
+    async (keys: readonly string[]): Promise<Record<string, string | null>> => {
       const normalized = keys.map(normalizeKey);
       const values: Record<string, string | null> = {};
       for (const key of normalized) {
@@ -238,7 +237,9 @@ namespace ServerVariable {
 
       const decoder = new TextDecoder();
       for (const row of rows) {
-        values[row.key] = row.value_data ? decoder.decode(row.value_data) : null;
+        values[row.key] = row.value_data
+          ? decoder.decode(row.value_data)
+          : null;
       }
       return values;
     },

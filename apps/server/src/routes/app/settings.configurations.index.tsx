@@ -30,6 +30,7 @@ import {
   readCredentials,
   saveCredentials,
 } from "@/lib/analytics-reporting/credentials";
+import { z } from "zod";
 
 const saveConfiguration = createServerFn({ method: "POST" })
   .validator(
@@ -105,8 +106,13 @@ const getReportingStatus = createServerFn({ method: "GET" })
         return { reporterConfigured: true, state: "unregistered" };
       if (res.status === 403)
         return { reporterConfigured: true, state: "forbidden" };
-      return { reporterConfigured: true, state: "unreachable" };
-    } catch {
+
+      return {
+        reporterConfigured: true,
+        state: "unreachable",
+      };
+    } catch (err) {
+      console.log(err);
       return { reporterConfigured: true, state: "unreachable" };
     }
   });
@@ -114,7 +120,8 @@ const getReportingStatus = createServerFn({ method: "GET" })
 // Registers this instance with the reporting service and saves the issued credentials
 const subscribeReporting = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
-  .handler(async () => {
+  .validator(z.object({ nickname: z.string().nullish() }))
+  .handler(async ({ data }) => {
     if (!env.VITE_HIKMA_REPORTER_URL) {
       throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
     }
@@ -130,6 +137,7 @@ const subscribeReporting = createServerFn({ method: "POST" })
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          nickname: data.nickname ?? undefined,
           report_url: new URL("/api/hh/analytics/report", env.VITE_SERVER_URL)
             .href,
         }),
@@ -174,7 +182,7 @@ const unsubscribeFromReporting = createServerFn({ method: "POST" })
     }
 
     const response = await fetch(
-      new URL("/api/report/register", env.VITE_HIKMA_REPORTER_URL),
+      new URL("/api/report", env.VITE_HIKMA_REPORTER_URL),
       {
         method: "DELETE",
         headers: {
@@ -593,7 +601,7 @@ function RouteComponent() {
   const handleSubscribeReporting = async () => {
     setIsUpdatingReporting(true);
     try {
-      await subscribeReporting();
+      await subscribeReporting({ data: { nickname: organizationName } });
       toast.success("Analytics reporting enabled");
       await router.invalidate({ sync: true });
     } catch (e) {
