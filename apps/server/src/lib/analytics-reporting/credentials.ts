@@ -11,7 +11,7 @@ const credentialsSchema = z.object({
   /** Passed as the `Hikma-Health-Requester` header on requests to the reporter */
   client_id: z.string(),
   /** Used to verify/sign requests between this instance and the reporter */
-  client_signing_key: z.string(),
+  client_verifying_key: z.string(),
   version: z.string().or(z.number()).transform(Number),
 });
 
@@ -27,7 +27,8 @@ export async function readCredentials(): Promise<StoredReportingCredentials | nu
     if (value == null) return null;
     const parsed = credentialsSchema.safeParse(value);
     return parsed.success ? parsed.data : null;
-  } catch {
+  } catch (err) {
+    console.error("Failed when readCredentials:", err);
     // wrong value type or corrupt JSON: treat as not registered
     return null;
   }

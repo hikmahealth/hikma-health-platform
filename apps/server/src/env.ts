@@ -1,10 +1,13 @@
 import { createEnv } from "@t3-oss/env-core";
 import { z } from "zod";
 
+// current default path for the HH reporter
+const DEFAULT_HIKMA_REPORTER_URL = "https://backoffice.fly.dev";
+
 export const env = createEnv({
   server: {
     SERVER_URL: z.url().optional(),
-    HIKMA_REPORTER_URL: z.url().optional(),
+    HIKMA_REPORTER_URL: z.url().optional().default(DEFAULT_HIKMA_REPORTER_URL),
   },
 
   /**
@@ -15,7 +18,10 @@ export const env = createEnv({
 
   client: {
     VITE_APP_TITLE: z.string().min(1).optional(),
-    VITE_HIKMA_REPORTER_URL: z.url().optional(),
+    VITE_HIKMA_REPORTER_URL: z
+      .url()
+      .optional()
+      .default(DEFAULT_HIKMA_REPORTER_URL),
     VITE_SERVER_URL: z.url().optional(),
   },
 

@@ -1,25 +1,67 @@
 import { createMiddleware } from "@tanstack/react-start";
-import assert from "assert";
+import { createHash, createPublicKey, timingSafeEqual, verify } from "crypto";
+import { readCredentials } from "@/lib/analytics-reporting/credentials";
+import jwt from "jsonwebtoken";
+const unauthorized = () =>
+  new Response(JSON.stringify({ error: "Unauthorized" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json" },
+  });
 
 /**
  * Middleware to authenticate the access in using the reporting service
  */
 export const authAnalyticsMiddleware = createMiddleware().server(
   async function ({ request, next }) {
-    // currently, this is only needed to know what client has accessed what service
-    const authToken = request.headers.get("Authorization");
-    assert(authToken, "missing `Authorization` from the request header");
+    const header = request.headers.get("Authorization");
+    if (!header || !header.startsWith("Bearer ")) return unauthorized();
 
-    verifyAuthToken(authToken.substring(7));
+    try {
+      // clone so the handler can still read the body
+      const body = await request.clone().text();
+      console.log("BODY:", body);
+      await verifyAuthToken(header.substring(7), body);
+    } catch (error) {
+      console.warn(
+        "analytics auth failed:",
+        error instanceof Error ? error.message : error,
+      );
+      return unauthorized();
+    }
 
-    // might want to use CORS to check and make sure the known hikma admin is the one that
-    // making the api call to the routes guarded by this middleware
     return next();
   },
 );
 
-// throws an error if the auth token is invalid
-function verifyAuthToken(authToken: string) {
-  // check if the JWT token is signed with the registered client secret, and that the digest string in the payload match the md5 of the body
-  // NOTE: will implement this later
+function safeEqual(a: Buffer, b: Buffer) {
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+async function verifyAuthToken(authToken: string, body: string) {
+  const credentials = await readCredentials();
+  if (!credentials) throw new Error("no reporting credentials registered");
+
+  const parts = authToken.split(".");
+  if (parts.length !== 3) throw new Error("malformed token");
+  const [h, p, s] = parts;
+
+  const header = JSON.parse(Buffer.from(h, "base64url").toString("utf8"));
+  const payload = JSON.parse(Buffer.from(p, "base64url").toString("utf8"));
+  // // const signature = Buffer.from(s, "base64url");
+  // // const signingInput = Buffer.from(`${h}.${p}`);
+  const key = Buffer.from(credentials.client_verifying_key, "base64url");
+
+  if (header.alg !== "RS256") {
+    throw new Error("unsupported algorithm");
+  }
+
+  jwt.verify(authToken, createPublicKey(key), {
+    complete: false,
+    algorithms: ["RS256"],
+  });
+
+  if (typeof payload.digest !== "string") throw new Error("missing digest");
+  const bodyDigest = createHash("md5").update(body).digest();
+  if (!safeEqual(bodyDigest, Buffer.from(payload.digest.toLowerCase(), "hex")))
+    throw new Error("body digest mismatch");
 }

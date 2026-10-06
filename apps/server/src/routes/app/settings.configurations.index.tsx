@@ -120,7 +120,7 @@ const getReportingStatus = createServerFn({ method: "GET" })
 // Registers this instance with the reporting service and saves the issued credentials
 const subscribeReporting = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
-  .validator(z.object({ nickname: z.string().nullish() }))
+  .validator(z.object({ organization_name: z.string() }))
   .handler(async ({ data }) => {
     if (!env.VITE_HIKMA_REPORTER_URL) {
       throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
@@ -137,7 +137,7 @@ const subscribeReporting = createServerFn({ method: "POST" })
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          nickname: data.nickname ?? undefined,
+          organization_name: data.organization_name,
           report_url: new URL("/api/hh/analytics/report", env.VITE_SERVER_URL)
             .href,
         }),
@@ -601,7 +601,9 @@ function RouteComponent() {
   const handleSubscribeReporting = async () => {
     setIsUpdatingReporting(true);
     try {
-      await subscribeReporting({ data: { nickname: organizationName } });
+      await subscribeReporting({
+        data: { organization_name: organizationName },
+      });
       toast.success("Analytics reporting enabled");
       await router.invalidate({ sync: true });
     } catch (e) {
