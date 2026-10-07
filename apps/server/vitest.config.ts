@@ -21,6 +21,8 @@ export default defineConfig({
     // vitest.integration.config.ts.
     testTimeout: 30_000,
     setupFiles: ["./tests/setup.ts"],
+    // A dev .env loaded via dotenv may set this; the limiter suites assert real limits.
+    env: { HH_DISABLE_RATE_LIMITING: "false" },
     exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**", "**/tests/integration/**"],
     coverage: {
       reporter: ["text", "json", "json-summary", "html"],

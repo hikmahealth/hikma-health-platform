@@ -1,5 +1,9 @@
 import db from "@/db";
 import { createFileRoute } from "@tanstack/react-router";
+import { getCookie } from "@tanstack/react-start/server";
+import { Option } from "effect";
+import Token from "@/models/token";
+import User from "@/models/user";
 import { uuidv7 } from "uuidv7";
 import { readEntriesFromRequest, type SpecialEntry } from "@/imports/a/utils";
 import type { DB } from "@hikmahealth/database/types/schema/hh";
@@ -18,6 +22,20 @@ export const Route = createFileRoute("/api/entries/backfill")({
   server: {
     handlers: {
       POST: async function (req) {
+        const token = getCookie("token");
+        if (!token) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+
+        // Creates users and clinics, so super_admin only.
+        const user = await Token.getUser(token);
+        if (Option.isNone(user)) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+        if (user.value.role !== User.ROLES.SUPER_ADMIN) {
+          return new Response("Forbidden", { status: 403 });
+        }
+
         if (!req.request.body) {
           return new Response("missing body", { status: 400 });
         }
