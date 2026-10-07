@@ -22,7 +22,6 @@ export const env = createEnv({
       .url()
       .optional()
       .default(DEFAULT_HIKMA_REPORTER_URL),
-    VITE_SERVER_URL: z.url().optional(),
   },
 
   /**

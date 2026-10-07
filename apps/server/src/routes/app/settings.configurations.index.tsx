@@ -20,7 +20,7 @@ import ServerVariable from "@/models/server_variable";
 import User from "@/models/user";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useImmerReducer } from "use-immer";
@@ -118,28 +118,25 @@ const getReportingStatus = createServerFn({ method: "GET" })
   });
 
 // Registers this instance with the reporting service and saves the issued credentials
-const subscribeReporting = createServerFn({ method: "POST" })
-  .middleware([superAdminMiddleware])
-  .validator(z.object({ organization_name: z.string() }))
-  .handler(async ({ data }) => {
-    if (!env.VITE_HIKMA_REPORTER_URL) {
+const registerWithReportingService = createServerOnlyFn(
+  async (organization_name: string) => {
+    if (!env.HIKMA_REPORTER_URL) {
       throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
     }
-    if (!env.VITE_SERVER_URL) {
+    if (!env.SERVER_URL) {
       throw new Error(
         "SERVER_URL is not configured; the reporting service needs it to reach this instance",
       );
     }
 
     const response = await fetch(
-      new URL("/api/report/register", env.VITE_HIKMA_REPORTER_URL),
+      new URL("/api/report/register", env.HIKMA_REPORTER_URL),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          organization_name: data.organization_name,
-          report_url: new URL("/api/hh/analytics/report", env.VITE_SERVER_URL)
-            .href,
+          organization_name,
+          report_url: new URL("/api/hh/analytics/report", env.SERVER_URL).href,
         }),
       },
     );
@@ -154,7 +151,7 @@ const subscribeReporting = createServerFn({ method: "POST" })
       ok: boolean;
       credentials?: {
         client_id: string; // passed as the `Hikma-Health-Requester` header
-        client_signing_key: string; // used as part of the authorization
+        client_verifying_key: string; // used as part of the authorization
         version: string;
       };
     };
@@ -165,43 +162,50 @@ const subscribeReporting = createServerFn({ method: "POST" })
 
     await saveCredentials(body.credentials);
     return { ok: true as const };
-  });
+  },
+);
 
 // Unregisters this instance from the reporting service and removes local credentials
+const unregisterFromReportingService = createServerOnlyFn(async () => {
+  if (!env.HIKMA_REPORTER_URL) {
+    throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
+  }
+
+  const credentials = await readCredentials();
+  if (!credentials) {
+    // nothing to unregister locally
+    return { ok: true as const };
+  }
+
+  const response = await fetch(new URL("/api/report", env.HIKMA_REPORTER_URL), {
+    method: "DELETE",
+    headers: {
+      "Hikma-Health-Requester": credentials.client_id,
+    },
+  });
+
+  // 404 means the service already doesn't know us, so we can safely clean up
+  if (!response.ok && response.status !== 404) {
+    throw new Error(
+      `Reporting service rejected unsubscribe (status ${response.status})`,
+    );
+  }
+
+  // NOTE: might want to consider posting the record on to the DB
+  await deleteCredentials();
+  return { ok: true as const };
+});
+
+const subscribeReporting = createServerFn({ method: "POST" })
+  .middleware([superAdminMiddleware])
+  .validator(z.object({ organization_name: z.string() }))
+  .handler(async ({ data }) =>
+    registerWithReportingService(data.organization_name),
+  );
+
 const unsubscribeFromReporting = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
-  .handler(async () => {
-    if (!env.VITE_HIKMA_REPORTER_URL) {
-      throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
-    }
-
-    const credentials = await readCredentials();
-    if (!credentials) {
-      // nothing to unregister locally
-      return { ok: true as const };
-    }
-
-    const response = await fetch(
-      new URL("/api/report", env.VITE_HIKMA_REPORTER_URL),
-      {
-        method: "DELETE",
-        headers: {
-          "Hikma-Health-Requester": credentials.client_id,
-        },
-      },
-    );
-
-    // 404 means the service already doesn't know us, so we can safely clean up
-    if (!response.ok && response.status !== 404) {
-      throw new Error(
-        `Reporting service rejected unsubscribe (status ${response.status})`,
-      );
-    }
-
-    // NOTE: might want to consider posting the record on to the DB
-    await deleteCredentials();
-    return { ok: true as const };
-  });
+  .handler(async () => unregisterFromReportingService());
 
 const getAllConfigurations = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
