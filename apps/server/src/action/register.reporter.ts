@@ -17,7 +17,9 @@ export const registerWithReportingService = createServerOnlyFn(
     if (!getHikmaReporterUrl()) {
       throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
     }
-    if (!process.env.SERVER_URL) {
+
+    const appUrl = process.env.SERVER_URL ?? process.env.RENDER_EXTERNAL_URL;
+    if (!appUrl) {
       throw new Error(
         "SERVER_URL is not configured; the reporting service needs it to reach this instance",
       );
@@ -30,10 +32,7 @@ export const registerWithReportingService = createServerOnlyFn(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           organization_name,
-          report_url: new URL(
-            "/api/hh/analytics/report",
-            process.env.SERVER_URL,
-          ).href,
+          report_url: new URL("/api/hh/analytics/report", appUrl).href,
         }),
       },
     );
