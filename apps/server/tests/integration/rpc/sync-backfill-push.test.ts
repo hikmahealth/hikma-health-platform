@@ -7,14 +7,10 @@ vi.mock("@/db", () => ({ default: testDb }));
 
 import { syncCommandRouter } from "@/integrations/trpc/routers/commands/sync";
 import { createCallerFactory } from "@/integrations/trpc/init";
+import Token from "@/models/token";
 
-/**
- * The router tests mock `persistClientChanges`, so nothing there can see the
- * table names it actually keys rejections by. That matters: the client resolves
- * its collections by those names, and a server-side name would protect nothing.
- * This drives a real stale record through the real procedure, over the real
- * auth middleware, and asserts on what comes back.
- */
+// Unmocked counterpart to the router tests: rejections must be keyed by the
+// client's table names, or the client can't resolve them.
 const call = createCallerFactory(syncCommandRouter);
 
 const patientIds: string[] = [];
@@ -88,7 +84,7 @@ beforeAll(async () => {
   await testDb
     .insertInto("tokens")
     .values({
-      token,
+      token: Token.hash(token),
       user_id: userId,
       expiry: sql`now() + interval '1 hour'`,
     } as any)
@@ -99,7 +95,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   for (const token of tokens)
-    await testDb.deleteFrom("tokens").where("token", "=", token).execute();
+    await testDb.deleteFrom("tokens").where("token", "=", Token.hash(token)).execute();
   for (const id of patientIds)
     await testDb.deleteFrom("patients").where("id", "=", id).execute();
   for (const id of userIds)
@@ -124,8 +120,7 @@ describe("sync.backfillPush against a real database", () => {
     expect(result.by_table.patients).toEqual({ accepted: 1, rejected: 0 });
   });
 
-  // The whole point of the procedure: without this the client marks the record
-  // synced and the next pull overwrites the edit it never delivered.
+  // Otherwise the client marks the record synced and the next pull overwrites it.
   it("names the record the staleness guard rejected, under the client's table name", async () => {
     const id = uuidV1();
     patientIds.push(id);

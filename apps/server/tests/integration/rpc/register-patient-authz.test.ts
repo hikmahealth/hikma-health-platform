@@ -9,18 +9,9 @@ vi.mock("@/db", () => ({ default: testDb }));
 import { commandAppRouter } from "@/integrations/trpc/router";
 import Token from "@/models/token";
 
-/**
- * INV-27 — the can_register_patients gate has to be enforced on the server, not
- * just hidden in the UI. This drives the real register_patient tRPC procedure
- * end to end (bearer token → authedMiddleware → requireClinicPermission), so a
- * direct-API bypass would be caught.
- *
- * One wrinkle: register_patient wraps its body in a try/catch that re-codes
- * every error — the gate's FORBIDDEN included — as INTERNAL_SERVER_ERROR,
- * keeping only error.message (commands.ts:281-289). So the denial comes back as
- * a 500 whose message names the permission, not a 403. Asserting on the message
- * is enough to show the gate fired; the masked status code is a separate finding.
- */
+// INV-27: the can_register_patients gate must hold server-side, not just in the UI.
+// register_patient re-codes every error as INTERNAL_SERVER_ERROR, so denials are
+// asserted on the message, not a 403.
 
 const createdIds: {
   patients: string[];
@@ -103,7 +94,7 @@ afterEach(async () => {
   for (const id of createdIds.patients)
     await testDb.deleteFrom("patients").where("id", "=", id).execute();
   for (const token of createdIds.tokens)
-    await testDb.deleteFrom("tokens").where("token", "=", token).execute();
+    await testDb.deleteFrom("tokens").where("token", "=", Token.hash(token)).execute();
   for (const id of createdIds.users) {
     await testDb
       .deleteFrom("user_clinic_permissions")
