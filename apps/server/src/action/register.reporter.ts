@@ -4,12 +4,17 @@ import {
   readCredentials,
   saveCredentials,
 } from "@/lib/analytics-reporting/credentials";
-import { env } from "@/env";
+
+const DEFAULT_HIKMA_REPORTER_URL = "https://backoffice.fly.dev";
+
+const getHikmaReporterUrl = function () {
+  return process.env.HIKMA_REPORTER_URL ?? DEFAULT_HIKMA_REPORTER_URL;
+};
 
 // Registers this instance with the reporting service and saves the issued credentials
 export const registerWithReportingService = createServerOnlyFn(
   async (organization_name: string) => {
-    if (!env.HIKMA_REPORTER_URL) {
+    if (!getHikmaReporterUrl()) {
       throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
     }
     if (!process.env.SERVER_URL) {
@@ -19,7 +24,7 @@ export const registerWithReportingService = createServerOnlyFn(
     }
 
     const response = await fetch(
-      new URL("/api/report/register", env.HIKMA_REPORTER_URL),
+      new URL("/api/report/register", getHikmaReporterUrl()),
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -59,7 +64,7 @@ export const registerWithReportingService = createServerOnlyFn(
 
 // Unregisters this instance from the reporting service and removes local credentials
 export const unregisterFromReportingService = createServerOnlyFn(async () => {
-  if (!env.HIKMA_REPORTER_URL) {
+  if (!getHikmaReporterUrl()) {
     throw new Error("HIKMA_REPORTER_URL is not configured on this instance");
   }
 
@@ -69,7 +74,7 @@ export const unregisterFromReportingService = createServerOnlyFn(async () => {
     return { ok: true as const };
   }
 
-  const response = await fetch(new URL("/api/report", env.HIKMA_REPORTER_URL), {
+  const response = await fetch(new URL("/api/report", getHikmaReporterUrl()), {
     method: "DELETE",
     headers: {
       "Hikma-Health-Requester": credentials.client_id,
