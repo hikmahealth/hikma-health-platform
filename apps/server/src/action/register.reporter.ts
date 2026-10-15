@@ -53,7 +53,8 @@ const getReportUrl = () => {
 };
 
 const registerErrorMessage = (status: number) => {
-  if (status === 400) return "Reporting service rejected the organization details";
+  if (status === 400)
+    return "Reporting service rejected the organization details";
   if (status === 503) {
     return "Reporting service registrations are paused; try again later";
   }
@@ -84,7 +85,7 @@ export type RegistrationResult =
   | { ok: true; detailsSubmitted: true }
   | { ok: true; detailsSubmitted: false; detailsError: string };
 
-/** Registers, saves the credentials, then sends the report URL; if that last step fails, retry it with `submitReportDetails`. */
+// Registers this instance with the reporting service and saves the issued credentials
 export const registerWithReportingService = createServerOnlyFn(
   async (organization_name: string): Promise<RegistrationResult> => {
     const response = await reporterFetch({
@@ -114,7 +115,9 @@ export const registerWithReportingService = createServerOnlyFn(
         ok: true,
         detailsSubmitted: false,
         detailsError:
-          error instanceof Error ? error.message : "Failed to send report details",
+          error instanceof Error
+            ? error.message
+            : "Failed to send report details",
       };
     }
   },
@@ -124,7 +127,9 @@ export const registerWithReportingService = createServerOnlyFn(
 export const submitReportDetails = createServerOnlyFn(async () => {
   const credentials = await readCredentials();
   if (!credentials) {
-    throw new Error("This instance is not registered with the reporting service");
+    throw new Error(
+      "This instance is not registered with the reporting service",
+    );
   }
   await putReportDetails(credentials);
   return { ok: true as const };
@@ -143,7 +148,10 @@ export type ReportingStatus = {
   reportUrl: string | null;
 };
 
-const unregistered: ReportingStatus = { state: "unregistered", reportUrl: null };
+const unregistered: ReportingStatus = {
+  state: "unregistered",
+  reportUrl: null,
+};
 
 export const getReportingStatus = createServerOnlyFn(
   async (): Promise<ReportingStatus> => {
@@ -158,8 +166,10 @@ export const getReportingStatus = createServerOnlyFn(
       });
       if (response.status === 401) return unregistered;
       if (response.status === 404) return unregistered;
-      if (response.status === 403) return { state: "forbidden", reportUrl: null };
-      if (response.status !== 200) return { state: "unreachable", reportUrl: null };
+      if (response.status === 403)
+        return { state: "forbidden", reportUrl: null };
+      if (response.status !== 200)
+        return { state: "unreachable", reportUrl: null };
 
       const body = (await response.json()) as {
         data?: { verification_status?: string; report_url?: string | null };

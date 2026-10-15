@@ -529,7 +529,9 @@ function RouteComponent() {
       if (result.detailsSubmitted) {
         toast.success("Connected; waiting for Hikma Health to verify");
       } else {
-        toast.error(`Connected, but sending the report URL failed: ${result.detailsError}`);
+        toast.error(
+          `Connected, but sending the report URL failed: ${result.detailsError}`,
+        );
       }
       await router.invalidate({ sync: true });
     } catch (e) {
