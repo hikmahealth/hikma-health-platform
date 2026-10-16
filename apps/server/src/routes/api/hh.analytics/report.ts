@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import db from "@/db";
 import { sql } from "kysely";
-import { addDays, format, isAfter, isValid } from "date-fns";
+import { addDays, format, isAfter, isValid, subMonths } from "date-fns";
 
 const data = <T>(d: T) => {
   return new Response(JSON.stringify(d), {
@@ -19,10 +19,15 @@ const dateField = z
   .transform((d) => new Date(d))
   .refine((d) => isValid(d), "Invalid date");
 
+// Missing or null dates default to the 3 months up to today.
 const reportSchema = z
   .object({
-    startDate: dateField,
-    endDate: dateField,
+    startDate: dateField.nullish(),
+    endDate: dateField.nullish(),
+  })
+  .transform(({ startDate, endDate }) => {
+    const end = endDate ?? new Date();
+    return { startDate: startDate ?? subMonths(end, 3), endDate: end };
   })
   .refine((v) => !isAfter(v.startDate, v.endDate), {
     message: "startDate must not be after endDate",
@@ -57,20 +62,25 @@ function toDailySeries(
 }
 
 /**
- * This endpoint is exposed so that it may be called by the administrator portal
- * 1.⁠ ⁠Number of patients registered in the last 3 calendar months (with a daily breakdown that we can aggregate as needed)
- * 2.⁠ ⁠⁠Number of patient visits in the last 3 calendar months (with a daily breakdown that we can aggregate as needed)
- * 3. total patients overall
+ * Report pulled by the Hikma Health backoffice: total patients, plus daily
+ * counts of patients registered and visits over the requested range.
  */
 export const Route = createFileRoute("/api/hh/analytics/report")({
   server: {
     middleware: [authAnalyticsMiddleware],
     handlers: {
-      /**
-       * Generates a report on the instance then send's to the intended recipient
-       */
       POST: async function ({ request }) {
-        const parsed = reportSchema.safeParse(await request.json());
+        const text = await request.text();
+        let json: unknown;
+        try {
+          json = text === "" ? {} : JSON.parse(text);
+        } catch {
+          return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        const parsed = reportSchema.safeParse(json);
         if (!parsed.success) {
           return new Response(
             JSON.stringify({ error: parsed.error.flatten() }),
@@ -81,7 +91,6 @@ export const Route = createFileRoute("/api/hh/analytics/report")({
         const start = format(startDate, "yyyy-MM-dd");
         const end = format(endDate, "yyyy-MM-dd");
 
-        // total number of patients overall
         const totalPatientsQuery = db
           .selectFrom("patients")
           .select(sql<string>`COUNT(*)`.as("count"))

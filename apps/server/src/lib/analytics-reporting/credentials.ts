@@ -1,27 +1,25 @@
 import ServerVariable from "@/models/server_variable";
 import { z } from "zod";
 
-/**
- * Credentials issued by the reporting service (`HIKMA_REPORTER_URL`) when this
- * instance registers for analytics reporting.
- *
- * They are persisted as a JSON `server_variables` row so they survive restarts.
- */
+/** Credentials issued at registration, stored as a JSON `server_variables` row. */
 const credentialsSchema = z.object({
-  /** Passed as the `Hikma-Health-Requester` header on requests to the reporter */
-  client_id: z.string(),
-  /** Used to verify/sign requests between this instance and the reporter */
-  client_verifying_key: z.string(),
-  version: z.string().or(z.number()).transform(Number),
+  /** `sub` of tokens sent to the backoffice */
+  client_id: z.string().min(1),
+  /** Ed25519 PKCS#8 DER, base64url; only ever returned at registration */
+  client_signing_key: z.string().min(1),
+  /** Ed25519 SPKI DER, base64url; verifies backoffice pulls */
+  client_verifying_key: z.string().min(1),
+  /** `sub` of backoffice pulls */
+  reporter_id: z.string().min(1),
+  version: z.number().int(),
 });
 
-export type ReportingCredentials = z.input<typeof credentialsSchema>;
-export type StoredReportingCredentials = z.output<typeof credentialsSchema>;
+export type ReportingCredentials = z.infer<typeof credentialsSchema>;
 
 const KEY = ServerVariable.Keys.HIKMA_REPORTER_CREDENTIALS;
 
 /** Reads saved credentials, or `null` when none exist (or the stored value is invalid). */
-export async function readCredentials(): Promise<StoredReportingCredentials | null> {
+export async function readCredentials(): Promise<ReportingCredentials | null> {
   try {
     const value = await ServerVariable.getAsJson(KEY);
     if (value == null) return null;

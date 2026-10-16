@@ -20,18 +20,14 @@ import ServerVariable from "@/models/server_variable";
 import User from "@/models/user";
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
-import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
+import { createServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { env } from "@/env";
-import {
-  deleteCredentials,
-  readCredentials,
-  saveCredentials,
-} from "@/lib/analytics-reporting/credentials";
 import { z } from "zod";
 import {
+  getReportingStatus as fetchReportingStatus,
   registerWithReportingService,
+  submitReportDetails,
   unregisterFromReportingService,
 } from "@/action/register.reporter";
 
@@ -66,63 +62,13 @@ const saveConfiguration = createServerFn({ method: "POST" })
     );
   });
 
-type ReportingStatus = {
-  /** whether `HIKMA_REPORTER_URL` is set on this instance */
-  reporterConfigured: boolean;
-  /**
-   * - `registered`: reporting service recognises this instance
-   * - `unregistered`: no local credentials, or the service doesn't know this instance
-   * - `forbidden`: the service rejected this instance's credentials
-   * - `unreachable`: the service couldn't be contacted
-   */
-  state: "registered" | "unregistered" | "forbidden" | "unreachable";
-};
-
-// Checks whether this instance is registered with the reporting service
 const getReportingStatus = createServerFn({ method: "GET" })
   .middleware([superAdminMiddleware])
-  .handler(async (): Promise<ReportingStatus> => {
-    if (!env.VITE_HIKMA_REPORTER_URL) {
-      return { reporterConfigured: false, state: "unregistered" };
-    }
-
-    const credentials = await readCredentials();
-    if (!credentials) {
-      return { reporterConfigured: true, state: "unregistered" };
-    }
-
-    try {
-      const res = await fetch(
-        new URL("/api/report", env.VITE_HIKMA_REPORTER_URL),
-        {
-          method: "GET",
-          headers: {
-            "Hikma-Health-Requester": credentials.client_id,
-          },
-        },
-      );
-
-      // 200 = registered; 404 = not registered; 403 = forbidden from accessing resource
-      if (res.status === 200)
-        return { reporterConfigured: true, state: "registered" };
-      if (res.status === 404)
-        return { reporterConfigured: true, state: "unregistered" };
-      if (res.status === 403)
-        return { reporterConfigured: true, state: "forbidden" };
-
-      return {
-        reporterConfigured: true,
-        state: "unreachable",
-      };
-    } catch (err) {
-      console.log(err);
-      return { reporterConfigured: true, state: "unreachable" };
-    }
-  });
+  .handler(async () => fetchReportingStatus());
 
 const subscribeReporting = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
-  .validator(z.object({ organization_name: z.string() }))
+  .validator(z.object({ organization_name: z.string().trim().min(1).max(120) }))
   .handler(async ({ data }) =>
     registerWithReportingService(data.organization_name),
   );
@@ -130,6 +76,10 @@ const subscribeReporting = createServerFn({ method: "POST" })
 const unsubscribeFromReporting = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
   .handler(async () => unregisterFromReportingService());
+
+const retryReportDetails = createServerFn({ method: "POST" })
+  .middleware([superAdminMiddleware])
+  .handler(async () => submitReportDetails());
 
 const getAllConfigurations = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
@@ -529,10 +479,14 @@ function RouteComponent() {
   const handleSubscribeReporting = async () => {
     setIsUpdatingReporting(true);
     try {
-      await subscribeReporting({
+      const result = await subscribeReporting({
         data: { organization_name: organizationName },
       });
-      toast.success("Analytics reporting enabled");
+      if (result.detailsSubmitted) {
+        toast.success("Connected; waiting for Hikma Health to verify");
+      } else {
+        toast.error(`Connected, but sending the report URL failed: ${result.detailsError}`);
+      }
       await router.invalidate({ sync: true });
     } catch (e) {
       toast.error(
@@ -560,7 +514,20 @@ function RouteComponent() {
     }
   };
 
-  console.log({ reportingStatus });
+  const handleRetryReportDetails = async () => {
+    setIsUpdatingReporting(true);
+    try {
+      await retryReportDetails();
+      toast.success("Report URL sent");
+      await router.invalidate({ sync: true });
+    } catch (e) {
+      toast.error(
+        e instanceof Error ? e.message : "Failed to send the report URL",
+      );
+    } finally {
+      setIsUpdatingReporting(false);
+    }
+  };
 
   return (
     <div className="container py-6">
@@ -651,45 +618,49 @@ function RouteComponent() {
             counts) when requested by the Hikma Health reporting service.
           </div>
 
-          {!reportingStatus.reporterConfigured ? (
-            <div className="text-sm text-muted-foreground">
-              Analytics reporting is unavailable: no reporting service is
-              configured for this instance.
-            </div>
-          ) : (
-            <>
-              <div className="text-sm">
-                Status:{" "}
-                <span className="font-medium">
-                  {reportingStatus.state === "registered" && "Opted in"}
-                  {reportingStatus.state === "unregistered" && "Opted out"}
-                  {reportingStatus.state === "forbidden" &&
-                    "Registered, but access was denied by the reporting service"}
-                  {reportingStatus.state === "unreachable" &&
-                    "Unable to reach the reporting service"}
-                </span>
-              </div>
+          <div className="text-sm">
+            Status:{" "}
+            <span className="font-medium">
+              {reportingStatus.state === "registered" && "Opted in"}
+              {reportingStatus.state === "pending_verification" &&
+                "Pending verification by Hikma Health"}
+              {reportingStatus.state === "unregistered" && "Opted out"}
+              {reportingStatus.state === "forbidden" &&
+                "Registered, but access was denied by the reporting service"}
+              {reportingStatus.state === "unreachable" &&
+                "Unable to reach the reporting service"}
+            </span>
+          </div>
 
-              <div>
-                {reportingStatus.state === "unregistered" ? (
-                  <Button
-                    onClick={handleSubscribeReporting}
-                    disabled={isUpdatingReporting}
-                  >
-                    Opt in to analytics reporting
-                  </Button>
-                ) : (
-                  <Button
-                    variant="outline"
-                    onClick={handleUnsubscribeReporting}
-                    disabled={isUpdatingReporting}
-                  >
-                    Unsubscribe from analytics reporting
-                  </Button>
-                )}
-              </div>
-            </>
-          )}
+          <div className="flex flex-row gap-4">
+            {reportingStatus.state === "unregistered" ? (
+              <Button
+                onClick={handleSubscribeReporting}
+                disabled={isUpdatingReporting}
+              >
+                Opt in to analytics reporting
+              </Button>
+            ) : (
+              <>
+                {reportingStatus.state === "pending_verification" &&
+                  reportingStatus.reportUrl === null && (
+                    <Button
+                      onClick={handleRetryReportDetails}
+                      disabled={isUpdatingReporting}
+                    >
+                      Send report URL
+                    </Button>
+                  )}
+                <Button
+                  variant="outline"
+                  onClick={handleUnsubscribeReporting}
+                  disabled={isUpdatingReporting}
+                >
+                  Unsubscribe from analytics reporting
+                </Button>
+              </>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-col gap-4 pt-4 border-t">
