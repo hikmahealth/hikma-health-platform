@@ -39,3 +39,28 @@ overrides:
   "file-type@>=13.0.0 <21.3.1": ">=21.3.1"
   "file-type@>=20.0.0 <=21.3.1": ">=21.3.2"
   "srvx@<0.11.13": ">=0.11.13"
+
+# Advisories already present when the CI audit gate landed (2026-10-21).
+# Remove entries as fixes land; never add to get CI green.
+auditConfig:
+  ignoreGhsas:
+    # critical
+    - GHSA-5gmw-xhrv-c9v3 # tinypool (vitest)
+    - GHSA-85c8-ppgw-ccpr # tinypool (vitest)
+    - GHSA-pqg4-j6r4-53mv # shell-quote
+    - GHSA-8r5x-fm3f-whwj # handlebars (mobile tooling)
+    - GHSA-p8wg-vrv2-v86f # handlebars (mobile tooling)
+    # high
+    - GHSA-jm63-cq47-j5jp # @modelcontextprotocol/server (local-hub)
+    - GHSA-46jr-4wx8-v453 # @modelcontextprotocol/server (local-hub)
+    - GHSA-q3jh-wrc6-jgq8 # follow-redirects (mobile)
+    - GHSA-8r9p-f939-6h3c # follow-redirects (mobile)
+    - GHSA-ch52-4w7c-c8xp # http-cache-semantics (database)
+    - GHSA-86w9-cpqp-85rv # node-forge — no patched version
+    - GHSA-vfj7-8cjw-p6xm # braces — no patched version
+    - GHSA-qhr7-859c-m2p7 # brace-expansion
+    - GHSA-6j4f-fj2g-mc7p # brace-expansion
+    - GHSA-68fv-2mgg-jv7q # source-map-js
+    - GHSA-vc2v-76pw-4v95 # compression (mobile dev server)
+    - GHSA-587h-7wmj-h5pm # vite, launch-editor (dev server)
+    - GHSA-qxc2-j82w-r537 # @faker-js/faker (test fixtures)

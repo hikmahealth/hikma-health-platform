@@ -1,0 +1,49 @@
+name: Security audit
+
+# ISO 27799 §8.8. Separate from ci.yaml so a new advisory can't block the
+# next → v3 fast-forward.
+
+on:
+  push:
+    branches:
+      - next
+  pull_request:
+    branches:
+      - next
+      - v3
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pnpm-audit:
+    runs-on: warp-ubuntu-latest-x64-4x
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+
+      # Audits the lockfile; no install needed.
+      - name: Audit npm dependencies
+        run: pnpm audit --audit-level high
+
+  cargo-audit:
+    runs-on: warp-ubuntu-latest-x64-4x
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit local-hub Rust dependencies
+        working-directory: apps/local-hub/src-tauri
+        run: cargo audit

@@ -1,0 +1,27 @@
+# ISO 27799 §8.8. npm and cargo get security updates only: a limit of 0 disables
+# version bumps, since several toolchain versions are pinned on purpose.
+# Security updates also need enabling in the repo's Code security settings.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    target-branch: next
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: cargo
+    directory: /apps/local-hub/src-tauri
+    target-branch: next
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: next
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]

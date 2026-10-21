@@ -84,7 +84,6 @@ jobs:
         run: pnpm exec just vendor-check
 
       # TODO: Add lint tests
-      # TODO: Add audits with pnpm audit (maybe using snyk?)
       # TODO: Add a check for code coverage to ensure coverage meets a minimum threshold
       # TODO: Add end-to-end tests with playwright
 
