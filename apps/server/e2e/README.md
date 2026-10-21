@@ -21,6 +21,19 @@ VITE_ADMIN_PASS=your-admin-password
 
 These credentials are used by the authentication fixture to sign in before running tests that require authentication.
 
+### First-run setup
+
+On a fresh database the server waits at `/setup`. The `setup` project
+(`setup.setup.ts`) runs before every browser project and completes the wizard
+with `VITE_ADMIN_EMAIL` / `VITE_ADMIN_PASS` as the first admin, so:
+
+- `VITE_ADMIN_PASS` must be at least 8 characters and not a common password,
+  and `VITE_ADMIN_EMAIL` must not be `admin@hikmahealth.org`.
+- Playwright starts its server with `SETUP_TOKEN` (from the environment, or a
+  fixed e2e default). If you reuse a dev server you started yourself, set the
+  same `SETUP_TOKEN` in `.env` before starting it.
+- On a database that is already set up, the step does nothing.
+
 ## Running Tests
 
 ### Basic Commands

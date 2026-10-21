@@ -28,6 +28,9 @@ import { getCurrentUser } from "@/lib/server-functions/auth";
 import { getAllClinics } from "@/lib/server-functions/clinics";
 import { Result } from "@/lib/result";
 import { Logger } from "@hikmahealth/js-utils";
+import { getDefaultCredentialStatusFn } from "@/lib/server-functions/setup";
+import { DefaultCredentialBanner } from "@/components/setup/default-credential-banner";
+import type { DefaultCredentialStatus } from "@/lib/setup/default-credential";
 
 export const Route = createFileRoute("/app")({
   beforeLoad: async () => {
@@ -39,15 +42,33 @@ export const Route = createFileRoute("/app")({
   component: RouteComponent,
   loader: async () => {
     const user = await getCurrentUser();
+    const [clinics, defaultCredential] = await Promise.all([
+      getAllClinics(),
+      loadDefaultCredentialStatus(user?.role),
+    ]);
     return {
       currentUser: user,
-      clinics: Result.getOrElse(await getAllClinics(), []),
+      clinics: Result.getOrElse(clinics, []),
+      defaultCredential,
     };
   },
 });
 
+/** Only admins are told; a failed check hides the warning rather than the portal. */
+async function loadDefaultCredentialStatus(
+  role: string | undefined,
+): Promise<DefaultCredentialStatus | null> {
+  if (role !== "admin" && role !== "super_admin") return null;
+  try {
+    return await getDefaultCredentialStatusFn();
+  } catch (error) {
+    Logger.error({ msg: "Could not check for the default login", error });
+    return null;
+  }
+}
+
 function RouteComponent() {
-  const { currentUser, clinics } = Route.useLoaderData();
+  const { currentUser, clinics, defaultCredential } = Route.useLoaderData();
   const handleSignOut = () => {
     if (window.confirm("Are you sure you want to sign out?")) {
       fetch(`/api/auth/sign-out`, {
@@ -113,6 +134,9 @@ function RouteComponent() {
           </div>
         </header>
         <div className="px-8">
+          {defaultCredential?.kind === "in-use" && (
+            <DefaultCredentialBanner userId={defaultCredential.userId} />
+          )}
           <Outlet />
         </div>
       </SidebarInset>

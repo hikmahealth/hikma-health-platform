@@ -10,26 +10,33 @@ import Token from "@/models/token";
 
 import { Option } from "effect";
 import { Logger } from "@hikmahealth/js-utils";
+import { isSetupComplete } from "@/lib/setup/is-setup-complete";
 
 const checkToken = createServerFn({ method: "GET" }).handler(async () => {
+  if (!(await isSetupComplete())) {
+    return { isValid: false, setupRequired: true };
+  }
   const token = Option.fromNullable(getCookie("token"));
   return Option.match(token, {
     onNone: () => {
       deleteCookie("token");
-      return { isValid: false };
+      return { isValid: false, setupRequired: false };
     },
     onSome: async (t) => {
       const user = await Token.getUser(t);
       const isValid = Option.isSome(user);
       if (!isValid) deleteCookie("token");
-      return { isValid };
+      return { isValid, setupRequired: false };
     },
   });
 });
 
 export const Route = createFileRoute("/")({
   beforeLoad: async () => {
-    const { isValid } = await checkToken();
+    const { isValid, setupRequired } = await checkToken();
+    if (setupRequired) {
+      throw redirect({ to: "/setup", replace: true });
+    }
     if (isValid) {
       throw redirect({ to: "/app" });
     }

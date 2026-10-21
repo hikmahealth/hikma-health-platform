@@ -14,6 +14,11 @@ import { createServerOnlyFn } from "@tanstack/react-start";
 import { v1 as uuidV1 } from "uuid";
 import cloneDeep from "lodash/cloneDeep";
 import UserClinicPermissions from "./user-clinic-permissions";
+import {
+  emailForUpdate,
+  normaliseEmail,
+  normaliseName,
+} from "@/lib/user-identity";
 
 namespace User {
   // export type T = {
@@ -388,9 +393,9 @@ namespace User {
             .insertInto(Table.name)
             .values({
               id: userId,
-              name: user.name,
+              name: normaliseName(user.name),
               role: user.role,
-              email: user.email,
+              email: normaliseEmail(user.email),
               hashed_password: hash,
               instance_url: user.instance_url,
               clinic_id: user.clinic_id,
@@ -492,12 +497,18 @@ namespace User {
           | "deleted_at"
         >,
       ): Promise<User.EncodedT["id"] | null> => {
+        const stored = await db
+          .selectFrom(Table.name)
+          .select("email")
+          .where("id", "=", id)
+          .executeTakeFirst();
+
         await db
           .updateTable(Table.name)
           .set({
-            name: user.name,
+            name: normaliseName(user.name),
             role: user.role,
-            email: user.email,
+            email: emailForUpdate(user.email, stored?.email),
             instance_url: user.instance_url,
             clinic_id: user.clinic_id,
             is_deleted: user.is_deleted,

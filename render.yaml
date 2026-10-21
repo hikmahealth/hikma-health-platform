@@ -33,6 +33,10 @@ services:
           property: connectionString
       - key: DATABASE_SSL_OPTIONS
         value: '{"rejectUnauthorized":false}'
+      # Unlocks the first-run /setup page; copy it from the Environment tab.
+      # Ignored once setup is complete.
+      - key: SETUP_TOKEN
+        generateValue: true
 
 databases:
   - name: "hikma-health-db"

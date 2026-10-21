@@ -22,6 +22,7 @@
     "lint": "biome lint",
     "check": "biome check",
     "recovery-permissions": "DB_SSL=true tsx scripts/user_permissions_recovery.ts",
+    "setup-token": "DB_SSL=true tsx scripts/setup-token.ts",
     "recovery-permissions-dry-run": "DRY_RUN=true tsx scripts/user_permissions_recovery.ts",
     "res:build": "rescript",
     "res:clean": "rescript clean",
@@ -137,6 +138,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
+    "@electric-sql/pglite": "0.4.6",
     "@playwright/test": "^1.55.1",
     "@tanstack/devtools-vite": "^0.5.2",
     "@testing-library/dom": "^10.4.0",

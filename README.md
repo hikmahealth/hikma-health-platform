@@ -20,6 +20,28 @@ distributed through the App Store and Play Store, not via these buttons.
 
 [![Deploy to DigitalOcean](https://www.deploytodo.com/do-btn-blue.svg)](https://cloud.digitalocean.com/apps/new)
 
+### First-time setup
+
+A new deployment has no administrator account by default. After a completed deployment, open
+`https://<your-server>/setup` and enter the **setup token**, then name register your
+organization and clinic and create your administrator account.
+
+Where to find the setup token:
+
+- **Render:** the service's **Environment** tab, `SETUP_TOKEN`.
+- **DigitalOcean:** the deploy form asks for `SETUP_TOKEN`. Type your own
+  passphrase (at least 24 characters), or leave the suggested value and copy
+  the generated token from the app's **Runtime Logs**.
+- **Anywhere else** (Fly.io, Docker, your own server): set `SETUP_TOKEN` to a
+  passphrase of at least 24 characters (on Fly: `fly secrets set
+  SETUP_TOKEN=…`), or leave it unset and copy the generated token from the
+  server's logs. Every instance prints the same token, and a restart prints it
+  again. Run `just setup-token-reset` to replace a generated token.
+
+The setup page is only available until the first administrator is created, and
+`SETUP_TOKEN` is ignored after that. Servers already deployed and running before this feature 
+and this page this page existed are treated as set up and are not affected.
+
 If you are migrating from the legacy `hikma-health-backend` (Python/Flask) +
 `hikma-health-admin` (Next.js) repos, see the migration notes in
 [`apps/server/README.md`](apps/server/README.md) — your existing PostgreSQL

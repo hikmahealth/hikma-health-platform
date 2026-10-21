@@ -1038,6 +1038,9 @@ importers:
       '@biomejs/biome':
         specifier: 1.9.4
         version: 1.9.4
+      '@electric-sql/pglite':
+        specifier: 0.4.6
+        version: 0.4.6
       '@playwright/test':
         specifier: ^1.55.1
         version: 1.63.0

@@ -22,6 +22,7 @@ import {
   countChanges,
   recordSyncAudit,
 } from "@/models/sync-audit";
+import { rejectWhileSetupPending } from "@/lib/setup/setup-gate";
 
 /** Per account per IP, so devices behind one router don't share a budget. */
 const perAccountLimiter = createRateLimiter({
@@ -48,6 +49,9 @@ export const Route = createFileRoute("/api/v2/sync")({
   server: {
     handlers: {
       GET: async ({ request }) => {
+        const setupRequired = await rejectWhileSetupPending();
+        if (setupRequired) return setupRequired;
+
         const ip = getClientIp(request);
         const limit = checkSyncLimit(request, ip);
         if (!limit.allowed) {
@@ -174,6 +178,9 @@ export const Route = createFileRoute("/api/v2/sync")({
         }
       },
       POST: async ({ request }) => {
+        const setupRequired = await rejectWhileSetupPending();
+        if (setupRequired) return setupRequired;
+
         const postIp = getClientIp(request);
         const postLimit = checkSyncLimit(request, postIp);
         if (!postLimit.allowed) {

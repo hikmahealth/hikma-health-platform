@@ -335,6 +335,16 @@ export interface HhUnique {
   value: string;
 }
 
+export interface InstanceSetup {
+  completed_at: Timestamp | null;
+  completed_by: string | null;
+  consent: Json | null;
+  created_at: Generated<Timestamp>;
+  id: number;
+  token: string | null;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface InventoryTransactions {
   balance_after: number;
   batch_id: string | null;
@@ -747,6 +757,7 @@ export interface DB {
   event_logs: EventLogs;
   events: Events;
   hh_unique: HhUnique;
+  instance_setup: InstanceSetup;
   inventory_transactions: InventoryTransactions;
   patient_additional_attributes: PatientAdditionalAttributes;
   patient_allergies: PatientAllergies;

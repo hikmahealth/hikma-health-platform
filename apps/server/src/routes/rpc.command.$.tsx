@@ -9,6 +9,7 @@ import {
 } from "@/lib/rate-limiter";
 import { isBackfillOnly, checkBackfillLimit } from "@/lib/rpc-rate-limit";
 import { minutesToMilliseconds } from "date-fns";
+import { rejectWhileSetupPending } from "@/lib/setup/setup-gate";
 
 const ENDPOINT = "/rpc/command";
 
@@ -28,7 +29,10 @@ const rpcLimiter = createRateLimiter({
  * In-memory and per-process, like every limiter here: on a multi-instance
  * deploy the effective ceiling is these numbers times the instance count.
  */
-function handler({ request }: { request: Request }) {
+async function handler({ request }: { request: Request }) {
+  const setupRequired = await rejectWhileSetupPending();
+  if (setupRequired) return setupRequired;
+
   const pathname = new URL(request.url).pathname;
   const limit = isBackfillOnly(pathname, ENDPOINT)
     ? checkBackfillLimit(request)

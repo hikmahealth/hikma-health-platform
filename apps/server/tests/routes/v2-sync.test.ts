@@ -6,12 +6,14 @@ const {
   verifyCredentials,
   getByApiKey,
   recordSyncAudit,
+  isSetupComplete,
 } = vi.hoisted(() => ({
   getDeltaRecords: vi.fn(),
   persistClientChanges: vi.fn(),
   verifyCredentials: vi.fn(),
   getByApiKey: vi.fn(),
   recordSyncAudit: vi.fn(async (_args: any) => undefined),
+  isSetupComplete: vi.fn(async () => true),
 }));
 
 vi.mock("@/models/sync", () => ({
@@ -29,6 +31,8 @@ vi.mock("@/models/sync-audit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/models/sync-audit")>()),
   recordSyncAudit,
 }));
+
+vi.mock("@/lib/setup/is-setup-complete", () => ({ isSetupComplete }));
 
 import { Route } from "@/routes/api/v2.sync";
 
@@ -58,6 +62,32 @@ const audits = () => recordSyncAudit.mock.calls.map(([args]) => args as any);
 beforeEach(() => {
   vi.clearAllMocks();
   verifyCredentials.mockResolvedValue({ id: "u1", clinic_id: null });
+  isSetupComplete.mockResolvedValue(true);
+});
+
+describe("/api/v2/sync while setup is pending", () => {
+  it.each(["GET", "POST"] as const)(
+    "%s answers 503 setup_required without authenticating or syncing",
+    async (method) => {
+      isSetupComplete.mockResolvedValue(false);
+
+      const res = await handlers[method]({
+        request: request(
+          method,
+          "last_pulled_at=5",
+          basic,
+          method === "POST" ? {} : undefined,
+        ),
+      });
+
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ error: "setup_required" });
+      expect(verifyCredentials).not.toHaveBeenCalled();
+      expect(getDeltaRecords).not.toHaveBeenCalled();
+      expect(persistClientChanges).not.toHaveBeenCalled();
+      expect(audits()).toHaveLength(0);
+    },
+  );
 });
 
 describe("GET /api/v2/sync audit trail", () => {

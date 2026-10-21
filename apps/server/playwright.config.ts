@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { E2E_SETUP_TOKEN } from "./e2e/setup-token";
 
 /**
  * See https://playwright.dev/docs/test-configuration.
@@ -26,19 +27,29 @@ export default defineConfig({
 
   /* Configure projects for major browsers */
   projects: [
+    /* Completes first-run setup on a fresh database before any test runs. */
+    {
+      name: "setup",
+      testMatch: /.*\.setup\.ts/,
+      use: { ...devices["Desktop Chrome"] },
+    },
+
     {
       name: "firefox",
       use: { ...devices["Desktop Firefox"] },
+      dependencies: ["setup"],
     },
 
     {
       name: "chromium",
       use: { ...devices["Desktop Chrome"] },
+      dependencies: ["setup"],
     },
 
     {
       name: "webkit",
       use: { ...devices["Desktop Safari"] },
+      dependencies: ["setup"],
     },
 
     /* Test against mobile viewports. */
@@ -67,5 +78,6 @@ export default defineConfig({
     command: "pnpm run dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env.CI,
+    env: { SETUP_TOKEN: E2E_SETUP_TOKEN },
   },
 });

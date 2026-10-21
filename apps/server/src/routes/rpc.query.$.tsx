@@ -4,6 +4,7 @@ import { queryAppRouter } from "@/integrations/trpc/router";
 import { createTRPCContext } from "@/integrations/trpc/init";
 import { tooManyRequestsResponse } from "@/lib/rate-limiter";
 import { isBackfillOnly, checkBackfillLimit } from "@/lib/rpc-rate-limit";
+import { rejectWhileSetupPending } from "@/lib/setup/setup-gate";
 
 const ENDPOINT = "/rpc/query";
 
@@ -18,7 +19,10 @@ const ENDPOINT = "/rpc/query";
  * In-memory and per-process: on a multi-instance deploy the effective ceilings
  * are those numbers times the instance count.
  */
-function handler({ request }: { request: Request }) {
+async function handler({ request }: { request: Request }) {
+  const setupRequired = await rejectWhileSetupPending();
+  if (setupRequired) return setupRequired;
+
   const pathname = new URL(request.url).pathname;
   if (isBackfillOnly(pathname, ENDPOINT)) {
     const limit = checkBackfillLimit(request);

@@ -54,6 +54,12 @@ const PUBLIC_ALLOWLIST: Record<string, string> = {
     "Public education article, non-PHI, handler filters to published+public",
   "routes/index.tsx::checkToken":
     "Pre-login probe deciding whether to redirect to /app; returns a boolean only",
+  "lib/server-functions/setup.ts::getSetupStatusFn":
+    "Pre-setup probe deciding whether /setup exists; returns a boolean only",
+  "lib/server-functions/setup.ts::checkSetupTokenFn":
+    "First-run setup, before any user exists; the setup token is the credential, rate limited per IP",
+  "lib/server-functions/setup.ts::completeSetupFn":
+    "First-run setup, before any user exists; the setup token is the credential, rate limited per IP, closed once setup completes",
 
   // Self-scoped: these read the caller's own cookie and cannot be pointed at
   // another user, so there is no subject to authorize against.

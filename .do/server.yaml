@@ -19,6 +19,13 @@ services:
       - key: NODE_VERSION
         value: "24.14.0"
         scope: RUN_AND_BUILD_TIME
+      - key: SETUP_TOKEN
+        # Unlocks the first-run /setup page. Type your own passphrase (24+
+        # characters), or leave this value and copy the generated token from
+        # Runtime Logs. Ignored once setup is complete.
+        value: paste-a-long-passphrase-or-leave-blank-as-you-please
+        type: SECRET
+        scope: RUN_TIME
 databases:
   - name: db
     engine: PG

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as EducationRouteImport } from './routes/education'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as ApiLoginRouteImport } from './routes/api/login'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as AppEntriesRouteImport } from './routes/app/entries'
@@ -25,6 +26,7 @@ import { Route as ApiEntriesBackfillRouteImport } from './routes/api/entries.bac
 import { Route as ApiFormsResourcesRouteImport } from './routes/api/forms.resources'
 import { Route as ApiHubVerifyKeyRouteImport } from './routes/api/hub.verify-key'
 import { Route as ApiResourcesIdRouteImport } from './routes/api/resources.$id'
+import { Route as ApiSetupStatusRouteImport } from './routes/api/setup.status'
 import { Route as ApiV2SyncRouteImport } from './routes/api/v2.sync'
 import { Route as AppAppointmentsIndexRouteImport } from './routes/app/appointments.index'
 import { Route as AppAuditSyncAttemptsRouteImport } from './routes/app/audit.sync-attempts'
@@ -76,6 +78,11 @@ const AppRoute = AppRouteImport.update({
 const EducationRoute = EducationRouteImport.update({
   id: '/education',
   path: '/education',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiLoginRoute = ApiLoginRouteImport.update({
@@ -141,6 +148,11 @@ const ApiHubVerifyKeyRoute = ApiHubVerifyKeyRouteImport.update({
 const ApiResourcesIdRoute = ApiResourcesIdRouteImport.update({
   id: '/api/resources/$id',
   path: '/api/resources/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSetupStatusRoute = ApiSetupStatusRouteImport.update({
+  id: '/api/setup/status',
+  path: '/api/setup/status',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiV2SyncRoute = ApiV2SyncRouteImport.update({
@@ -346,6 +358,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/education': typeof EducationRouteWithChildren
+  '/setup': typeof SetupRoute
   '/api/login': typeof ApiLoginRoute
   '/app/entries': typeof AppEntriesRoute
   '/education/$id': typeof EducationIdRoute
@@ -359,6 +372,7 @@ export interface FileRoutesByFullPath {
   '/api/forms/resources': typeof ApiFormsResourcesRoute
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
+  '/api/setup/status': typeof ApiSetupStatusRoute
   '/api/v2/sync': typeof ApiV2SyncRoute
   '/app/audit/sync-attempts': typeof AppAuditSyncAttemptsRoute
   '/app/data/events': typeof AppDataEventsRoute
@@ -399,6 +413,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/setup': typeof SetupRoute
   '/api/login': typeof ApiLoginRoute
   '/app/entries': typeof AppEntriesRoute
   '/education/$id': typeof EducationIdRoute
@@ -412,6 +427,7 @@ export interface FileRoutesByTo {
   '/api/forms/resources': typeof ApiFormsResourcesRoute
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
+  '/api/setup/status': typeof ApiSetupStatusRoute
   '/api/v2/sync': typeof ApiV2SyncRoute
   '/app/audit/sync-attempts': typeof AppAuditSyncAttemptsRoute
   '/app/data/events': typeof AppDataEventsRoute
@@ -455,6 +471,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/app': typeof AppRouteWithChildren
   '/education': typeof EducationRouteWithChildren
+  '/setup': typeof SetupRoute
   '/api/login': typeof ApiLoginRoute
   '/app/entries': typeof AppEntriesRoute
   '/education/$id': typeof EducationIdRoute
@@ -468,6 +485,7 @@ export interface FileRoutesById {
   '/api/forms/resources': typeof ApiFormsResourcesRoute
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
+  '/api/setup/status': typeof ApiSetupStatusRoute
   '/api/v2/sync': typeof ApiV2SyncRoute
   '/app/audit/sync-attempts': typeof AppAuditSyncAttemptsRoute
   '/app/data/events': typeof AppDataEventsRoute
@@ -512,6 +530,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/education'
+    | '/setup'
     | '/api/login'
     | '/app/entries'
     | '/education/$id'
@@ -525,6 +544,7 @@ export interface FileRouteTypes {
     | '/api/forms/resources'
     | '/api/hub/verify-key'
     | '/api/resources/$id'
+    | '/api/setup/status'
     | '/api/v2/sync'
     | '/app/audit/sync-attempts'
     | '/app/data/events'
@@ -565,6 +585,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/setup'
     | '/api/login'
     | '/app/entries'
     | '/education/$id'
@@ -578,6 +599,7 @@ export interface FileRouteTypes {
     | '/api/forms/resources'
     | '/api/hub/verify-key'
     | '/api/resources/$id'
+    | '/api/setup/status'
     | '/api/v2/sync'
     | '/app/audit/sync-attempts'
     | '/app/data/events'
@@ -620,6 +642,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/education'
+    | '/setup'
     | '/api/login'
     | '/app/entries'
     | '/education/$id'
@@ -633,6 +656,7 @@ export interface FileRouteTypes {
     | '/api/forms/resources'
     | '/api/hub/verify-key'
     | '/api/resources/$id'
+    | '/api/setup/status'
     | '/api/v2/sync'
     | '/app/audit/sync-attempts'
     | '/app/data/events'
@@ -676,6 +700,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRouteWithChildren
   EducationRoute: typeof EducationRouteWithChildren
+  SetupRoute: typeof SetupRoute
   ApiLoginRoute: typeof ApiLoginRoute
   RpcHeartbeatRoute: typeof RpcHeartbeatRoute
   ApiAuthIsValidTokenRoute: typeof ApiAuthIsValidTokenRoute
@@ -685,6 +710,7 @@ export interface RootRouteChildren {
   ApiFormsResourcesRoute: typeof ApiFormsResourcesRoute
   ApiHubVerifyKeyRoute: typeof ApiHubVerifyKeyRoute
   ApiResourcesIdRoute: typeof ApiResourcesIdRoute
+  ApiSetupStatusRoute: typeof ApiSetupStatusRoute
   ApiV2SyncRoute: typeof ApiV2SyncRoute
   RpcCommandSplatRoute: typeof RpcCommandSplatRoute
   RpcQuerySplatRoute: typeof RpcQuerySplatRoute
@@ -713,6 +739,13 @@ declare module '@tanstack/react-router' {
       path: '/education'
       fullPath: '/education'
       preLoaderRoute: typeof EducationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/login': {
@@ -804,6 +837,13 @@ declare module '@tanstack/react-router' {
       path: '/api/resources/$id'
       fullPath: '/api/resources/$id'
       preLoaderRoute: typeof ApiResourcesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/setup/status': {
+      id: '/api/setup/status'
+      path: '/api/setup/status'
+      fullPath: '/api/setup/status'
+      preLoaderRoute: typeof ApiSetupStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/v2/sync': {
@@ -1166,6 +1206,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRouteWithChildren,
   EducationRoute: EducationRouteWithChildren,
+  SetupRoute: SetupRoute,
   ApiLoginRoute: ApiLoginRoute,
   RpcHeartbeatRoute: RpcHeartbeatRoute,
   ApiAuthIsValidTokenRoute: ApiAuthIsValidTokenRoute,
@@ -1175,6 +1216,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiFormsResourcesRoute: ApiFormsResourcesRoute,
   ApiHubVerifyKeyRoute: ApiHubVerifyKeyRoute,
   ApiResourcesIdRoute: ApiResourcesIdRoute,
+  ApiSetupStatusRoute: ApiSetupStatusRoute,
   ApiV2SyncRoute: ApiV2SyncRoute,
   RpcCommandSplatRoute: RpcCommandSplatRoute,
   RpcQuerySplatRoute: RpcQuerySplatRoute,
