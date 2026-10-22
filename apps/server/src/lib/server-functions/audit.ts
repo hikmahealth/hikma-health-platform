@@ -5,6 +5,7 @@
  */
 
 import { createHash } from "crypto";
+import { isIP } from "node:net";
 import * as Sentry from "@sentry/tanstackstart-react";
 import db from "@/db";
 import EventLog from "@/models/event-logs";
@@ -21,10 +22,10 @@ export function getWebRequestContext(): EventLog.RequestContext {
 
   try {
     const forwarded = getRequestHeader("x-forwarded-for");
-    ipAddress =
-      typeof forwarded === "string"
-        ? (forwarded.split(",")[0]?.trim() ?? null)
-        : null;
+    const first =
+      typeof forwarded === "string" ? forwarded.split(",")[0]?.trim() : null;
+    // A client-sent non-IP would fail the inet insert and drop the row.
+    ipAddress = first && isIP(first) ? first : null;
 
     const userAgent = getRequestHeader("user-agent") ?? "unknown";
     deviceId = createHash("sha256").update(userAgent).digest("hex");
@@ -54,4 +55,23 @@ export async function logAuditEvent(
     Sentry.captureException(error, { tags: { subsystem: "audit" } });
     Logger.error({ msg: "Audit log failed:", error });
   }
+}
+
+/** Log a write by the signed-in user; without an actor nothing is recorded. */
+export async function logAdminAudit(
+  userId: string | null | undefined,
+  params: Omit<EventLog.LogEventParams, "userId">,
+): Promise<void> {
+  if (!userId) return;
+  await logAuditEvent({ ...params, userId });
+}
+
+/** Names of the fields in `after` whose values differ from `before`. */
+export function changedFieldNames(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): string[] {
+  return Object.keys(after).filter(
+    (field) => JSON.stringify(before[field]) !== JSON.stringify(after[field]),
+  );
 }

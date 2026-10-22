@@ -3,13 +3,14 @@ import { Effect } from "effect";
 import DrugCatalogue from "@/models/drug-catalogue";
 import * as Sentry from "@sentry/tanstackstart-react";
 import { adminMiddleware, superAdminMiddleware } from "@/middleware/auth";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 export const saveDrug = createServerFn({ method: "POST" })
   .validator(
     (data: { drug: Partial<DrugCatalogue.ApiDrug>; isEdit: boolean }) => data,
   )
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     return Sentry.startSpan({ name: "Save drug to catalogue" }, async () => {
       const result = await Effect.runPromise(
         DrugCatalogue.API.upsert(data.drug).pipe(
@@ -19,6 +20,12 @@ export const saveDrug = createServerFn({ method: "POST" })
           }),
         ),
       );
+      await logAdminAudit(context.userId, {
+        actionType: data.isEdit ? "UPDATE" : "CREATE",
+        tableName: "drug_catalogue",
+        rowId: result.id,
+        changes: { fields: Object.keys(data.drug) },
+      });
       return result;
     });
   });
@@ -28,7 +35,7 @@ export const updateDrug = createServerFn({ method: "POST" })
     (data: { id: string; drug: Partial<DrugCatalogue.ApiDrug> }) => data,
   )
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     return Sentry.startSpan({ name: "Update drug in catalogue" }, async () => {
       const result = await Effect.runPromise(
         DrugCatalogue.API.update(data.id, data.drug).pipe(
@@ -44,6 +51,12 @@ export const updateDrug = createServerFn({ method: "POST" })
           }),
         ),
       );
+      await logAdminAudit(context.userId, {
+        actionType: "UPDATE",
+        tableName: "drug_catalogue",
+        rowId: data.id,
+        changes: { fields: Object.keys(data.drug) },
+      });
       return result;
     });
   });
@@ -51,7 +64,7 @@ export const updateDrug = createServerFn({ method: "POST" })
 export const deleteDrug = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     return Sentry.startSpan(
       { name: "Soft delete drug from catalogue" },
       async () => {
@@ -69,6 +82,12 @@ export const deleteDrug = createServerFn({ method: "POST" })
             }),
           ),
         );
+        await logAdminAudit(context.userId, {
+          actionType: "SOFT_DELETE",
+          tableName: "drug_catalogue",
+          rowId: data.id,
+          changes: {},
+        });
       },
     );
   });

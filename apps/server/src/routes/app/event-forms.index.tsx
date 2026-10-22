@@ -31,18 +31,26 @@ import {
 } from "@/lib/duplicate-event-form";
 import { safeJSONParse } from "@/lib/utils";
 import { truncate } from "es-toolkit/compat";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 const deleteForm = createServerFn({ method: "POST" })
   .validator((d: { id: string }) => d)
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
-    return EventForm.API.softDelete(data.id);
+  .handler(async ({ data, context }) => {
+    const deleted = await EventForm.API.softDelete(data.id);
+    await logAdminAudit(context.userId, {
+      actionType: "SOFT_DELETE",
+      tableName: "event_forms",
+      rowId: data.id,
+      changes: {},
+    });
+    return deleted;
   });
 
 const duplicateForm = createServerFn({ method: "POST" })
   .validator((d: { id: string }) => d)
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const source = await EventForm.API.getById(data.id);
     if (!source) {
       throw new Error("Form not found");
@@ -75,6 +83,13 @@ const duplicateForm = createServerFn({ method: "POST" })
       is_deleted: false,
     } as unknown as EventForm.EncodedT);
 
+    await logAdminAudit(context.userId, {
+      actionType: "CREATE",
+      tableName: "event_forms",
+      rowId: created.id,
+      changes: {},
+      metadata: { duplicated_from: data.id },
+    });
     return { id: created.id };
   });
 
@@ -83,21 +98,33 @@ const toggleFormDetail = createServerFn({ method: "POST" })
     (d: { id: string; field: "snapshot" | "editable"; value: boolean }) => d,
   )
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
-    switch (data.field) {
-      case "snapshot":
-        return await EventForm.API.toggleSnapshot({
-          id: data.id,
-          isSnapshot: data.value,
-        });
-      case "editable":
-        return await EventForm.API.toggleEditable({
-          id: data.id,
-          isEditable: data.value,
-        });
-      default:
-        throw Error("Unknown field");
-    }
+  .handler(async ({ data, context }) => {
+    const toggle = async () => {
+      switch (data.field) {
+        case "snapshot":
+          return await EventForm.API.toggleSnapshot({
+            id: data.id,
+            isSnapshot: data.value,
+          });
+        case "editable":
+          return await EventForm.API.toggleEditable({
+            id: data.id,
+            isEditable: data.value,
+          });
+        default:
+          throw Error("Unknown field");
+      }
+    };
+    const updated = await toggle();
+    const column =
+      data.field === "snapshot" ? "is_snapshot_form" : "is_editable";
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "event_forms",
+      rowId: data.id,
+      changes: { [column]: { new: data.value } },
+    });
+    return updated;
   });
 
 export const Route = createFileRoute("/app/event-forms/")({

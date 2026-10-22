@@ -26,19 +26,32 @@ import { getAllClinics } from "@/lib/server-functions/clinics";
 import { Result } from "@/lib/result";
 import { Link } from "@tanstack/react-router";
 import { Logger } from "@hikmahealth/js-utils";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 const deleteClinic = createServerFn({ method: "POST" })
   .validator((data: { id: string }) => data)
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
-    return Clinic.softDelete(data.id);
+  .handler(async ({ data, context }) => {
+    await Clinic.softDelete(data.id);
+    await logAdminAudit(context.userId, {
+      actionType: "SOFT_DELETE",
+      tableName: "clinics",
+      rowId: data.id,
+      changes: {},
+    });
   });
 
 export const archiveClinic = createServerFn({ method: "POST" })
   .validator((data: { id: string; isArchived: boolean }) => data)
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
-    return Clinic.API.setArchivedStatus(data.id, data.isArchived);
+  .handler(async ({ data, context }) => {
+    await Clinic.API.setArchivedStatus(data.id, data.isArchived);
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "clinics",
+      rowId: data.id,
+      changes: { is_archived: { new: data.isArchived } },
+    });
   });
 
 export const Route = createFileRoute("/app/clinics/")({

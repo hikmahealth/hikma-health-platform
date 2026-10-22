@@ -25,6 +25,7 @@ import db from "@/db";
 import Clinic from "@/models/clinic";
 import { Logger } from "@hikmahealth/js-utils";
 import { adminMiddleware, superAdminMiddleware } from "@/middleware/auth";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 const formSchema = z.object({
   name: z.string().min(1, "Clinic name is required"),
@@ -60,14 +61,21 @@ const saveClinic = createServerFn({ method: "POST" })
     }) => data,
   )
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
-    return await Clinic.save({
+  .handler(async ({ data, context }) => {
+    const clinicId = await Clinic.save({
       id: data.id,
       name: data.name,
       country: data.country,
       city: data.city,
       address: data.address,
     });
+    await logAdminAudit(context.userId, {
+      actionType: clinicId === data.id ? "UPDATE" : "CREATE",
+      tableName: "clinics",
+      rowId: clinicId,
+      changes: { fields: ["name", "country", "city", "address"] },
+    });
+    return clinicId;
   });
 
 export const Route = createFileRoute("/app/clinics/edit/$")({

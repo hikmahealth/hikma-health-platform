@@ -22,6 +22,11 @@ import {
   buildEventInsertValues,
 } from "@/lib/server-functions/builders";
 import { logAuditEvent } from "@/lib/server-functions/audit";
+import {
+  recordSignInFailure,
+  recordSignInSuccess,
+} from "@/lib/auth/sign-in-audit";
+import { rejectByAccountLimit, rejectByIpLimit } from "@/lib/auth/sign-in";
 
 const additionalAttributeSchema = z.object({
   attribute_id: z.string(),
@@ -151,11 +156,26 @@ export const commandProcedures = {
   /** Authenticate with email/password and receive a bearer token */
   login: publicProcedure
     .input(z.object({ email: z.string(), password: z.string() }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const client = ctx.client ?? {
+        channel: "rpc" as const,
+        ipAddress: null,
+        userAgent: null,
+      };
+      const limited =
+        (await rejectByIpLimit(client)) ??
+        (await rejectByAccountLimit(client, input.email));
+      if (limited) {
+        throw new TRPCError({
+          code: "TOO_MANY_REQUESTS",
+          message: "Too many requests. Please try again later.",
+        });
+      }
       try {
         // No explicit lifetime: the 2-hour default is standard across every
         // login path. This one used to mint 24-hour tokens.
         const { user, token } = await User.signIn(input.email, input.password);
+        await recordSignInSuccess(client, user.id);
         return {
           token,
           user_id: user.id,
@@ -163,6 +183,7 @@ export const commandProcedures = {
           role: user.role,
         };
       } catch (error) {
+        await recordSignInFailure(client, input.email);
         throw new TRPCError({
           code: "UNAUTHORIZED",
           message: "Invalid email or password",

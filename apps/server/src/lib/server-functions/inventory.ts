@@ -6,6 +6,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { v1 as uuidV1 } from "uuid";
 import { Result } from "@/lib/result";
 import { adminMiddleware } from "@/middleware/auth";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 export const getClinicInventory = createServerFn({ method: "GET" })
   .validator(
@@ -155,6 +156,13 @@ export const removeDrugFromClinic = createServerFn({ method: "POST" })
           performedBy: context.userId,
           reason: data.reason,
         });
+        await logAdminAudit(context.userId, {
+          actionType: "SOFT_DELETE",
+          tableName: "clinic_inventory",
+          rowId: data.drugId,
+          changes: { ...outcome },
+          metadata: { clinic_id: data.clinicId, reason: data.reason ?? null },
+        });
         return { success: true as const, data: outcome };
       } catch (error) {
         Sentry.captureException(error);
@@ -183,6 +191,13 @@ export const clearClinicInventory = createServerFn({ method: "POST" })
           clinicId: data.clinicId,
           performedBy: context.userId,
           reason: data.reason,
+        });
+        await logAdminAudit(context.userId, {
+          actionType: "SOFT_DELETE",
+          tableName: "clinic_inventory",
+          rowId: data.clinicId,
+          changes: { ...outcome },
+          metadata: { clinic_id: data.clinicId, reason: data.reason ?? null },
         });
         return { success: true as const, data: outcome };
       } catch (error) {
@@ -214,7 +229,7 @@ export const saveClinicInventory = createServerFn({ method: "POST" })
     }) => data,
   )
   .middleware([adminMiddleware])
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     return Sentry.startSpan(
       { name: "Save clinic inventory item" },
       async () => {
@@ -231,6 +246,13 @@ export const saveClinicInventory = createServerFn({ method: "POST" })
               transactionType: "receiving",
               reason: "Initial stock",
               performedBy: data.recordedByUserId,
+            });
+            await logAdminAudit(context.userId, {
+              actionType: "CREATE",
+              tableName: "clinic_inventory",
+              rowId: data.drugId,
+              changes: { quantity_available: { new: data.quantityAvailable } },
+              metadata: { clinic_id: data.clinicId, batch_id: data.batchId },
             });
             return { success: true, data: result };
           } else {
@@ -254,6 +276,18 @@ export const saveClinicInventory = createServerFn({ method: "POST" })
               transactionType: transactionType,
               reason: "Stock update",
               performedBy: data.recordedByUserId,
+            });
+            await logAdminAudit(context.userId, {
+              actionType: "UPDATE",
+              tableName: "clinic_inventory",
+              rowId: existing.id,
+              changes: {
+                quantity_available: {
+                  old: existing.quantity_available,
+                  new: data.quantityAvailable,
+                },
+              },
+              metadata: { clinic_id: data.clinicId, batch_id: data.batchId },
             });
             return { success: true, data: result };
           }
@@ -282,7 +316,7 @@ export const createDrugBatch = createServerFn({ method: "POST" })
     }) => data,
   )
   .middleware([adminMiddleware])
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     return Sentry.startSpan({ name: "Create drug batch" }, async () => {
       // TODO: this should be a transaction
       try {
@@ -322,6 +356,15 @@ export const createDrugBatch = createServerFn({ method: "POST" })
           });
         }
 
+        if (batchResult) {
+          await logAdminAudit(context.userId, {
+            actionType: "CREATE",
+            tableName: "drug_batches",
+            rowId: batchResult.id,
+            changes: { quantity_received: data.quantityReceived },
+            metadata: { clinic_id: data.clinicId, drug_id: data.drugId },
+          });
+        }
         return { success: true, data: batchResult };
       } catch (error) {
         Sentry.captureException(error);

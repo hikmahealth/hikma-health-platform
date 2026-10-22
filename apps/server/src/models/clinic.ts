@@ -234,7 +234,7 @@ namespace Clinic {
       address?: string | null;
       country?: string | null;
       city?: string | null;
-    }): Promise<void> => {
+    }): Promise<string> => {
       const token = getCookie("token");
       if (!token) {
         return Promise.reject(new Error("Unauthorized"));
@@ -269,6 +269,7 @@ namespace Clinic {
         // get all the current super admins
         // going to ignore any errors here
         UserClinicPermissions.API.newClinicCreated(clinicId, currentUser.id);
+        return clinicId;
       } else {
         await db
           .updateTable(Clinic.Table.name)
@@ -282,6 +283,7 @@ namespace Clinic {
           })
           .where("id", "=", id)
           .execute();
+        return id;
       }
     },
   );

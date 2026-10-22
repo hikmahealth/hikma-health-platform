@@ -34,6 +34,7 @@ import { AlertTriangle, Copy, Check } from "lucide-react";
 import upperFirst from "lodash/upperFirst";
 import Creatable from "react-select/creatable";
 import { Logger } from "@hikmahealth/js-utils";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 // SERVER FUNCTIONS
 
@@ -59,7 +60,17 @@ const registerDevice = createServerFn({ method: "POST" })
         source: "registerDevice",
       });
     }
-    return Device.API.register(data);
+    const registered = await Device.API.register(data);
+    await logAdminAudit(context.userId, {
+      actionType: "CREATE",
+      tableName: "devices",
+      rowId: registered.id,
+      changes: {
+        device_type: data.device_type,
+        clinic_ids: data.clinic_ids ?? [],
+      },
+    });
+    return registered;
   });
 
 const updateDevice = createServerFn({ method: "POST" })
@@ -74,7 +85,13 @@ const updateDevice = createServerFn({ method: "POST" })
         source: "updateDevice",
       });
     }
-    return Device.API.update(data.id, data.input);
+    await Device.API.update(data.id, data.input);
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "devices",
+      rowId: data.id,
+      changes: { fields: Object.keys(data.input) },
+    });
   });
 
 const regenerateDeviceApiKey = createServerFn({ method: "POST" })
@@ -87,7 +104,14 @@ const regenerateDeviceApiKey = createServerFn({ method: "POST" })
         source: "regenerateDeviceApiKey",
       });
     }
-    return Device.API.regenerateApiKey(data.id);
+    const regenerated = await Device.API.regenerateApiKey(data.id);
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "devices",
+      rowId: data.id,
+      changes: { fields: ["api_key"] },
+    });
+    return regenerated;
   });
 
 const getDeviceById = createServerFn({ method: "GET" })

@@ -5,6 +5,7 @@ import User from "@/models/user";
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 import { Option, pipe } from "effect";
 import type Clinic from "@/models/clinic";
+import { type SignInClient, signInClient } from "@/lib/auth/sign-in-audit";
 
 /**
  * Context available to all tRPC procedures.
@@ -12,6 +13,8 @@ import type Clinic from "@/models/clinic";
  */
 export type TRPCContext = {
   authHeader: string | null;
+  /** Absent for in-process callers, which have no HTTP client. */
+  client?: SignInClient;
 };
 
 /**
@@ -26,7 +29,7 @@ export type AuthedContext = {
 /** Build context from the incoming request */
 export function createTRPCContext(request: Request): TRPCContext {
   const authHeader = request.headers.get("Authorization");
-  return { authHeader };
+  return { authHeader, client: signInClient(request, "rpc") };
 }
 
 const t = initTRPC.context<TRPCContext>().create({

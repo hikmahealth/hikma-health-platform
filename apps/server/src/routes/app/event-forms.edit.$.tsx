@@ -43,6 +43,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Logger } from "@hikmahealth/js-utils";
 import { adminMiddleware, superAdminMiddleware } from "@/middleware/auth";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 const getFormById = createServerFn({ method: "GET" })
   .validator((data: { id: string }) => data)
@@ -91,17 +92,19 @@ const saveForm = createServerFn({ method: "POST" })
     (d: { form: EventForm.EncodedT; updateFormId: null | string }) => d,
   )
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const { updateFormId, form } = data;
 
-    if (updateFormId) {
-      return EventForm.API.update({
-        id: updateFormId,
-        form,
-      });
-    } else {
-      return EventForm.API.insert(form);
-    }
+    const saved = updateFormId
+      ? await EventForm.API.update({ id: updateFormId, form })
+      : await EventForm.API.insert(form);
+    await logAdminAudit(context.userId, {
+      actionType: updateFormId ? "UPDATE" : "CREATE",
+      tableName: "event_forms",
+      rowId: saved.id,
+      changes: {},
+    });
+    return saved;
   });
 
 export const Route = createFileRoute("/app/event-forms/edit/$")({

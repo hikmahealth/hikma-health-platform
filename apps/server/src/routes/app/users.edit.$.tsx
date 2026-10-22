@@ -46,6 +46,10 @@ import {
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 import If from "@/components/if";
 import { useImmerReducer } from "use-immer";
+import {
+  changedFieldNames,
+  logAdminAudit,
+} from "@/lib/server-functions/audit";
 
 const updateUser = createServerFn({ method: "POST" })
   .validator(
@@ -76,7 +80,26 @@ const updateUser = createServerFn({ method: "POST" })
       "is_clinic_admin",
     );
 
+    const before = await User.API.getById(data.id);
     const res = await User.API.update(data.id, data.user);
+    if (res && before) {
+      const after: Record<string, unknown> = { ...data.user };
+      const fields = changedFieldNames(before, after);
+      await logAdminAudit(context.userId, {
+        actionType: "UPDATE",
+        tableName: "users",
+        rowId: data.id,
+        changes: {
+          fields,
+          ...(fields.includes("role")
+            ? { role: { old: before.role, new: data.user.role } }
+            : {}),
+          ...(fields.includes("clinic_id")
+            ? { clinic_id: { old: before.clinic_id, new: data.user.clinic_id } }
+            : {}),
+        },
+      });
+    }
     return res;
   });
 
@@ -111,6 +134,14 @@ const registerUser = createServerFn({ method: "POST" })
     }
 
     const res = await User.API.create(data.user, data.creatorId);
+    if (res) {
+      await logAdminAudit(context.userId, {
+        actionType: "CREATE",
+        tableName: "users",
+        rowId: res,
+        changes: { role: data.user.role, clinic_id: data.user.clinic_id },
+      });
+    }
     return res;
   });
 

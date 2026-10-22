@@ -7,6 +7,7 @@ import Token from "@/models/token";
 import { Option } from "effect";
 import { userRoleTokenHasCapability } from "@/lib/auth/request";
 import { adminMiddleware } from "@/middleware/auth";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 // import Patient from "@/models/patient";
 
 /**
@@ -129,5 +130,13 @@ export const resetUserPassword = createServerFn({ method: "POST" })
       });
     }
 
-    return await User.API.updatePassword(data.userId, data.password);
+    const userId = await User.API.updatePassword(data.userId, data.password);
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "users",
+      rowId: data.userId,
+      changes: { fields: ["hashed_password"] },
+      metadata: { reason: "password-reset" },
+    });
+    return userId;
   });

@@ -55,12 +55,21 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { superAdminMiddleware } from "@/middleware/auth";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 const saveForm = createServerFn({ method: "POST" })
   .validator((data: PatientRegistrationForm.EncodedT) => data)
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
-    return await PatientRegistrationForm.upsertPatientRegistrationForm(data);
+  .handler(async ({ data, context }) => {
+    const saved =
+      await PatientRegistrationForm.upsertPatientRegistrationForm(data);
+    await logAdminAudit(context.userId, {
+      actionType: data.id ? "UPDATE" : "CREATE",
+      tableName: "patient_registration_forms",
+      rowId: saved.id,
+      changes: {},
+    });
+    return saved;
   });
 
 export const Route = createFileRoute(

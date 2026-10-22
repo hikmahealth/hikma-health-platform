@@ -10,7 +10,7 @@ export const Route = createFileRoute("/api/auth/sign-in")({
         const setupRequired = await rejectWhileSetupPending();
         if (setupRequired) return setupRequired;
 
-        const outcome = await attemptSignIn(request);
+        const outcome = await attemptSignIn(request, "web");
 
         if (outcome.kind === "rate-limited") {
           return tooManyRequestsResponse(outcome.retryAfterMs);

@@ -36,6 +36,7 @@ import { toast } from "sonner";
 import { permissionsMiddleware } from "@/middleware/auth";
 import User from "@/models/user";
 import { Logger } from "@hikmahealth/js-utils";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 const addClinicPermissions = createServerFn({ method: "POST" })
   .validator(
@@ -47,6 +48,10 @@ const addClinicPermissions = createServerFn({ method: "POST" })
     if (context.role !== User.ROLES.SUPER_ADMIN) {
       throw new Error("Unauthorized");
     }
+    const existing = await UserClinicPermissions.API.getByUserAndClinic(
+      userId,
+      clinicId,
+    );
     const newPermission = {
       user_id: userId,
       clinic_id: clinicId,
@@ -63,7 +68,30 @@ const addClinicPermissions = createServerFn({ method: "POST" })
       can_delete_patient_records: false,
     };
 
-    return await UserClinicPermissions.API.upsert(newPermission, currentUserId);
+    const saved = await UserClinicPermissions.API.upsert(
+      newPermission,
+      currentUserId,
+    );
+    // An existing row is reset to no permissions; record each flag it loses.
+    const revoked = existing
+      ? Object.fromEntries(
+          Object.entries(newPermission)
+            .filter(
+              ([flag, value]) =>
+                typeof value === "boolean" &&
+                existing[flag as keyof typeof existing] === true,
+            )
+            .map(([flag]) => [flag, { old: true, new: false }]),
+        )
+      : {};
+    await logAdminAudit(context.userId, {
+      actionType: existing ? "UPDATE" : "CREATE",
+      tableName: "user_clinic_permissions",
+      rowId: `${userId}:${clinicId}`,
+      changes: revoked,
+      metadata: { user_id: userId, clinic_id: clinicId },
+    });
+    return saved;
   });
 
 const togglePermission = createServerFn({ method: "POST" })
@@ -95,10 +123,20 @@ const togglePermission = createServerFn({ method: "POST" })
       [permission]: value,
     };
 
-    return await UserClinicPermissions.API.upsert(
+    const saved = await UserClinicPermissions.API.upsert(
       updatedPermission,
       currentUserId,
     );
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "user_clinic_permissions",
+      rowId: `${userId}:${clinicId}`,
+      changes: {
+        [permission]: { old: existingPermissions[permission], new: value },
+      },
+      metadata: { user_id: userId, clinic_id: clinicId },
+    });
+    return saved;
   });
 
 export const Route = createFileRoute("/app/users/manage-permissions/$")({

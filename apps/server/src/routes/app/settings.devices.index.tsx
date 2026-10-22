@@ -27,6 +27,7 @@ import {
 import { MoreHorizontal } from "lucide-react";
 import { Logger } from "@hikmahealth/js-utils";
 import { ConnectMobileAppCard } from "@/components/connect-mobile-app-card";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 // SERVER FUNCTIONS
 
@@ -49,7 +50,13 @@ const deleteDevice = createServerFn({ method: "POST" })
         source: "deleteDevice",
       });
     }
-    return Device.API.softDelete(data.id);
+    await Device.API.softDelete(data.id);
+    await logAdminAudit(context.userId, {
+      actionType: "SOFT_DELETE",
+      tableName: "devices",
+      rowId: data.id,
+      changes: {},
+    });
   });
 
 const updateDeviceStatus = createServerFn({ method: "POST" })
@@ -62,7 +69,13 @@ const updateDeviceStatus = createServerFn({ method: "POST" })
         source: "updateDeviceStatus",
       });
     }
-    return Device.API.updateStatus(data.id, data.status);
+    await Device.API.updateStatus(data.id, data.status);
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "devices",
+      rowId: data.id,
+      changes: { status: { new: data.status } },
+    });
   });
 
 const resetPinAttempts = createServerFn({ method: "POST" })
@@ -75,7 +88,13 @@ const resetPinAttempts = createServerFn({ method: "POST" })
         source: "resetPinAttempts",
       });
     }
-    return Device.API.resetFailedPinAttempts(data.id);
+    await Device.API.resetFailedPinAttempts(data.id);
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "devices",
+      rowId: data.id,
+      changes: { fields: ["failed_pin_attempts"] },
+    });
   });
 
 // ROUTE

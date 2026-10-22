@@ -30,6 +30,7 @@ import {
   submitReportDetails,
   unregisterFromReportingService,
 } from "@/action/register.reporter";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 const saveConfiguration = createServerFn({ method: "POST" })
   .validator(
@@ -52,7 +53,7 @@ const saveConfiguration = createServerFn({ method: "POST" })
       });
     }
     const { namespace, key, displayName, value, dataType, updatedBy } = data;
-    return await AppConfig.API.set(
+    const saved = await AppConfig.API.set(
       namespace,
       key,
       displayName,
@@ -60,6 +61,15 @@ const saveConfiguration = createServerFn({ method: "POST" })
       dataType,
       updatedBy,
     );
+    // Key names only: configuration values are not reviewed for secrets.
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "app_config",
+      rowId: `${namespace}/${key}`,
+      changes: { fields: ["value"] },
+      metadata: { namespace, key },
+    });
+    return saved;
   });
 
 const getReportingStatus = createServerFn({ method: "GET" })
@@ -69,17 +79,43 @@ const getReportingStatus = createServerFn({ method: "GET" })
 const subscribeReporting = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
   .validator(z.object({ organization_name: z.string().trim().min(1).max(120) }))
-  .handler(async ({ data }) =>
-    registerWithReportingService(data.organization_name),
-  );
+  .handler(async ({ data, context }) => {
+    const result = await registerWithReportingService(data.organization_name);
+    await logAdminAudit(context.userId, {
+      actionType: "CREATE",
+      tableName: "reporting_registration",
+      rowId: "reporting-service",
+      changes: { organization_name: data.organization_name },
+      metadata: { details_submitted: result.detailsSubmitted },
+    });
+    return result;
+  });
 
 const unsubscribeFromReporting = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
-  .handler(async () => unregisterFromReportingService());
+  .handler(async ({ context }) => {
+    const result = await unregisterFromReportingService();
+    await logAdminAudit(context.userId, {
+      actionType: "PERMANENT_DELETE",
+      tableName: "reporting_registration",
+      rowId: "reporting-service",
+      changes: {},
+    });
+    return result;
+  });
 
 const retryReportDetails = createServerFn({ method: "POST" })
   .middleware([superAdminMiddleware])
-  .handler(async () => submitReportDetails());
+  .handler(async ({ context }) => {
+    const result = await submitReportDetails();
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "reporting_registration",
+      rowId: "reporting-service",
+      changes: { fields: ["report_details"] },
+    });
+    return result;
+  });
 
 const getAllConfigurations = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
@@ -111,8 +147,16 @@ const upsertServerVariable = createServerFn({ method: "POST" })
     }) => data,
   )
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
-    return await ServerVariable.update(data);
+  .handler(async ({ data, context }) => {
+    const saved = await ServerVariable.update(data);
+    // Key name only: server variables hold credentials.
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "server_variables",
+      rowId: data.key,
+      changes: { fields: ["value_data"] },
+    });
+    return saved;
   });
 
 export const Route = createFileRoute("/app/settings/configurations/")({

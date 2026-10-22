@@ -32,6 +32,7 @@ import {
   canonicalizePatientViewActions,
   type PatientViewActionEntry,
 } from "@/lib/patient-view-actions";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 const getPatientViewActions = createServerFn({ method: "GET" })
   .middleware([superAdminMiddleware])
@@ -57,7 +58,7 @@ const savePatientViewActions = createServerFn({ method: "POST" })
 
     // Never DELETE the row to "reset": app_config has no tombstones, so a
     // deleted row is invisible to sync and devices keep the stale value.
-    return await AppConfig.API.set(
+    const saved = await AppConfig.API.set(
       PATIENT_VIEW_ACTIONS_NAMESPACE,
       PATIENT_VIEW_ACTIONS_KEY,
       "Patient View Actions",
@@ -67,6 +68,17 @@ const savePatientViewActions = createServerFn({ method: "POST" })
       // Explicit because this screen owns the row's scope. null = all clinics.
       null,
     );
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "app_config",
+      rowId: `${PATIENT_VIEW_ACTIONS_NAMESPACE}/${PATIENT_VIEW_ACTIONS_KEY}`,
+      changes: { fields: ["value"] },
+      metadata: {
+        namespace: PATIENT_VIEW_ACTIONS_NAMESPACE,
+        key: PATIENT_VIEW_ACTIONS_KEY,
+      },
+    });
+    return saved;
   });
 
 export const Route = createFileRoute("/app/settings/configurations/patient-view-actions")({

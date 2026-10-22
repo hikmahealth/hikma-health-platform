@@ -26,6 +26,7 @@ import {
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 import { permissionsMiddleware } from "@/middleware/auth";
 import { Logger } from "@hikmahealth/js-utils";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 // const getCurrentUserId = createServerFn({ method: "GET" }).handler(async () => {
 //   const tokenCookie = getCookieToken();
@@ -53,7 +54,13 @@ const deleteUser = createServerFn({ method: "POST" })
         source: "deleteUser",
       });
     }
-    return User.API.softDelete(data.id);
+    await User.API.softDelete(data.id);
+    await logAdminAudit(context.userId, {
+      actionType: "SOFT_DELETE",
+      tableName: "users",
+      rowId: data.id,
+      changes: {},
+    });
   });
 
 export const Route = createFileRoute("/app/users/")({

@@ -22,7 +22,10 @@ namespace EventLog {
     | "SOFT_DELETE"
     | "PERMANENT_DELETE"
     | "VIEW"
-    | "EXPORT";
+    | "EXPORT"
+    | "SIGN_IN"
+    | "SIGN_IN_FAILED"
+    | "SIGN_OUT";
 
   export const actionTypeValues = [
     "CREATE",
@@ -31,6 +34,9 @@ namespace EventLog {
     "PERMANENT_DELETE",
     "VIEW",
     "EXPORT",
+    "SIGN_IN",
+    "SIGN_IN_FAILED",
+    "SIGN_OUT",
   ] as const;
 
   export interface T {

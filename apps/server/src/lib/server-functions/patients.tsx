@@ -165,11 +165,21 @@ export const getPatientById = createServerFn({
   .handler(
     async ({
       data,
+      context,
     }): Promise<{
       patient: Patient.EncodedT;
       error: { message: string } | null;
     }> => {
       const patient = await Patient.API.getById(data.id);
+      if (patient && context.userId) {
+        await logAuditEvent({
+          actionType: "VIEW",
+          tableName: "patients",
+          rowId: patient.id,
+          changes: {},
+          userId: context.userId,
+        });
+      }
 
       return {
         patient,

@@ -11,6 +11,7 @@ import {
 import UserClinicPermissions from "@/models/user-clinic-permissions";
 import { Result } from "@/lib/result";
 import { Logger } from "@hikmahealth/js-utils";
+import { logAdminAudit } from "@/lib/server-functions/audit";
 
 export const getAllClinics = createServerFn({ method: "GET" })
   .middleware([permissionsMiddleware])
@@ -82,7 +83,7 @@ export const createDepartment = createServerFn({ method: "POST" })
     }) => data,
   )
   .middleware([superAdminMiddleware])
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const departmentId = await ClinicDepartment.API.upsert({
       clinic_id: data.clinicId,
       name: data.name,
@@ -97,6 +98,18 @@ export const createDepartment = createServerFn({ method: "POST" })
       is_deleted: false,
     });
 
+    if (departmentId) {
+      await logAdminAudit(context.userId, {
+        actionType: "CREATE",
+        tableName: "clinic_departments",
+        rowId: departmentId,
+        changes: {
+          can_dispense_medications: data.can_dispense_medications,
+          can_perform_labs: data.can_perform_labs,
+        },
+        metadata: { clinic_id: data.clinicId },
+      });
+    }
     return { success: true, departmentId };
   });
 
@@ -123,10 +136,14 @@ export const toggleDepartmentCapability = createServerFn({ method: "POST" })
     );
     const { departmentId, capability } = data;
 
-    return await ClinicDepartment.API.toggleCapability(
-      departmentId,
-      capability,
-    );
+    await ClinicDepartment.API.toggleCapability(departmentId, capability);
+    await logAdminAudit(context.userId, {
+      actionType: "UPDATE",
+      tableName: "clinic_departments",
+      rowId: departmentId,
+      changes: { fields: [capability] },
+      metadata: { clinic_id: data.clinicId },
+    });
   });
 
 export const deleteDepartment = createServerFn({ method: "POST" })
@@ -146,5 +163,12 @@ export const deleteDepartment = createServerFn({ method: "POST" })
     );
     const { departmentId } = data;
 
-    return await ClinicDepartment.API.softDelete(departmentId);
+    await ClinicDepartment.API.softDelete(departmentId);
+    await logAdminAudit(context.userId, {
+      actionType: "SOFT_DELETE",
+      tableName: "clinic_departments",
+      rowId: departmentId,
+      changes: {},
+      metadata: { clinic_id: data.clinicId },
+    });
   });
