@@ -20,6 +20,13 @@ vi.mock("@tanstack/react-start/server", () => ({
 vi.mock("@hikmahealth/js-utils", () => ({
   Logger: { error: vi.fn(), info: vi.fn() },
 }));
+// Each recorder queries the DB; sign-in-audit.test.ts covers them against PGlite.
+vi.mock("@/lib/auth/sign-in-audit", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/auth/sign-in-audit")>()),
+  recordSignInFailure: vi.fn(),
+  recordSignInRateLimited: vi.fn(),
+  recordSignInSuccess: vi.fn(),
+}));
 
 const { attemptSignIn } = await import("../../src/lib/auth/sign-in");
 
