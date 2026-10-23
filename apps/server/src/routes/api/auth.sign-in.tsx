@@ -17,10 +17,13 @@ export const Route = createFileRoute("/api/auth/sign-in")({
         }
 
         if (outcome.kind === "invalid") {
-          return new Response(JSON.stringify({ error: "Invalid credentials" }), {
-            headers: { "Content-Type": "application/json" },
-            status: 401,
-          });
+          return new Response(
+            JSON.stringify({ error: "Invalid credentials" }),
+            {
+              headers: { "Content-Type": "application/json" },
+              status: 401,
+            },
+          );
         }
 
         return new Response(
