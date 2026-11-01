@@ -6,6 +6,7 @@
  */
 import { ComponentProps, useCallback, useEffect } from "react"
 import * as SecureStore from "expo-secure-store"
+import NetInfo from "@react-native-community/netinfo"
 import { createDrawerNavigator } from "@react-navigation/drawer"
 import { NavigationContainer, NavigationState } from "@react-navigation/native"
 import { createNativeStackNavigator, NativeStackScreenProps } from "@react-navigation/native-stack"
@@ -155,6 +156,24 @@ const MainDrawer = () => {
   )
 }
 
+const hasInternetConnection = async (): Promise<boolean> => {
+  try {
+    const state = await NetInfo.fetch()
+    // isInternetReachable is null until NetInfo's probe settles; the cloud
+    // heartbeat that follows is the real reachability check.
+    return state.isConnected === true && state.isInternetReachable !== false
+  } catch {
+    return false
+  }
+}
+
+// Messages User.signIn throws when the server answered and refused the login,
+// as opposed to network failures and timeouts.
+const REJECTED_CREDENTIALS_MESSAGES = ["Invalid credentials", "Invalid email or password"]
+
+const isRejectedCredentials = (error: unknown): boolean =>
+  error instanceof Error && REJECTED_CREDENTIALS_MESSAGES.includes(error.message)
+
 const AppStack = () => {
   const { setThemeContextOverride } = useAppTheme()
 
@@ -191,7 +210,8 @@ const AppStack = () => {
       const cloudPeers = await Peer.DB.getActiveByType("cloud_server")
       const hasCloudPeer = cloudPeers.length > 0
 
-      const reachableCloudServer = hasCloudPeer ? await Peer.isAnyCloudReachable() : null
+      const isOnline = hasCloudPeer ? await hasInternetConnection() : false
+      const reachableCloudServer = isOnline ? await Peer.isAnyCloudReachable() : null
       if (reachableCloudServer?.reachable && reachableCloudServer.url) {
         const email = await SecureStore.getItemAsync("provider_email")
         const password = await SecureStore.getItemAsync("provider_password")
@@ -202,6 +222,11 @@ const AppStack = () => {
             // peer on a hub-paired device is the hub, which has no /api routes.
             await User.signIn(email, password, reachableCloudServer.url)
           } catch (err) {
+            if (isRejectedCredentials(err)) {
+              Logger.Production.warn("[Login] Stored credentials rejected — signing out")
+              await User.signOut()
+              return
+            }
             Logger.error("[Login] Error logging in with email and password")
             Sentry.captureException(err, {
               level: "warning",
