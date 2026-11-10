@@ -31,6 +31,7 @@
     "prepare": "lefthook install"
   },
   "dependencies": {
+    "@hikmahealth/hers": "workspace:*",
     "@anthropic-ai/sdk": "^1.1.0",
     "@aws-sdk/client-s3": "^3.1094.0",
     "@azure/storage-blob": "^12.33.0",
@@ -41,6 +42,7 @@
     "@google-cloud/storage": "^7.21.0",
     "@hikmahealth/database": "workspace:*",
     "@hikmahealth/forms": "workspace:*",
+    "@hikmahealth/hers": "workspace:*",
     "@hikmahealth/js-utils": "workspace:*",
     "@hikmahealth/ui": "workspace:*",
     "@hookform/resolvers": "^5.1.1",

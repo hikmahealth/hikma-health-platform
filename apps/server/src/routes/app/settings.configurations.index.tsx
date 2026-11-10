@@ -4,6 +4,8 @@ import { Input } from "@/components/ui/input";
 import { SelectInput } from "@/components/select-input";
 import { StorageSettingsSection } from "@/components/settings/storage-settings-section";
 import { getStorageSettings } from "@/lib/server-functions/storage-settings";
+import { HersMonitoringSection } from "@/components/settings/hers-monitoring-section";
+import { getHersSettings } from "@/lib/server-functions/hers";
 import {
   Dialog,
   DialogContent,
@@ -171,6 +173,7 @@ export const Route = createFileRoute("/app/settings/configurations/")({
       aiProxyKeyVar,
       storage,
       reportingStatus,
+      hers,
     ] = await Promise.all([
       getAllConfigurations(),
       getServerVariable({
@@ -190,6 +193,7 @@ export const Route = createFileRoute("/app/settings/configurations/")({
       }),
       getStorageSettings(),
       getReportingStatus(),
+      getHersSettings(),
     ]);
     const toBytes = (data: unknown): Uint8Array | null => {
       if (data == null) return null;
@@ -221,6 +225,7 @@ export const Route = createFileRoute("/app/settings/configurations/")({
       aiServiceUrl,
       storage,
       reportingStatus,
+      hers,
       currentUser: await getCurrentUser(),
     };
   },
@@ -239,6 +244,7 @@ function RouteComponent() {
     aiServiceUrl,
     storage,
     reportingStatus,
+    hers,
     currentUser,
   } = Route.useLoaderData();
   const router = useRouter();
@@ -708,6 +714,11 @@ function RouteComponent() {
             )}
           </div>
         </div>
+
+        <HersMonitoringSection
+          settings={hers}
+          onChanged={() => router.invalidate({ sync: true })}
+        />
 
         <div className="flex flex-col gap-4 pt-4 border-t">
           <h2 className="text-lg font-semibold">AI</h2>

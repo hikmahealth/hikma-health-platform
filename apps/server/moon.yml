@@ -3,6 +3,7 @@ dependsOn:
   - ui
   - database
   - js-utils
+  - hers
 language: typescript
 
 tasks:
@@ -12,6 +13,7 @@ tasks:
     deps:
       - ui:build
       - database:build
+      - hers:build
       - server:recovery
     outputs:
       - .output/**/*

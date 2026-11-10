@@ -43,6 +43,10 @@ namespace ServerVariable {
     OPENAI_API_KEY: "openai_api_key",
     GEMINI_API_KEY: "gemini_api_key",
     HIKMA_REPORTER_CREDENTIALS: "hikma_reporter_credentials",
+    // HERS environmental monitoring. See lib/hers/store.ts.
+    HERS_CREDENTIALS: "hers_credentials",
+    HERS_WEBHOOK: "hers_webhook",
+    HERS_LOCATIONS: "hers_locations",
   } as const;
 
   export type T = {

@@ -24,6 +24,7 @@ import { Route as ApiAuthSignInRouteImport } from './routes/api/auth.sign-in'
 import { Route as ApiAuthSignOutRouteImport } from './routes/api/auth.sign-out'
 import { Route as ApiEntriesBackfillRouteImport } from './routes/api/entries.backfill'
 import { Route as ApiFormsResourcesRouteImport } from './routes/api/forms.resources'
+import { Route as ApiHersWebhookRouteImport } from './routes/api/hers.webhook'
 import { Route as ApiHubVerifyKeyRouteImport } from './routes/api/hub.verify-key'
 import { Route as ApiResourcesIdRouteImport } from './routes/api/resources.$id'
 import { Route as ApiSetupStatusRouteImport } from './routes/api/setup.status'
@@ -138,6 +139,11 @@ const ApiEntriesBackfillRoute = ApiEntriesBackfillRouteImport.update({
 const ApiFormsResourcesRoute = ApiFormsResourcesRouteImport.update({
   id: '/api/forms/resources',
   path: '/api/forms/resources',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiHersWebhookRoute = ApiHersWebhookRouteImport.update({
+  id: '/api/hers/webhook',
+  path: '/api/hers/webhook',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHubVerifyKeyRoute = ApiHubVerifyKeyRouteImport.update({
@@ -370,6 +376,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/sign-out': typeof ApiAuthSignOutRoute
   '/api/entries/backfill': typeof ApiEntriesBackfillRoute
   '/api/forms/resources': typeof ApiFormsResourcesRoute
+  '/api/hers/webhook': typeof ApiHersWebhookRoute
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
   '/api/setup/status': typeof ApiSetupStatusRoute
@@ -425,6 +432,7 @@ export interface FileRoutesByTo {
   '/api/auth/sign-out': typeof ApiAuthSignOutRoute
   '/api/entries/backfill': typeof ApiEntriesBackfillRoute
   '/api/forms/resources': typeof ApiFormsResourcesRoute
+  '/api/hers/webhook': typeof ApiHersWebhookRoute
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
   '/api/setup/status': typeof ApiSetupStatusRoute
@@ -483,6 +491,7 @@ export interface FileRoutesById {
   '/api/auth/sign-out': typeof ApiAuthSignOutRoute
   '/api/entries/backfill': typeof ApiEntriesBackfillRoute
   '/api/forms/resources': typeof ApiFormsResourcesRoute
+  '/api/hers/webhook': typeof ApiHersWebhookRoute
   '/api/hub/verify-key': typeof ApiHubVerifyKeyRoute
   '/api/resources/$id': typeof ApiResourcesIdRoute
   '/api/setup/status': typeof ApiSetupStatusRoute
@@ -542,6 +551,7 @@ export interface FileRouteTypes {
     | '/api/auth/sign-out'
     | '/api/entries/backfill'
     | '/api/forms/resources'
+    | '/api/hers/webhook'
     | '/api/hub/verify-key'
     | '/api/resources/$id'
     | '/api/setup/status'
@@ -597,6 +607,7 @@ export interface FileRouteTypes {
     | '/api/auth/sign-out'
     | '/api/entries/backfill'
     | '/api/forms/resources'
+    | '/api/hers/webhook'
     | '/api/hub/verify-key'
     | '/api/resources/$id'
     | '/api/setup/status'
@@ -654,6 +665,7 @@ export interface FileRouteTypes {
     | '/api/auth/sign-out'
     | '/api/entries/backfill'
     | '/api/forms/resources'
+    | '/api/hers/webhook'
     | '/api/hub/verify-key'
     | '/api/resources/$id'
     | '/api/setup/status'
@@ -708,6 +720,7 @@ export interface RootRouteChildren {
   ApiAuthSignOutRoute: typeof ApiAuthSignOutRoute
   ApiEntriesBackfillRoute: typeof ApiEntriesBackfillRoute
   ApiFormsResourcesRoute: typeof ApiFormsResourcesRoute
+  ApiHersWebhookRoute: typeof ApiHersWebhookRoute
   ApiHubVerifyKeyRoute: typeof ApiHubVerifyKeyRoute
   ApiResourcesIdRoute: typeof ApiResourcesIdRoute
   ApiSetupStatusRoute: typeof ApiSetupStatusRoute
@@ -823,6 +836,13 @@ declare module '@tanstack/react-router' {
       path: '/api/forms/resources'
       fullPath: '/api/forms/resources'
       preLoaderRoute: typeof ApiFormsResourcesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/hers/webhook': {
+      id: '/api/hers/webhook'
+      path: '/api/hers/webhook'
+      fullPath: '/api/hers/webhook'
+      preLoaderRoute: typeof ApiHersWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/hub/verify-key': {
@@ -1214,6 +1234,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSignOutRoute: ApiAuthSignOutRoute,
   ApiEntriesBackfillRoute: ApiEntriesBackfillRoute,
   ApiFormsResourcesRoute: ApiFormsResourcesRoute,
+  ApiHersWebhookRoute: ApiHersWebhookRoute,
   ApiHubVerifyKeyRoute: ApiHubVerifyKeyRoute,
   ApiResourcesIdRoute: ApiResourcesIdRoute,
   ApiSetupStatusRoute: ApiSetupStatusRoute,
